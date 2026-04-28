@@ -10,23 +10,70 @@ Client: FloraNova (commercial greenhouse).
 
 ## Prerequisites
 
-Before cloning this repo, every team member's laptop must have:
+Before cloning this repo, every team member's laptop must have a working
+ROS 2 workspace with the MIRTE vendor stack installed. **All of the
+following lives outside the `lupin` package — it's shared infrastructure
+that every group on this course needs.** Once it's done, the `lupin`
+repo drops in as one more package alongside the vendor folders.
 
-1. **Ubuntu 22.04** (dual-boot or native, **not** WSL).
-2. **ROS 2 Humble** — see the
-   [official install guide](https://docs.ros.org/en/humble/Installation.html).
-3. **MIRTE Master vendor packages**, installed via the
-   official MIRTE installation procedure (link on Brightspace under
-   course materials — TODO: paste the exact URL here once confirmed).
-   This step creates `~/ros2_ws/` and populates `~/ros2_ws/src/` with
-   the MIRTE vendor packages (`mirte-ros-packages`, `mirte-gazebo`,
-   `mirte_navigation`, etc.) using `mirte.repos` and `vcstool`.
+### 1. Operating system
+**Ubuntu 22.04** (dual-boot or native, **not** WSL).
 
-After step 3, `~/ros2_ws/src/` should contain ~15 vendor folders plus
-a `mirte.repos` file. Verify with:
+### 2. ROS 2 Humble
+Follow the
+[official install guide](https://docs.ros.org/en/humble/Installation.html)
+(`ros-humble-desktop` is enough). Make sure
+`source /opt/ros/humble/setup.bash` is in your `~/.bashrc` afterwards.
+
+### 3. Workspace + colcon top-level marker
+Create the workspace and install the
+[`colcon-top-level-workspace`](https://github.com/rhaschke/colcon-top-level-workspace)
+extension so `colcon build` works from anywhere inside `~/ros2_ws/`:
+
+```bash
+mkdir -p ~/ros2_ws/src
+touch ~/ros2_ws/.colcon_root
+pip install colcon-top-level-workspace
+```
+
+The empty `.colcon_root` file marks the workspace root; the pip extension
+teaches `colcon` to find it.
+
+### 4. MIRTE Master vendor packages
+Pull the vendor stack into `~/ros2_ws/src/` via `vcstool` and the
+`mirte.repos` manifest, then install rosdeps and build. The full
+procedure is documented by the MIRTE team — primary references:
+
+- [MIRTE Master developer docs](https://docs.mirte.org/develop/index.html)
+- [Simulation install guide](https://docs.mirte.org/0.2.0/doc/simulation/install_simulation.html)
+- [Running MIRTE Master in Gazebo](https://docs.mirte.org/0.2.0/doc/simulation/mirte_master_gazebo.html)
+- [Main mirte-ros-packages repo](https://github.com/mirte-robot/mirte-ros-packages/tree/develop/)
+
+Individual upstream repos pulled in by `mirte.repos` (for reference):
+
+| Component | Upstream |
+| --- | --- |
+| Main MIRTE packages | <https://github.com/mirte-robot/mirte-ros-packages/tree/develop/> |
+| Mecanum wheel controller | <https://github.com/clearpathrobotics/clearpath_mecanum_drive_controller> |
+| Camera (image transport + lazy publish) | <https://github.com/ArendJan/ros2_astra_camera/tree/fix-ros-jammy> |
+| Lidar | <https://github.com/Slamtec/rplidar_ros/tree/ros2> |
+| Navigation | <https://github.com/kas-lab/mirte_navigation/tree/physical_robot> |
+| Gazebo / sim worlds | `mirte-gazebo`, `aws_robomaker_small_house_world`, `plasys_house_world`, `robocup_home_simulation`, `gazebo_grasp_fix`, `sdf_models` |
+
+After this step, `~/ros2_ws/src/` should contain ~15 vendor folders plus
+the `mirte.repos` file. Verify with:
 
 ```bash
 ls ~/ros2_ws/src
+```
+
+You can now build the vendor workspace once before adding `lupin`:
+
+```bash
+cd ~/ros2_ws
+rosdep install --from-paths src -y --ignore-src
+colcon build --symlink-install
+source install/setup.bash
 ```
 
 ## Cloning this repository
@@ -73,6 +120,9 @@ This repository uses **three long-lived branches**:
 When something lands on `main`, a maintenance MR merges `main` into `sim` and `hardware` so the deployment branches stay current. This is part of the regular weekly maintenance.
 
 ## Building
+
+After cloning `lupin`, rebuild the workspace so the new packages are
+indexed alongside the vendor stack:
 
 ```bash
 cd ~/ros2_ws
