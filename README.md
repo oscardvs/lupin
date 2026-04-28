@@ -45,6 +45,33 @@ your SSH key to GitLab. See the
 the public key at
 <https://gitlab.tudelft.nl/-/user_settings/ssh_keys>.
 
+After cloning, check out the branch that matches what you want to do:
+
+```bash
+cd lupin
+git checkout sim          # to develop or run in Gazebo
+# or
+git checkout hardware     # to run on the real MIRTE Master
+```
+
+## Branch model
+
+This repository uses **three long-lived branches**:
+
+| Branch | What lives here |
+| --- | --- |
+| `main` | Shared code that is identical regardless of deployment target — messages, perception, planning, HMI logic. **Default branch.** Most feature MRs target `main`. |
+| `sim` | Everything in `main` plus simulation-specific bringup: Gazebo launch files, sim parameters, fake-hardware bridges, custom worlds. |
+| `hardware` | Everything in `main` plus real-robot bringup: MIRTE driver launches, calibrated parameters for our unit, real-camera AprilTag config. The final demonstration runs from this branch. |
+
+**Where do my changes go?**
+
+- Shared logic, algorithms, messages → branch off `main` (`feat/<topic>`), MR back to `main`.
+- Sim-only artefacts (new Gazebo world, sim debug tool) → branch off `sim` (`sim/<topic>`), MR back to `sim`.
+- Hardware-only artefacts (calibration values, real-robot launch tweak) → branch off `hardware` (`hw/<topic>`), MR back to `hardware`.
+
+When something lands on `main`, a maintenance MR merges `main` into `sim` and `hardware` so the deployment branches stay current. This is part of the regular weekly maintenance.
+
 ## Building
 
 ```bash
@@ -58,13 +85,17 @@ Add the `source` line to `~/.bashrc` to avoid repeating it every shell.
 
 ## Running
 
-Top-level launch lives in `lupin_bringup`:
+Top-level launch lives in `lupin_bringup`. The exact launch file depends on which branch you have checked out:
 
 ```bash
-ros2 launch lupin_bringup <to-be-defined>.launch.py
+# On the `sim` branch:
+ros2 launch lupin_bringup sim.launch.py
+
+# On the `hardware` branch:
+ros2 launch lupin_bringup hardware.launch.py
 ```
 
-(Launch files will land here as the project develops.)
+(Launch files will be added by the team in subsequent MRs.)
 
 ## Repository layout
 
@@ -79,8 +110,11 @@ ros2 launch lupin_bringup <to-be-defined>.launch.py
 
 ## Contributing
 
-- `main` is **protected** — direct pushes are blocked. All changes go through Merge Requests.
-- Branch naming: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `chore/<topic>`.
+- All three long-lived branches (`main`, `sim`, `hardware`) are **protected** — direct pushes are blocked. All changes go through MRs.
+- Branch naming:
+  - `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `chore/<topic>` for branches targeting `main`.
+  - `sim/<topic>` for branches targeting `sim`.
+  - `hw/<topic>` for branches targeting `hardware`.
 - Every MR needs **one approving review** from a teammate (this is the *buddy check* the course grades).
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/),
   e.g. `feat(navigation): add AprilTag pose correction`.
