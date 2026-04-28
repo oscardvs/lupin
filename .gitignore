@@ -1,0 +1,28 @@
+# colcon / ROS 2 build artefacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ROS bag files (large — share via SURFdrive / Drive, not git)
+*.bag
+*.db3
+*.mcap
+
+# OS / misc
+*~
+.cache/
