@@ -20,9 +20,11 @@ from unittest import mock
 
 # Isolate this test process from any real ROS nodes the dev may have running
 # on the default domain (e.g. a live greenhouse bridge). Must be set before
-# rclpy imports/inits anything.
-os.environ.setdefault('ROS_DOMAIN_ID', '47')
-os.environ.setdefault('ROS_LOCALHOST_ONLY', '1')
+# rclpy imports/inits anything. Unconditional assignment, not setdefault:
+# the team's .bashrc presets ROS_DOMAIN_ID=0 for MIRTE, which would silently
+# defeat isolation otherwise.
+os.environ['ROS_DOMAIN_ID'] = '47'
+os.environ['ROS_LOCALHOST_ONLY'] = '1'
 
 import rclpy
 from action_msgs.msg import GoalStatus
