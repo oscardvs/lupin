@@ -92,13 +92,15 @@ def generate_launch_description():
     )
 
     # The vendor empty-world launch publishes a constant zero twist at 100 Hz so
-    # twist_mux always has a "lowest priority" stream to fall back on. Mirror it.
+    # twist_mux always has a "lowest priority" stream to fall back on. Mirror it
+    # but route output to the launch log only — `ros2 topic pub` prints every
+    # publish on stdout and would otherwise drown the console at 100 Hz.
     zero_cmd_vel = ExecuteProcess(
         cmd=[
             'ros2', 'topic', 'pub', '/zero_cmd_vel', 'geometry_msgs/msg/Twist', '{}',
             '-r', '100',
         ],
-        output='screen',
+        output='log',
     )
 
     twist_mux = Node(
