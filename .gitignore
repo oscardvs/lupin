@@ -10,6 +10,7 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+test/
 
 # IDE / editor
 .vscode/
@@ -26,3 +27,4 @@ venv/
 # OS / misc
 *~
 .cache/
+
