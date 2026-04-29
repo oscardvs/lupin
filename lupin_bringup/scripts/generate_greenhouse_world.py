@@ -40,7 +40,7 @@ from typing import Any
 
 DEFAULT_TAG_SIZE_M = 0.16          # square apriltag edge length
 DEFAULT_TAG_THICKNESS_M = 0.005    # plane thickness (so depth camera sees it)
-DEFAULT_TAG_HEIGHT_M = 0.50        # mount height above ground
+DEFAULT_TAG_HEIGHT_M = 0.40        # mid-height on the table side, below table top
 DEFAULT_TABLE_HEIGHT_M = 0.70      # typical greenhouse bench top height
 DEFAULT_WALL_HEIGHT_M = 2.0
 DEFAULT_WALL_THICKNESS_M = 0.10
@@ -76,10 +76,62 @@ def _render_table(name: str, rect: dict[str, float], height: float) -> str:
     </model>"""
 
 
+def _place_on_table_face(
+    tx: float,
+    ty: float,
+    tables: dict[str, dict[str, float]],
+    *,
+    eps: float = 0.003,
+) -> tuple[float, float, float]:
+    """Snap a tag's (tx, ty) onto the nearest vertical face of the nearest table.
+
+    Returns ``(x, y, yaw)`` where ``yaw`` orients the tag's local +X (its
+    plate normal direction) outward from the table — so a robot driving
+    down the aisle sees the tag face-on.
+
+    The JSON has no per-tag orientation, but the real greenhouse mounts
+    tags on the table sides. We pick the closest of the four edges of the
+    nearest table, project the tag's coordinate onto that edge (clamped
+    to the edge length), and offset the tag plate by ``eps`` so it sits
+    just outside the table's collision box rather than intersecting it.
+    """
+    if not tables:
+        return tx, ty, 0.0
+
+    def rect_dist(rect: dict[str, float]) -> float:
+        dx = max(rect["x0"] - tx, 0.0, tx - rect["x1"])
+        dy = max(rect["y0"] - ty, 0.0, ty - rect["y1"])
+        return dx * dx + dy * dy
+
+    best = min(tables.values(), key=rect_dist)
+
+    # Distance from the tag's coordinate to each of the four edges.
+    edges = {
+        "south": abs(ty - best["y0"]),
+        "north": abs(ty - best["y1"]),
+        "west": abs(tx - best["x0"]),
+        "east": abs(tx - best["x1"]),
+    }
+    side = min(edges, key=edges.get)
+
+    if side in ("south", "north"):
+        # Project onto a horizontal edge: clamp x to the table's x extent.
+        x = max(best["x0"], min(best["x1"], tx))
+        if side == "south":
+            return x, best["y0"] - eps, -math.pi / 2.0  # face -Y
+        return x, best["y1"] + eps, math.pi / 2.0       # face +Y
+    # Vertical edge: clamp y to the table's y extent.
+    y = max(best["y0"], min(best["y1"], ty))
+    if side == "west":
+        return best["x0"] - eps, y, math.pi              # face -X
+    return best["x1"] + eps, y, 0.0                      # face +X
+
+
 def _render_tag(
     tag_id: int,
     x: float,
     y: float,
+    yaw: float,
     *,
     size: float,
     thickness: float,
@@ -92,13 +144,12 @@ def _render_tag(
     # world that the visuals are stand-ins — without real textures the
     # detector will see nothing, which would otherwise be a silent footgun.
     #
-    # Plane is laid out so its normal points along +X (yaw=0, pitch=pi/2).
-    # If the JSON ever grows an explicit per-tag yaw, plumb it through here.
-    pose_rpy = (0.0, math.pi / 2.0, 0.0)
-    pose = f"{x:.4f} {y:.4f} {height:.4f} {pose_rpy[0]} {pose_rpy[1]:.6f} {pose_rpy[2]}"
+    # The plate is a thin box with its thin axis along the model's local +X.
+    # Yaw rotates the model so that local +X points outward from the nearest
+    # table face — the tag's visible face is what the camera sees.
+    pose = f"{x:.4f} {y:.4f} {height:.4f} 0 0 {yaw:.6f}"
     # Integer ID embedded in name: AprilTag detector will publish detections
     # using these IDs, and "apriltag_<int>" is parseable downstream.
-    # ID is also set as a Gazebo <visual> name so it shows in tooltips.
     return f"""    <model name="apriltag_{tag_id}_PLACEHOLDER">
       <static>true</static>
       <pose>{pose}</pose>
@@ -188,17 +239,18 @@ def build_world(
         for name, rect in sorted(tables.items())
     ]
     # Sort tag IDs as integers so the SDF is deterministic and human-scannable.
-    tag_blocks = [
-        _render_tag(
-            int(tag_id),
-            float(tag["x"]),
-            float(tag["y"]),
-            size=tag_size,
-            thickness=tag_thickness,
-            height=tag_height,
+    tag_blocks = []
+    for tag_id, tag in sorted(tags.items(), key=lambda kv: int(kv[0])):
+        tx, ty = float(tag["x"]), float(tag["y"])
+        sx, sy, yaw = _place_on_table_face(tx, ty, tables, eps=tag_thickness)
+        tag_blocks.append(
+            _render_tag(
+                int(tag_id), sx, sy, yaw,
+                size=tag_size,
+                thickness=tag_thickness,
+                height=tag_height,
+            )
         )
-        for tag_id, tag in sorted(tags.items(), key=lambda kv: int(kv[0]))
-    ]
     walls = [
         _render_wall("wall_south", cx, wy0, width, wall_thickness, wall_height),
         _render_wall("wall_north", cx, wy1, width, wall_thickness, wall_height),

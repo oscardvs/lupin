@@ -280,7 +280,7 @@
     </model>
     <model name="apriltag_1_PLACEHOLDER">
       <static>true</static>
-      <pose>0.8000 1.1000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>0.6950 1.9000 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -297,7 +297,7 @@
     </model>
     <model name="apriltag_2_PLACEHOLDER">
       <static>true</static>
-      <pose>0.8000 2.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>0.8000 1.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -314,7 +314,7 @@
     </model>
     <model name="apriltag_3_PLACEHOLDER">
       <static>true</static>
-      <pose>1.7000 2.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>1.7000 1.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -331,7 +331,7 @@
     </model>
     <model name="apriltag_4_PLACEHOLDER">
       <static>true</static>
-      <pose>2.5000 2.8000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.0000 2.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -348,7 +348,7 @@
     </model>
     <model name="apriltag_5_PLACEHOLDER">
       <static>true</static>
-      <pose>2.5000 3.7000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.0000 3.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -365,7 +365,7 @@
     </model>
     <model name="apriltag_6_PLACEHOLDER">
       <static>true</static>
-      <pose>2.4000 6.3000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>2.4550 6.1000 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -382,7 +382,7 @@
     </model>
     <model name="apriltag_7_PLACEHOLDER">
       <static>true</static>
-      <pose>3.1000 2.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.1000 1.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -399,7 +399,7 @@
     </model>
     <model name="apriltag_8_PLACEHOLDER">
       <static>true</static>
-      <pose>4.0000 2.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>4.1050 2.0000 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -416,7 +416,7 @@
     </model>
     <model name="apriltag_9_PLACEHOLDER">
       <static>true</static>
-      <pose>0.8000 3.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>0.8000 2.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -433,7 +433,7 @@
     </model>
     <model name="apriltag_10_PLACEHOLDER">
       <static>true</static>
-      <pose>3.6000 3.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.6000 2.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -450,7 +450,7 @@
     </model>
     <model name="apriltag_11_PLACEHOLDER">
       <static>true</static>
-      <pose>1.2000 4.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>1.2000 3.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -467,7 +467,7 @@
     </model>
     <model name="apriltag_12_PLACEHOLDER">
       <static>true</static>
-      <pose>3.7000 4.0000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.7000 3.8950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -484,7 +484,7 @@
     </model>
     <model name="apriltag_13_PLACEHOLDER">
       <static>true</static>
-      <pose>0.9000 5.2000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>0.7950 5.2000 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -501,7 +501,7 @@
     </model>
     <model name="apriltag_14_PLACEHOLDER">
       <static>true</static>
-      <pose>2.3000 5.7000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>2.1950 5.7000 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -518,7 +518,7 @@
     </model>
     <model name="apriltag_15_PLACEHOLDER">
       <static>true</static>
-      <pose>3.5000 5.1000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.5000 4.9950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -535,7 +535,7 @@
     </model>
     <model name="apriltag_16_PLACEHOLDER">
       <static>true</static>
-      <pose>1.0000 6.9000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>1.0550 6.9000 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -552,7 +552,7 @@
     </model>
     <model name="apriltag_17_PLACEHOLDER">
       <static>true</static>
-      <pose>2.3000 7.6000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>2.1950 7.6000 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -569,7 +569,7 @@
     </model>
     <model name="apriltag_18_PLACEHOLDER">
       <static>true</static>
-      <pose>3.5000 6.8000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.5000 6.6950 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -586,7 +586,7 @@
     </model>
     <model name="apriltag_19_PLACEHOLDER">
       <static>true</static>
-      <pose>3.5000 7.5000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.3950 7.5000 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -603,7 +603,7 @@
     </model>
     <model name="apriltag_20_PLACEHOLDER">
       <static>true</static>
-      <pose>1.0000 8.5000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>1.0550 7.8000 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -620,7 +620,7 @@
     </model>
     <model name="apriltag_21_PLACEHOLDER">
       <static>true</static>
-      <pose>2.8000 8.7000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>2.4550 7.8000 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -637,7 +637,7 @@
     </model>
     <model name="apriltag_22_PLACEHOLDER">
       <static>true</static>
-      <pose>3.9000 8.6000 0.5000 0.0 1.570796 0.0</pose>
+      <pose>3.6550 7.8000 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
