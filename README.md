@@ -147,6 +147,77 @@ ros2 launch lupin_bringup hardware.launch.py
 
 (Launch files will be added by the team in subsequent MRs.)
 
+### Sim — full Nav2 stack
+
+When you want autonomy in Gazebo (KRR Course small-house world,
+slam-built map, MPPI local planner with mecanum/Omni motion, the
+existing teleop/cmd_vel_mux on `/cmd_vel_auto`), use these launches.
+The vendor sim package needs `/usr/share/gazebo/setup.sh` sourced or
+spawn_entity hangs — every teammate hits this once.
+
+```bash
+# Terminal 1 — Gazebo + the MIRTE + teleop chain:
+source /opt/ros/humble/setup.bash
+source /usr/share/gazebo/setup.sh
+source ~/ros2_ws/install/setup.bash
+
+ros2 launch lupin_hmi teleop.launch.py use_sim:=true world:=navigation
+# KRR house has ~200 models; expect 3–5 min to spawn on a typical laptop.
+# spawn_entity may print a 30 s client-side timeout — ignore, gzserver
+# continues. Wait for "Configured and activated mirte_base_controller".
+```
+
+```bash
+# Terminal 2 — Nav2 (run after the controllers are active):
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+
+ros2 launch lupin_navigation nav2.launch.py
+# Brings up map_server, AMCL (set_initial_pose at the spawn pose),
+# controller_server (MPPI, motion_model:Omni), planner_server,
+# behavior_server, bt_navigator, waypoint_follower, velocity_smoother,
+# and two lifecycle_managers. velocity_smoother's smoothed output is
+# remapped to /cmd_vel_auto so it goes through cmd_vel_mux just like
+# the joystick — manual override still wins.
+```
+
+In RViz, set Fixed Frame to `map` and use the **Nav2 Goal** tool to
+send a goal. To re-anchor AMCL after manual driving, use **2D Pose
+Estimate**.
+
+For mapping a new world (instead of using the saved
+`lupin_navigation/maps/krr_house`):
+
+```bash
+# Replace Terminal 2 with slam_toolbox in mapping mode:
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true \
+  slam_params_file:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/config/slam_toolbox_sim.yaml
+
+# Drive around (keyboard fallback if you don't have a joystick):
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args -r cmd_vel:=/cmd_vel_manual
+
+# Save (the transient_local flag is required — slam_toolbox publishes /map durable):
+cd ~/ros2_ws/src/lupin/lupin_navigation/maps
+ros2 run nav2_map_server map_saver_cli -f <name> \
+  --ros-args -p use_sim_time:=true -p map_subscribe_transient_local:=true
+```
+
+### Sim — known limitations
+
+- `gazebo_planar_move` (vendor URDF P3D plugin) publishes `odom →
+  base_link` at ~7 Hz from commanded velocity. Combined with mecanum
+  slip, this gives some drift between global (map) and local (odom)
+  costmaps at long range — first goal usually plans, occasional
+  long-range goals fail and trigger Nav2's clear-costmap recovery.
+  A clean fix needs URDF surgery to silence the vendor plugin's TF
+  and run a `/groundtruth/odom` bridge as the sole publisher;
+  deferred until after the sim demo. **Hardware is unaffected** —
+  real wheel encoders are accurate.
+- `cmd_vel_mux` only forwards manual Twists when nonzero, so the
+  joystick "release" doesn't actively publish a stop — autonomous
+  resumes 0.5 s later. Tracked separately.
+
 ## Repository layout
 
 | Package | Purpose |
