@@ -24,7 +24,15 @@ with a visual confirmation lives outside this package.
 
 ## Quickstart
 
-You need four things up, in any order, before this node has work to do:
+The orchestrator reads tag coordinates from the `mdp-greenhouse` Python
+package, which is **not** in rosdep. Install it once per workspace:
+
+```bash
+pip install 'mdp-greenhouse>=1.0.3,<2'
+```
+
+Then bring up the four pieces in any order before launching the
+orchestrator:
 
 ```bash
 # Terminal 1 — Greenhouse Gazebo world (sim only)

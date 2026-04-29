@@ -28,12 +28,12 @@ os.environ['ROS_LOCALHOST_ONLY'] = '1'
 
 import rclpy
 from action_msgs.msg import GoalStatus
+from builtin_interfaces.msg import Time as TimeMsg
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-
-from builtin_interfaces.msg import Time as TimeMsg
+from rclpy.parameter import Parameter
 
 from lupin_msgs.msg import SensorReading, TagReading
 from lupin_msgs.srv import GetTagReading
@@ -41,16 +41,12 @@ from lupin_msgs.srv import GetTagReading
 from lupin_mission.mission_orchestrator import MissionOrchestrator, State
 
 
-# Tag IDs we use in tests. The fixture below monkey-patches the
-# tag_locations loader so we don't need greenhouse_sim installed in the
-# test environment (it lives in a separate venv on the dev workstation).
 TEST_TAG_IDS = ['1', '2', '3']
 FAKE_TAG_LOCATIONS = {
     tid: {'x': float(i), 'y': float(i) + 0.5, 'sensors': ['temperature']}
     for i, tid in enumerate(TEST_TAG_IDS)
 }
 
-# Reasonable per-test timeout. CI machines can be sluggish.
 DONE_TIMEOUT_SEC = 20.0
 
 
@@ -201,8 +197,10 @@ class MissionOrchestratorIntegrationTest(unittest.TestCase):
         self.harness.stop()
         self._patcher.stop()
 
-    def _make_orchestrator(self, **param_overrides):
-        # Aggressive timeouts so failures surface fast.
+    def _build_orchestrator(self, **param_overrides):
+        """Construct the orchestrator with parameter_overrides — exercises the
+        same wiring that ros2 launch param=value would use, no monkey-poking
+        of private state."""
         defaults = dict(
             tag_sequence=TEST_TAG_IDS,
             approach_yaw=0.0,
@@ -213,26 +211,28 @@ class MissionOrchestratorIntegrationTest(unittest.TestCase):
             frame_id='map',
         )
         defaults.update(param_overrides)
-        node = MissionOrchestrator()
-        # Override declared params after construction so we don't have to
-        # plumb a parameter file in.
-        from rclpy.parameter import Parameter
-        node.set_parameters([
-            Parameter(k, value=v) for k, v in defaults.items()
-        ])
-        # The orchestrator already cached the param values in __init__;
-        # mirror them onto the instance attributes too.
-        node._tag_sequence = [str(t) for t in defaults['tag_sequence']]
-        node._results = [
-            type(node._results[0])(tag_id=t) for t in node._tag_sequence
-        ]
-        node._approach_yaw = float(defaults['approach_yaw'])
-        node._nav_timeout = float(defaults['nav_timeout_sec'])
-        node._service_timeout = float(defaults['service_timeout_sec'])
-        node._dependency_timeout = float(defaults['dependency_timeout_sec'])
-        node._nav_retry_limit = int(defaults['nav_retry_limit'])
-        node._frame_id = str(defaults['frame_id'])
-        return node
+        overrides = [Parameter(k, value=v) for k, v in defaults.items()]
+        return MissionOrchestrator(parameter_overrides=overrides)
+
+    def _start_servers_and_orchestrator(self, nav, bridge, **param_overrides):
+        """Add fake servers, start spinning, wait for discovery via the
+        orchestrator's own clients (not a sleep), then return the orchestrator."""
+        self.harness.add(nav)
+        self.harness.add(bridge)
+        self.harness.start()
+        orchestrator = self._build_orchestrator(**param_overrides)
+        self.harness.add(orchestrator)
+        # Wait deterministically for the orchestrator to discover its deps.
+        # Beats `time.sleep(0.3)` — fails fast if discovery never completes.
+        self.assertTrue(
+            orchestrator._nav_client.wait_for_server(timeout_sec=5.0),
+            'orchestrator never discovered fake nav action server',
+        )
+        self.assertTrue(
+            orchestrator._bridge_client.wait_for_service(timeout_sec=5.0),
+            'orchestrator never discovered fake bridge service',
+        )
+        return orchestrator
 
     def _wait_for_done(self, orchestrator, timeout=DONE_TIMEOUT_SEC):
         return _wait_until(
@@ -243,15 +243,7 @@ class MissionOrchestratorIntegrationTest(unittest.TestCase):
     def test_happy_path_three_tags_all_succeed(self):
         nav = FakeNavServer([GoalStatus.STATUS_SUCCEEDED])
         bridge = FakeBridge()
-        # Servers must exist BEFORE the orchestrator starts dependency-waiting.
-        self.harness.add(nav)
-        self.harness.add(bridge)
-        self.harness.start()
-        # Brief settle so discovery completes.
-        time.sleep(0.3)
-
-        orchestrator = self._make_orchestrator()
-        self.harness.add(orchestrator)
+        orchestrator = self._start_servers_and_orchestrator(nav, bridge)
 
         self.assertTrue(
             self._wait_for_done(orchestrator),
@@ -260,27 +252,19 @@ class MissionOrchestratorIntegrationTest(unittest.TestCase):
         self.assertEqual(nav.goals_received, 3)
         self.assertEqual(bridge.calls, TEST_TAG_IDS)
         self.assertTrue(all(r.succeeded for r in orchestrator._results))
+        self.assertTrue(all(r.nav_attempts == 1 for r in orchestrator._results))
         self.assertEqual(len(orchestrator._mission_log), 3)
 
     # ── nav failure with retry ─────────────────────────────────────────
     def test_nav_aborted_then_succeeds_on_retry(self):
-        # Tag 1: ABORTED first, SUCCEEDED on retry.
-        # Tag 2/3: SUCCEEDED first try (clamped to last entry).
         nav = FakeNavServer([
             GoalStatus.STATUS_ABORTED,
             GoalStatus.STATUS_SUCCEEDED,
         ])
         bridge = FakeBridge()
-        self.harness.add(nav)
-        self.harness.add(bridge)
-        self.harness.start()
-        time.sleep(0.3)
-
-        # Single tag in sequence so the abort+retry pattern is easy to read.
-        orchestrator = self._make_orchestrator(
-            tag_sequence=['1'], nav_retry_limit=1
+        orchestrator = self._start_servers_and_orchestrator(
+            nav, bridge, tag_sequence=['1'], nav_retry_limit=1,
         )
-        self.harness.add(orchestrator)
 
         self.assertTrue(
             self._wait_for_done(orchestrator),
@@ -288,16 +272,15 @@ class MissionOrchestratorIntegrationTest(unittest.TestCase):
         )
         # Two nav goals issued: the aborted one + the retry.
         self.assertEqual(nav.goals_received, 2)
-        # One scan call after the successful retry.
         self.assertEqual(bridge.calls, ['1'])
         self.assertTrue(orchestrator._results[0].succeeded)
-        self.assertEqual(orchestrator._results[0].nav_attempts, 1)
+        # nav_attempts now reflects total attempts including the successful one.
+        self.assertEqual(orchestrator._results[0].nav_attempts, 2)
 
     # ── bridge failure (UNKNOWN_TAG) ───────────────────────────────────
     def test_bridge_unknown_tag_fails_and_advances(self):
         nav = FakeNavServer([GoalStatus.STATUS_SUCCEEDED])
 
-        # Bridge returns UNKNOWN_TAG for tag '2' only.
         def behaviour(tag_id):
             if tag_id == '2':
                 return (
@@ -308,13 +291,9 @@ class MissionOrchestratorIntegrationTest(unittest.TestCase):
             return FakeBridge._default_ok(tag_id)
 
         bridge = FakeBridge(behaviour=behaviour)
-        self.harness.add(nav)
-        self.harness.add(bridge)
-        self.harness.start()
-        time.sleep(0.3)
-
-        orchestrator = self._make_orchestrator(tag_sequence=['1', '2', '3'])
-        self.harness.add(orchestrator)
+        orchestrator = self._start_servers_and_orchestrator(
+            nav, bridge, tag_sequence=['1', '2', '3'],
+        )
 
         self.assertTrue(
             self._wait_for_done(orchestrator),
