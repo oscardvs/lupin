@@ -82,6 +82,7 @@ def _place_on_table_face(
     tables: dict[str, dict[str, float]],
     *,
     eps: float = 0.003,
+    plate_half_width: float = 0.0,
 ) -> tuple[float, float, float]:
     """Snap a tag's (tx, ty) onto the nearest vertical face of the nearest table.
 
@@ -91,9 +92,16 @@ def _place_on_table_face(
 
     The JSON has no per-tag orientation, but the real greenhouse mounts
     tags on the table sides. We pick the closest of the four edges of the
-    nearest table, project the tag's coordinate onto that edge (clamped
-    to the edge length), and offset the tag plate by ``eps`` so it sits
-    just outside the table's collision box rather than intersecting it.
+    nearest table, project the tag's coordinate onto that edge, and offset
+    the tag plate by ``eps`` so it sits just outside the table's collision
+    box rather than intersecting it.
+
+    ``plate_half_width`` is the half-width of the plate along the chosen
+    edge (i.e. ``size / 2`` for a square plate). The projection is clamped
+    so the *whole* plate stays inside the edge length — without this, a
+    tag whose JSON coord falls past the edge endpoint snaps to the corner
+    and pokes half its width past it. If the edge is shorter than the
+    plate (rare in practice — bench legs are >0.16 m), centre the plate.
     """
     if not tables:
         return tx, ty, 0.0
@@ -105,7 +113,6 @@ def _place_on_table_face(
 
     best = min(tables.values(), key=rect_dist)
 
-    # Distance from the tag's coordinate to each of the four edges.
     edges = {
         "south": abs(ty - best["y0"]),
         "north": abs(ty - best["y1"]),
@@ -114,14 +121,20 @@ def _place_on_table_face(
     }
     side = min(edges, key=edges.get)
 
+    def clamp_inside(val: float, lo: float, hi: float) -> float:
+        # Reserve plate_half_width at each end so the whole plate fits.
+        margin_lo = lo + plate_half_width
+        margin_hi = hi - plate_half_width
+        if margin_lo > margin_hi:
+            return (lo + hi) / 2.0
+        return max(margin_lo, min(margin_hi, val))
+
     if side in ("south", "north"):
-        # Project onto a horizontal edge: clamp x to the table's x extent.
-        x = max(best["x0"], min(best["x1"], tx))
+        x = clamp_inside(tx, best["x0"], best["x1"])
         if side == "south":
             return x, best["y0"] - eps, -math.pi / 2.0  # face -Y
         return x, best["y1"] + eps, math.pi / 2.0       # face +Y
-    # Vertical edge: clamp y to the table's y extent.
-    y = max(best["y0"], min(best["y1"], ty))
+    y = clamp_inside(ty, best["y0"], best["y1"])
     if side == "west":
         return best["x0"] - eps, y, math.pi              # face -X
     return best["x1"] + eps, y, 0.0                      # face +X
@@ -242,7 +255,11 @@ def build_world(
     tag_blocks = []
     for tag_id, tag in sorted(tags.items(), key=lambda kv: int(kv[0])):
         tx, ty = float(tag["x"]), float(tag["y"])
-        sx, sy, yaw = _place_on_table_face(tx, ty, tables, eps=tag_thickness)
+        sx, sy, yaw = _place_on_table_face(
+            tx, ty, tables,
+            eps=tag_thickness,
+            plate_half_width=tag_size / 2.0,
+        )
         tag_blocks.append(
             _render_tag(
                 int(tag_id), sx, sy, yaw,
