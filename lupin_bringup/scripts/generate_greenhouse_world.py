@@ -85,27 +85,33 @@ def _render_tag(
     thickness: float,
     height: float,
 ) -> str:
-    # TODO(perception): replace placeholder white face with a real tag36h11
+    # TODO(perception): replace this magenta placeholder with a real tag36h11
     # texture per ID once the perception teammate provides the asset pack.
+    # The placeholder is INTENTIONALLY ugly (bright self-lit magenta) so it's
+    # immediately obvious to anyone running an AprilTag detector against this
+    # world that the visuals are stand-ins — without real textures the
+    # detector will see nothing, which would otherwise be a silent footgun.
+    #
     # Plane is laid out so its normal points along +X (yaw=0, pitch=pi/2).
     # If the JSON ever grows an explicit per-tag yaw, plumb it through here.
     pose_rpy = (0.0, math.pi / 2.0, 0.0)
     pose = f"{x:.4f} {y:.4f} {height:.4f} {pose_rpy[0]} {pose_rpy[1]:.6f} {pose_rpy[2]}"
     # Integer ID embedded in name: AprilTag detector will publish detections
     # using these IDs, and "apriltag_<int>" is parseable downstream.
-    return f"""    <model name="apriltag_{tag_id}">
+    # ID is also set as a Gazebo <visual> name so it shows in tooltips.
+    return f"""    <model name="apriltag_{tag_id}_PLACEHOLDER">
       <static>true</static>
       <pose>{pose}</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>{thickness:.4f} {size:.4f} {size:.4f}</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_{tag_id}_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>{thickness:.4f} {size:.4f} {size:.4f}</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
@@ -207,8 +213,12 @@ def build_world(
   mdp-greenhouse's tag_locations.json. DO NOT EDIT BY HAND — re-run the
   script if the JSON changes.
 
-  Tag IDs follow the JSON (integers). Tag visuals are placeholder white
-  planes; real tag36h11 textures live with the perception teammate.
+  Tag IDs follow the JSON (integers). Tag visuals are PLACEHOLDER bright
+  magenta planes (self-lit, model name suffix _PLACEHOLDER) — they exist
+  to give the AprilTag detector something physically present at the
+  right pose. They will NOT be detected as AprilTags. The perception
+  teammate must replace them with real tag36h11 textures before the
+  detector can produce real detections. See the TODO in the generator.
 -->
 <sdf version="1.6">
   <world name="{world_name}">

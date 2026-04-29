@@ -230,8 +230,19 @@ colcon build --packages-select lupin_bringup --symlink-install
 
 By default the script reads `tag_locations.json` from the installed
 `greenhouse_sim` package (via `importlib.resources`); pass `--input` to
-point it elsewhere. Tag visuals are placeholder white planes — real
-`tag36h11` textures are the perception teammate's territory.
+point it elsewhere.
+
+#### Heads-up for perception integration
+
+The tag visuals in this world are deliberately ugly **bright magenta
+placeholders** (model names `apriltag_<id>_PLACEHOLDER`, visual names
+`TAG_<id>_PLACEHOLDER_NEEDS_TEXTURE`) — present at the right pose so
+the depth camera registers them, but **an AprilTag detector pointed at
+this world will not detect anything** until they're replaced with real
+`tag36h11` textures. Don't spend time debugging "why doesn't my
+detector find anything" — it's the textures. See the TODO inside
+`_render_tag` in `scripts/generate_greenhouse_world.py` for the
+swap-in path.
 
 ## Repository layout
 

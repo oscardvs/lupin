@@ -4,8 +4,12 @@
   mdp-greenhouse's tag_locations.json. DO NOT EDIT BY HAND — re-run the
   script if the JSON changes.
 
-  Tag IDs follow the JSON (integers). Tag visuals are placeholder white
-  planes; real tag36h11 textures live with the perception teammate.
+  Tag IDs follow the JSON (integers). Tag visuals are PLACEHOLDER bright
+  magenta planes (self-lit, model name suffix _PLACEHOLDER) — they exist
+  to give the AprilTag detector something physically present at the
+  right pose. They will NOT be detected as AprilTags. The perception
+  teammate must replace them with real tag36h11 textures before the
+  detector can produce real detections. See the TODO in the generator.
 -->
 <sdf version="1.6">
   <world name="greenhouse">
@@ -274,376 +278,376 @@
         </visual>
       </link>
     </model>
-    <model name="apriltag_1">
+    <model name="apriltag_1_PLACEHOLDER">
       <static>true</static>
       <pose>0.8000 1.1000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_1_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_2">
+    <model name="apriltag_2_PLACEHOLDER">
       <static>true</static>
       <pose>0.8000 2.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_2_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_3">
+    <model name="apriltag_3_PLACEHOLDER">
       <static>true</static>
       <pose>1.7000 2.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_3_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_4">
+    <model name="apriltag_4_PLACEHOLDER">
       <static>true</static>
       <pose>2.5000 2.8000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_4_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_5">
+    <model name="apriltag_5_PLACEHOLDER">
       <static>true</static>
       <pose>2.5000 3.7000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_5_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_6">
+    <model name="apriltag_6_PLACEHOLDER">
       <static>true</static>
       <pose>2.4000 6.3000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_6_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_7">
+    <model name="apriltag_7_PLACEHOLDER">
       <static>true</static>
       <pose>3.1000 2.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_7_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_8">
+    <model name="apriltag_8_PLACEHOLDER">
       <static>true</static>
       <pose>4.0000 2.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_8_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_9">
+    <model name="apriltag_9_PLACEHOLDER">
       <static>true</static>
       <pose>0.8000 3.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_9_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_10">
+    <model name="apriltag_10_PLACEHOLDER">
       <static>true</static>
       <pose>3.6000 3.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_10_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_11">
+    <model name="apriltag_11_PLACEHOLDER">
       <static>true</static>
       <pose>1.2000 4.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_11_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_12">
+    <model name="apriltag_12_PLACEHOLDER">
       <static>true</static>
       <pose>3.7000 4.0000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_12_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_13">
+    <model name="apriltag_13_PLACEHOLDER">
       <static>true</static>
       <pose>0.9000 5.2000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_13_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_14">
+    <model name="apriltag_14_PLACEHOLDER">
       <static>true</static>
       <pose>2.3000 5.7000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_14_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_15">
+    <model name="apriltag_15_PLACEHOLDER">
       <static>true</static>
       <pose>3.5000 5.1000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_15_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_16">
+    <model name="apriltag_16_PLACEHOLDER">
       <static>true</static>
       <pose>1.0000 6.9000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_16_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_17">
+    <model name="apriltag_17_PLACEHOLDER">
       <static>true</static>
       <pose>2.3000 7.6000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_17_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_18">
+    <model name="apriltag_18_PLACEHOLDER">
       <static>true</static>
       <pose>3.5000 6.8000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_18_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_19">
+    <model name="apriltag_19_PLACEHOLDER">
       <static>true</static>
       <pose>3.5000 7.5000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_19_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_20">
+    <model name="apriltag_20_PLACEHOLDER">
       <static>true</static>
       <pose>1.0000 8.5000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_20_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_21">
+    <model name="apriltag_21_PLACEHOLDER">
       <static>true</static>
       <pose>2.8000 8.7000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_21_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
     </model>
-    <model name="apriltag_22">
+    <model name="apriltag_22_PLACEHOLDER">
       <static>true</static>
       <pose>3.9000 8.6000 0.5000 0.0 1.570796 0.0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
         </collision>
-        <visual name="visual">
+        <visual name="TAG_22_PLACEHOLDER_NEEDS_TEXTURE">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
           <material>
-            <ambient>1.0 1.0 1.0 1</ambient>
-            <diffuse>1.0 1.0 1.0 1</diffuse>
-            <emissive>0.2 0.2 0.2 1</emissive>
+            <ambient>1.0 0.0 1.0 1</ambient>
+            <diffuse>1.0 0.0 1.0 1</diffuse>
+            <emissive>1.0 0.0 1.0 1</emissive>
           </material>
         </visual>
       </link>
