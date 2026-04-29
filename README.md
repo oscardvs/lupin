@@ -196,6 +196,43 @@ ros2 launch lupin_bringup hardware.launch.py
 
 (Launch files will be added by the team in subsequent MRs.)
 
+### Greenhouse Gazebo world
+
+For perception / navigation work that needs the actual greenhouse layout
+(matched to `mdp-greenhouse`'s tag and table coordinates), use:
+
+```bash
+ros2 launch lupin_bringup greenhouse_sim.launch.py
+```
+
+This brings up Gazebo with the generated greenhouse world, spawns the
+MIRTE Master with its Astra Pro Plus depth-camera plugin
+(`/camera/image_raw`, `/camera/depth/image_raw`, `/camera/points`,
+`/camera/camera_info`), and starts the standard ros2_control + twist_mux
+pipeline. Override the spawn pose with `x:=`, `y:=`, `yaw:=` if needed —
+the default puts the robot in the south aisle facing the tables.
+
+The world's tag and table positions are derived from the
+`tag_locations.json` shipped inside the `mdp-greenhouse` Python package,
+so the Gazebo origin is the same as the bridge's coordinate frame —
+nav2, the bridge, and AprilTag detection all agree about positions.
+
+#### Regenerating the world
+
+The committed `lupin_bringup/worlds/greenhouse.world` is a deterministic
+output of `lupin_bringup/scripts/generate_greenhouse_world.py`. Re-run
+the script if `mdp-greenhouse` ever publishes a new layout:
+
+```bash
+python3 src/lupin/lupin_bringup/scripts/generate_greenhouse_world.py
+colcon build --packages-select lupin_bringup --symlink-install
+```
+
+By default the script reads `tag_locations.json` from the installed
+`greenhouse_sim` package (via `importlib.resources`); pass `--input` to
+point it elsewhere. Tag visuals are placeholder white planes — real
+`tag36h11` textures are the perception teammate's territory.
+
 ## Repository layout
 
 | Package | Purpose |
