@@ -11,6 +11,14 @@ Forwarding ``world=`` would give us an immediately stuck robot. So we
 replicate the vendor launch's contents here but expose the spawn pose as
 launch args, defaulting to a spot in the greenhouse's south aisle.
 
+Gazebo classic env: this launch sets ``GAZEBO_PLUGIN_PATH`` /
+``GAZEBO_RESOURCE_PATH`` / ``GAZEBO_MODEL_PATH`` / ``OGRE_RESOURCE_PATH``
+to the Ubuntu-22.04 / gazebo-classic-11 defaults via ``SetEnvironmentVariable``
+so the launch works without sourcing ``/usr/share/gazebo/setup.sh`` first.
+This was the recurring "spawn_entity hangs / Scene shared_ptr null" footgun
+every teammate hit on first run; the launch silently fixed it now.
+The Append semantics preserve any user-set values.
+
 The robot URDF already includes an Astra Pro Plus depth-camera Gazebo plugin
 (publishing on ``/camera/...``); no extra sensor wiring is needed here.
 
@@ -22,10 +30,25 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import (
+    AppendEnvironmentVariable,
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    SetEnvironmentVariable,
+)
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+
+# Mirrors the exports from /usr/share/gazebo/setup.sh on Ubuntu 22.04 +
+# gazebo-classic-11 (the documented Lupin sim environment). Hardcoded
+# because the alternative — relying on every teammate to source another
+# setup.sh — has burned everyone at least once.
+_GAZEBO_PLUGIN_PATH = '/usr/lib/x86_64-linux-gnu/gazebo-11/plugins'
+_GAZEBO_RESOURCE_PATH = '/usr/share/gazebo-11'
+_GAZEBO_MODEL_PATH = '/usr/share/gazebo-11/models'
+_OGRE_RESOURCE_PATH = '/usr/lib/x86_64-linux-gnu/OGRE-1.9.0'
 
 
 def generate_launch_description():
@@ -40,6 +63,20 @@ def generate_launch_description():
         pkg_mirte_gazebo, 'launch', 'spawn_mirte_master.launch.xml'
     )
     twist_mux_config = PathJoinSubstitution([pkg_mirte_gazebo, 'config', 'twist_mux.yaml'])
+
+    # Append rather than overwrite so anything the user already set
+    # (custom plugin dirs, vendor models) stays in front. SetEnvironmentVariable
+    # is used for OGRE_RESOURCE_PATH because it is typically unset and
+    # appending to "" would leave a leading colon.
+    gazebo_env = [
+        AppendEnvironmentVariable('GAZEBO_PLUGIN_PATH', _GAZEBO_PLUGIN_PATH),
+        AppendEnvironmentVariable('GAZEBO_RESOURCE_PATH', _GAZEBO_RESOURCE_PATH),
+        AppendEnvironmentVariable('GAZEBO_MODEL_PATH', _GAZEBO_MODEL_PATH),
+        SetEnvironmentVariable(
+            'OGRE_RESOURCE_PATH',
+            os.environ.get('OGRE_RESOURCE_PATH') or _OGRE_RESOURCE_PATH,
+        ),
+    ]
 
     args = [
         DeclareLaunchArgument(
@@ -110,6 +147,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        *gazebo_env,
         *args,
         gazebo,
         spawn_robot,
