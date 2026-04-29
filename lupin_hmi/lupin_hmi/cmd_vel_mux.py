@@ -5,9 +5,13 @@ from geometry_msgs.msg import Twist
 class CmdVelMux(Node):
     def __init__(self):
         super().__init__('cmd_vel_mux')
-        
-        # Output to the robot base
-        self.publisher_ = self.create_publisher(Twist, '/mirte_base_controller/cmd_vel_unstamped', 10)
+
+        # Real Mirte firmware listens on /mirte_base_controller/cmd_vel; sim uses the
+        # _unstamped variant. Override via the `cmd_vel_topic` parameter from the launch.
+        self.declare_parameter('cmd_vel_topic', '/mirte_base_controller/cmd_vel')
+        out_topic = self.get_parameter('cmd_vel_topic').get_parameter_value().string_value
+        self.get_logger().info(f'cmd_vel_mux publishing on {out_topic}')
+        self.publisher_ = self.create_publisher(Twist, out_topic, 10)
         
         # Inputs: Manual (iPhone/Keyboard) vs Autonomous (Group Logic)
         self.create_subscription(Twist, '/cmd_vel_manual', self.manual_callback, 10)
