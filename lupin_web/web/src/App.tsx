@@ -1,10 +1,11 @@
-import { Camera, Gauge, Map as MapIcon, MessageSquare, Sliders } from 'lucide-react'
+import { Bot, Camera, Gauge, Map as MapIcon, MessageSquare, Sliders } from 'lucide-react'
 import { useState } from 'react'
 
 import { SettingsDrawer } from '@/components/SettingsDrawer'
 import { TopBar } from '@/components/TopBar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ArmView } from '@/components/views/ArmView'
 import { CamerasView } from '@/components/views/CamerasView'
 import { LogsView } from '@/components/views/LogsView'
 import { MapView } from '@/components/views/MapView'
@@ -16,10 +17,11 @@ import { useApplyTheme } from '@/lib/settings'
 
 const TABS = [
   { id: 'teleop', code: '01', label: 'Teleop', Icon: Sliders, View: TeleopView },
-  { id: 'cameras', code: '02', label: 'Cameras', Icon: Camera, View: CamerasView },
-  { id: 'telemetry', code: '03', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
-  { id: 'logs', code: '04', label: 'Logs', Icon: MessageSquare, View: LogsView },
-  { id: 'map', code: '05', label: 'Map', Icon: MapIcon, View: MapView },
+  { id: 'arm', code: '02', label: 'Arm', Icon: Bot, View: ArmView },
+  { id: 'cameras', code: '03', label: 'Cameras', Icon: Camera, View: CamerasView },
+  { id: 'telemetry', code: '04', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
+  { id: 'logs', code: '05', label: 'Logs', Icon: MessageSquare, View: LogsView },
+  { id: 'map', code: '06', label: 'Map', Icon: MapIcon, View: MapView },
 ] as const
 
 export default function App() {

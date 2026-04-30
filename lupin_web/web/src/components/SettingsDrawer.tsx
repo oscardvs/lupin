@@ -78,6 +78,28 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
               <Field label="Camera"><Input value={settings.cameraTopic} onChange={(e) => update({ cameraTopic: e.target.value })} /></Field>
             </Section>
 
+            <Section title="Arm">
+              <Field label="Servo namespace">
+                <Input
+                  value={settings.armServoNamespace}
+                  onChange={(e) => update({ armServoNamespace: e.target.value })}
+                  placeholder="/io/servo/hiwonder"
+                />
+              </Field>
+              <Field label="Default rate (deg/s)">
+                <Input
+                  type="number"
+                  min={1}
+                  max={360}
+                  value={settings.armRateDegPerSec}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    if (Number.isFinite(n) && n > 0) update({ armRateDegPerSec: n })
+                  }}
+                />
+              </Field>
+            </Section>
+
             <Section title="Appearance">
               <Field label="Theme">
                 <div className="flex gap-2">

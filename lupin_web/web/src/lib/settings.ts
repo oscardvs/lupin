@@ -24,6 +24,11 @@ export interface Settings {
   mapFrame: string
   baseFrame: string
   speedScale: number
+  // Arm
+  /** Service / topic prefix for the Hiwonder serial-bus servos (no trailing slash). */
+  armServoNamespace: string
+  /** Default angular rate sent with `set_angle_with_speed`, in degrees/second. */
+  armRateDegPerSec: number
   theme: 'dark' | 'light'
   debugPublish: boolean
 }
@@ -51,6 +56,8 @@ export const DEFAULT_SETTINGS: Settings = {
   mapFrame: 'map',
   baseFrame: 'base_link',
   speedScale: 0.5,
+  armServoNamespace: '/io/servo/hiwonder',
+  armRateDegPerSec: 60,
   theme: 'dark',
   debugPublish: false,
 }
