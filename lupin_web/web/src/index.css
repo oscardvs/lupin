@@ -1,0 +1,266 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Greenhouse mission console — deep botanical ink, lichen primary, signal cyan. */
+    --background: 120 12% 5%;
+    --foreground: 60 18% 92%;
+    --card: 120 10% 7%;
+    --card-foreground: 60 18% 92%;
+    --popover: 120 12% 6%;
+    --popover-foreground: 60 18% 92%;
+    --primary: 78 90% 58%;            /* lichen / lupin chartreuse */
+    --primary-foreground: 120 25% 6%;
+    --secondary: 120 8% 12%;
+    --secondary-foreground: 60 18% 92%;
+    --muted: 120 8% 11%;
+    --muted-foreground: 80 10% 60%;
+    --accent: 78 60% 22%;
+    --accent-foreground: 78 90% 75%;
+    --destructive: 8 92% 55%;          /* warm signal-red */
+    --destructive-foreground: 0 0% 100%;
+    --border: 120 8% 14%;
+    --input: 120 8% 14%;
+    --ring: 78 90% 58%;
+    --radius: 0.25rem;
+
+    /* Custom palette tokens (used directly via arbitrary-value classes) */
+    --hairline: 120 6% 18%;
+    --signal: 192 90% 60%;             /* cyan data stream */
+    --warning: 38 95% 60%;             /* amber */
+    --serif-shift: 0.04em;
+  }
+
+  .light {
+    --background: 60 25% 97%;
+    --foreground: 120 30% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 120 30% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 120 30% 8%;
+    --primary: 88 80% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 60 20% 92%;
+    --secondary-foreground: 120 30% 8%;
+    --muted: 60 20% 92%;
+    --muted-foreground: 120 8% 38%;
+    --accent: 88 70% 88%;
+    --accent-foreground: 88 80% 22%;
+    --destructive: 8 80% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 60 12% 84%;
+    --input: 60 12% 84%;
+    --ring: 88 80% 32%;
+    --hairline: 60 8% 80%;
+    --signal: 195 80% 38%;
+    --warning: 32 90% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body, #root {
+    @apply h-full;
+  }
+  html {
+    color-scheme: dark;
+    font-feature-settings: 'ss01', 'cv01', 'cv11';
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: contain;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+
+    /* Atmospheric base: hex-grid + soft chartreuse bloom from top-left. */
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(
+        1100px 700px at -10% -10%,
+        hsla(78, 90%, 45%, 0.08),
+        transparent 60%
+      ),
+      radial-gradient(
+        900px 600px at 110% 0%,
+        hsla(192, 90%, 50%, 0.05),
+        transparent 60%
+      ),
+      linear-gradient(
+        to bottom,
+        hsla(0, 0%, 0%, 0) 0%,
+        hsla(0, 0%, 0%, 0.45) 100%
+      );
+    background-attachment: fixed;
+  }
+
+  /* Layered grid texture sits behind everything. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(hsla(120, 8%, 30%, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, hsla(120, 8%, 30%, 0.08) 1px, transparent 1px);
+    background-size: 56px 56px;
+    background-position: -1px -1px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  .light body {
+    background-image:
+      radial-gradient(
+        1100px 700px at -10% -10%,
+        hsla(88, 80%, 60%, 0.18),
+        transparent 60%
+      ),
+      radial-gradient(
+        900px 600px at 110% 0%,
+        hsla(195, 70%, 60%, 0.12),
+        transparent 60%
+      );
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Instrument Serif', 'Cormorant Garamond', ui-serif, Georgia, serif;
+    font-style: italic;
+    letter-spacing: var(--serif-shift);
+  }
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-feature-settings: 'ss02', 'cv01';
+  }
+  .font-sans {
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  }
+  /* Tiny tracked uppercase used for instrument labels. */
+  .tag {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: hsl(var(--muted-foreground));
+  }
+  .tag-strong {
+    color: hsl(var(--foreground));
+  }
+  .tag-accent {
+    color: hsl(var(--primary));
+  }
+  /* Hairline tokens (border + bg + divide) using custom hairline color. */
+  .border-hairline {
+    border-color: hsl(var(--hairline));
+  }
+  .bg-hairline {
+    background-color: hsl(var(--hairline));
+  }
+  .divide-hairline > :not([hidden]) ~ :not([hidden]) {
+    border-color: hsl(var(--hairline));
+  }
+  .text-signal { color: hsl(var(--signal)); }
+  .text-warning { color: hsl(var(--warning)); }
+  .bg-signal { background-color: hsl(var(--signal)); }
+  .bg-warning { background-color: hsl(var(--warning)); }
+  .bg-grid {
+    background-image:
+      linear-gradient(hsla(120, 8%, 30%, 0.10) 1px, transparent 1px),
+      linear-gradient(90deg, hsla(120, 8%, 30%, 0.10) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  /* Subtle scan-line that pulses across connected panels. */
+  .scanline {
+    position: relative;
+    overflow: hidden;
+  }
+  .scanline::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsla(78, 90%, 60%, 0.55) 50%,
+      transparent 100%
+    );
+    animation: scan-y 6s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes scan-y {
+    0%   { transform: translateY(0); opacity: 0.0; }
+    10%  { opacity: 0.9; }
+    90%  { opacity: 0.9; }
+    100% { transform: translateY(100%); opacity: 0.0; }
+  }
+
+  /* Reticle / L-bracket corners — pure CSS, dropped on any positioned panel. */
+  .reticle {
+    position: relative;
+  }
+  .reticle::before,
+  .reticle::after,
+  .reticle > .reticle-bl,
+  .reticle > .reticle-br {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-color: hsl(var(--primary) / 0.7);
+    border-style: solid;
+    pointer-events: none;
+  }
+  .reticle::before {
+    top: -1px; left: -1px;
+    border-width: 1px 0 0 1px;
+  }
+  .reticle::after {
+    top: -1px; right: -1px;
+    border-width: 1px 1px 0 0;
+  }
+  .reticle > .reticle-bl {
+    bottom: -1px; left: -1px;
+    border-width: 0 0 1px 1px;
+  }
+  .reticle > .reticle-br {
+    bottom: -1px; right: -1px;
+    border-width: 0 1px 1px 0;
+  }
+
+  /* Soft glow used on the active primary surfaces. */
+  .glow-primary {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.35),
+      0 0 32px -8px hsl(var(--primary) / 0.45);
+  }
+
+  /* Number tickers — slight warmth, used for live telemetry. */
+  .ticker {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+}
