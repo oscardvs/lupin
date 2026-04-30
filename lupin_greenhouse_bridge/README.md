@@ -52,31 +52,13 @@ config; sentinels mean "leave the upstream default alone". Setting
 | `speedup_factor` | `0.0` | Sim seconds per real second (default config: 1800 → full 24 h cycle in 48 s). |
 | `debug_seed` | `-1` | RNG seed; deterministic noise for assertion-based tests. |
 
-## Upstream gotchas (mdp-greenhouse, as of 1.0.6)
+## Upstream
 
-- **Missing entry point.** The wheel ships no console script, so the
-  upstream `mdp-greenhouse` CLI in the README is **not** on PATH.
-  Invoke as a module: `python -m greenhouse_sim.cli ...`.
-- **Undeclared deps.** Bare `pip install mdp-greenhouse` crashes on
-  first import (`ModuleNotFoundError: yaml`). Top-level README's
-  prerequisites step pins the missing deps (`pyyaml`, `matplotlib`,
-  `numpy`, `python3-tk` for GUIs).
-- **`current_time()` returns wrong values (partial fix in 1.0.6).**
-  1.0.6 wraps the result with `% 86400`, so the *range* is now
-  guaranteed. The hour-to-seconds conversion underneath is still
-  wrong in both branches:
-  - debug uses `t_h * 24 * 60 * 60` — that's seconds-per-day, ×24
-    too big. Effect: every integer `debug_time_of_day` collapses to
-    `0` after the wrap.
-  - live uses `24 * 60 * now.hour` — that's 1440 sec/h instead of
-    3600, ×2.5 too small.
-
-  Effect: `sim_time_of_day_seconds` does not correspond to wall-clock
-  time — treat it as opaque. The bridge pins
-  `mdp-greenhouse>=1.0.6` for the range guarantee and keeps its own
-  modulo wrap as defense-in-depth. `debug_seed` is unaffected and
-  works correctly. Reported to C.Pek@tudelft.nl; partial fix landed
-  in 1.0.6, the conversion itself is still pending.
+Pinned to `mdp-greenhouse>=1.0.7`, which fixes the
+`current_time()` hour-to-seconds conversion (debug + live), declares
+its own runtime deps (`pyyaml`, `numpy`, `matplotlib`, `fonttools`),
+and ships the `mdp-greenhouse` console script. Earlier versions had
+all three of those broken.
 
 ## Tests
 

@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
-// Bumped from v1 → v2 when default topics changed (IMU + battery on /io/*,
-// web_video_server on :8091). Old persisted v1 blobs override the new
-// defaults silently, so we ignore them on load and start fresh.
-const STORAGE_KEY = 'lupin-hmi-settings/v2'
+// v3 adds voice-assistant fields (Gemini Live). v2 keys are migrated forward —
+// rosbridge URL and topic overrides are preserved; new voice fields fall back
+// to defaults.
+const STORAGE_KEY = 'lupin-hmi-settings/v3'
+const LEGACY_STORAGE_KEYS = ['lupin-hmi-settings/v2']
+
+export interface VoiceNamedLocation {
+  x: number
+  y: number
+  yaw: number
+}
 
 export interface Settings {
   rosUrl: string
@@ -29,6 +36,23 @@ export interface Settings {
   armServoNamespace: string
   /** Default angular rate sent with `set_angle_with_speed`, in degrees/second. */
   armRateDegPerSec: number
+  // Voice (Gemini Live)
+  /** Google AI Studio API key. Stored in localStorage only — never committed. */
+  geminiApiKey: string
+  /** Live-API model id, full path form: `models/<id>`. */
+  geminiModel: string
+  /** BCP-47 language code hint sent to the model (e.g. 'en-US', 'nl-NL'). */
+  voiceLanguage: string
+  /** When true, mic only opens while the user holds the button. False = open mic toggle. */
+  voicePushToTalk: boolean
+  /** Hard cap on |linear.x| / |linear.y| the voice agent can request, m/s. */
+  voiceMaxLinearMps: number
+  /** Hard cap on |angular.z| the voice agent can request, rad/s. */
+  voiceMaxAngularRps: number
+  /** System instruction prepended to every session. */
+  voiceSystemPrompt: string
+  /** Named map poses the voice agent can navigate to via `nav_goto_named`. */
+  voiceNamedLocations: Record<string, VoiceNamedLocation>
   theme: 'dark' | 'light'
   debugPublish: boolean
 }
@@ -58,6 +82,22 @@ export const DEFAULT_SETTINGS: Settings = {
   speedScale: 0.5,
   armServoNamespace: '/io/servo/hiwonder',
   armRateDegPerSec: 60,
+  geminiApiKey: '',
+  geminiModel: 'models/gemini-3.1-flash-live-preview',
+  voiceLanguage: 'en-US',
+  voicePushToTalk: true,
+  voiceMaxLinearMps: 0.3,
+  voiceMaxAngularRps: 0.8,
+  voiceSystemPrompt: [
+    'You are Lupin, the on-board voice assistant of a MIRTE Master mobile robot.',
+    'You can drive the base, send Nav2 goals, set arm presets, and report telemetry.',
+    'Keep replies short — one or two sentences. Confirm motion commands before',
+    'executing them and never move the robot if the user sounds unsure or asks a',
+    'question. Refuse anything beyond your declared tools and explain why.',
+  ].join(' '),
+  voiceNamedLocations: {
+    home: { x: 0, y: 0, yaw: 0 },
+  },
   theme: 'dark',
   debugPublish: false,
 }
@@ -84,7 +124,12 @@ function defaultWebVideoUrl(): string {
 function readStored(): Partial<Settings> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Partial<Settings>) : {}
+    if (raw) return JSON.parse(raw) as Partial<Settings>
+    for (const legacy of LEGACY_STORAGE_KEYS) {
+      const old = localStorage.getItem(legacy)
+      if (old) return JSON.parse(old) as Partial<Settings>
+    }
+    return {}
   } catch {
     return {}
   }

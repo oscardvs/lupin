@@ -1,4 +1,5 @@
-import { Moon, RotateCcw, Sun } from 'lucide-react'
+import { Eye, EyeOff, Moon, RotateCcw, Sun } from 'lucide-react'
+import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
-import { useSettings } from '@/lib/settings'
+import { Textarea } from '@/components/ui/textarea'
+import { useSettings, type VoiceNamedLocation } from '@/lib/settings'
 
 interface SettingsDrawerProps {
   open: boolean
@@ -17,6 +19,28 @@ interface SettingsDrawerProps {
 
 export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
   const [settings, update, reset] = useSettings()
+  const [showKey, setShowKey] = useState(false)
+  const [locationsDraft, setLocationsDraft] = useState<string>(() =>
+    JSON.stringify(settings.voiceNamedLocations, null, 2),
+  )
+  const [locationsError, setLocationsError] = useState<string | null>(null)
+
+  const commitLocations = (raw: string) => {
+    setLocationsDraft(raw)
+    try {
+      const parsed = JSON.parse(raw) as Record<string, VoiceNamedLocation>
+      // Lightweight shape check — anything else is the model's problem at runtime.
+      for (const [name, p] of Object.entries(parsed)) {
+        if (typeof p?.x !== 'number' || typeof p?.y !== 'number' || typeof p?.yaw !== 'number') {
+          throw new Error(`"${name}" is missing numeric x/y/yaw`)
+        }
+      }
+      update({ voiceNamedLocations: parsed })
+      setLocationsError(null)
+    } catch (e) {
+      setLocationsError(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -118,6 +142,104 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
                     <Sun className="mr-2 h-4 w-4" /> Light
                   </Button>
                 </div>
+              </Field>
+            </Section>
+
+            <Section title="Voice (Gemini Live)">
+              <Field label="Google AI Studio API key">
+                <div className="flex gap-2">
+                  <Input
+                    type={showKey ? 'text' : 'password'}
+                    value={settings.geminiApiKey}
+                    onChange={(e) => update({ geminiApiKey: e.target.value })}
+                    placeholder="AIza…"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowKey((s) => !s)}
+                    aria-label={showKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Stored in localStorage on this device only. Never committed, never sent to the
+                  robot. Get one at <span className="font-mono">aistudio.google.com</span>.
+                </p>
+              </Field>
+              <Field label="Model">
+                <Input
+                  value={settings.geminiModel}
+                  onChange={(e) => update({ geminiModel: e.target.value })}
+                  placeholder="models/gemini-3.1-flash-live-preview"
+                  spellCheck={false}
+                />
+              </Field>
+              <Field label="Language (BCP-47)">
+                <Input
+                  value={settings.voiceLanguage}
+                  onChange={(e) => update({ voiceLanguage: e.target.value })}
+                  placeholder="en-US"
+                  spellCheck={false}
+                />
+              </Field>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="voicePushToTalk" className="text-sm">Push-to-talk</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Off → mic stays open while session is live (hands-free).
+                  </p>
+                </div>
+                <Switch
+                  id="voicePushToTalk"
+                  checked={settings.voicePushToTalk}
+                  onCheckedChange={(v) => update({ voicePushToTalk: v })}
+                />
+              </div>
+              <Field label="Max linear speed (m/s)">
+                <Input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  value={settings.voiceMaxLinearMps}
+                  onChange={(e) => update({ voiceMaxLinearMps: Number(e.target.value) || 0 })}
+                />
+              </Field>
+              <Field label="Max angular speed (rad/s)">
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={settings.voiceMaxAngularRps}
+                  onChange={(e) => update({ voiceMaxAngularRps: Number(e.target.value) || 0 })}
+                />
+              </Field>
+              <Field label="System prompt">
+                <Textarea
+                  value={settings.voiceSystemPrompt}
+                  onChange={(e) => update({ voiceSystemPrompt: e.target.value })}
+                  rows={5}
+                />
+              </Field>
+              <Field label="Named locations (JSON)">
+                <Textarea
+                  value={locationsDraft}
+                  onChange={(e) => commitLocations(e.target.value)}
+                  rows={6}
+                  className="font-mono text-[12px]"
+                  spellCheck={false}
+                />
+                {locationsError ? (
+                  <p className="text-[11px] text-destructive">{locationsError}</p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Map-frame poses the agent can navigate to via name.
+                  </p>
+                )}
               </Field>
             </Section>
 

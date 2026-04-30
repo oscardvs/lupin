@@ -1,4 +1,4 @@
-import { Bot, Camera, Gauge, Map as MapIcon, MessageSquare, Sliders } from 'lucide-react'
+import { Bot, Camera, Gauge, Map as MapIcon, MessageSquare, Mic, Sliders } from 'lucide-react'
 import { useState } from 'react'
 
 import { SettingsDrawer } from '@/components/SettingsDrawer'
@@ -11,6 +11,7 @@ import { LogsView } from '@/components/views/LogsView'
 import { MapView } from '@/components/views/MapView'
 import { TeleopView } from '@/components/views/TeleopView'
 import { TelemetryView } from '@/components/views/TelemetryView'
+import { VoiceView } from '@/components/views/VoiceView'
 import { EStopProvider } from '@/lib/estop'
 import { RosProvider } from '@/lib/ros'
 import { useApplyTheme } from '@/lib/settings'
@@ -18,10 +19,11 @@ import { useApplyTheme } from '@/lib/settings'
 const TABS = [
   { id: 'teleop', code: '01', label: 'Teleop', Icon: Sliders, View: TeleopView },
   { id: 'arm', code: '02', label: 'Arm', Icon: Bot, View: ArmView },
-  { id: 'cameras', code: '03', label: 'Cameras', Icon: Camera, View: CamerasView },
-  { id: 'telemetry', code: '04', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
-  { id: 'logs', code: '05', label: 'Logs', Icon: MessageSquare, View: LogsView },
-  { id: 'map', code: '06', label: 'Map', Icon: MapIcon, View: MapView },
+  { id: 'voice', code: '03', label: 'Voice', Icon: Mic, View: VoiceView },
+  { id: 'cameras', code: '04', label: 'Cameras', Icon: Camera, View: CamerasView },
+  { id: 'telemetry', code: '05', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
+  { id: 'logs', code: '06', label: 'Logs', Icon: MessageSquare, View: LogsView },
+  { id: 'map', code: '07', label: 'Map', Icon: MapIcon, View: MapView },
 ] as const
 
 export default function App() {
@@ -36,10 +38,17 @@ export default function App() {
   )
 }
 
+function initialTab(): (typeof TABS)[number]['id'] {
+  if (typeof window === 'undefined') return 'teleop'
+  const t = new URLSearchParams(window.location.search).get('tab')
+  if (t && TABS.some((tab) => tab.id === t)) return t as (typeof TABS)[number]['id']
+  return 'teleop'
+}
+
 function Shell() {
   useApplyTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('teleop')
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(initialTab)
   const active = TABS.find((t) => t.id === tab) ?? TABS[0]
 
   return (
