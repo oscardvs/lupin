@@ -9,10 +9,14 @@ still up.
 ## Surfaces
 
 A persistent top bar (logo · rosbridge pill · battery pill · clock · settings
-gear · permanent E-STOP) wraps five tabs:
+gear · permanent E-STOP) wraps six tabs:
 
 - **Teleop** — two virtual joysticks (left = linear x/y, right = angular z),
   live Twist readout, speed-scale slider, mirrored stop button.
+- **Voice** — push-to-talk console wired to Google's Gemini Live API. The
+  model can drive (`drive`/`stop`), navigate (`nav_goto`/`nav_goto_named`),
+  set arm presets (`arm_preset`), and read live state (`query_state`). Mock
+  session runs without an API key. See **Voice assistant** below.
 - **Cameras** — MJPEG stream from `web_video_server` with FPS counter,
   reload, fullscreen, friendly placeholder when no stream.
 - **Telemetry** — Lidar canvas (top-down), IMU (roll/pitch/yaw + ω bars),
@@ -152,7 +156,67 @@ The unit binds `:8090` only — never `:80` (course UI), `:8080` (wifi-connect
 AP captive portal), or `:9090` (rosbridge). Failure of the course web stack
 does not bring this down and vice versa.
 
+## Voice assistant
+
+The Voice tab opens a single bidirectional WebSocket directly from the browser
+to **Gemini 3.1 Flash Live** (Google AI Studio). One stream carries mic audio
+in (16 kHz mono PCM-16, 50 ms frames, base64), and the model's voice + tool
+calls + transcripts back. We don't run a separate STT/LLM/TTS pipeline — the
+Live API handles all three with native function calling.
+
+### Tool surface
+
+Declared at session start; the model decides which to invoke:
+
+| Tool             | Effect                                                                  |
+|------------------|-------------------------------------------------------------------------|
+| `drive`          | Short Twist burst (`linear_x/y`, `angular_z`, `duration_s` ≤ 2 s).      |
+| `stop`           | Zero Twist, immediate.                                                  |
+| `nav_goto`       | `geometry_msgs/PoseStamped` → `goalPoseTopic` (default `/goal_pose`).   |
+| `nav_goto_named` | Same, but resolved from the named-locations map in Settings.            |
+| `arm_preset`     | `lupin_msgs/srv/SetArmPreset` service call (pending arm-side service).  |
+| `query_state`    | Reads cached `pose`, `battery`, `estop`, `nav_status`. Read-only.       |
+| `speak`          | No action — model just speaks the response.                             |
+
+All motion-producing tools are gated by the same `EStop` provider as Teleop —
+when E-stop is active, calls return `ok:false, error:"e-stop active: …"` and
+the model is told to back off. `drive` is also clamped per-call to the
+`voiceMaxLinearMps` / `voiceMaxAngularRps` settings.
+
+### Setup
+
+1. Get an API key at `aistudio.google.com` (free tier is plenty for the demo).
+2. Open Settings → Voice → API key, paste it. Persisted to `localStorage` only.
+3. Optional: edit the system prompt, BCP-47 language, named-locations JSON,
+   max linear / angular caps, and push-to-talk vs open-mic.
+4. Switch to the Voice tab, hit **Start session**, then hold the mic.
+
+Without a key the tab runs a scripted mock session that exercises every code
+path (status transitions, transcript rendering, a synthetic `query_state`
+tool call) so the UI demos end-to-end offline. The mock harness also kicks in
+automatically under `?mock=1`.
+
+### Security tradeoff
+
+The API key is sent as a `?key=` query parameter on the WebSocket — the
+browser holds the secret. Acceptable for our LAN-only demo; **do not expose
+this UI on the public internet without first wiring the ephemeral-token
+broker**. Google's `auth_tokens.create` endpoint is the supported migration
+path; a tiny ROS Python node can mint short-lived tokens and the front-end
+already has a code seam to swap in the token-fetching client.
+
+### Browser support
+
+- Chromium 121+, Firefox 125+, Safari 17.4+ — anything with `AudioWorklet`
+  and `AudioContext({ sampleRate: 16000 })`. The mic capture path falls back
+  to runtime resampling if the chosen sample rate is rejected.
+- Mic permission is per-origin; on the first session the browser will prompt.
+- E-stop fires on `visibilitychange`/`blur`/`beforeunload` *and* flushes
+  pending TTS playback so the model doesn't keep talking after the user
+  switches tabs.
+
 ## What's not in here yet
 
 - AprilTag overlay on the camera stream
+- Voice agent: ephemeral-token broker, persona / wake-word, multi-turn memory
 - Authentication, PWA / service worker, multi-user awareness — all deferred
