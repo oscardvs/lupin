@@ -21,7 +21,8 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   rosUrl: '',
-  cmdVelTopic: '/cmd_vel',
+  // real Mirte's controller listens on the stamped Twist topic
+  cmdVelTopic: '/mirte_base_controller/cmd_vel',
   cmdVelType: 'geometry_msgs/msg/Twist',
   imuTopic: '/imu/data',
   scanTopic: '/scan',
