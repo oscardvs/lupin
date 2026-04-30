@@ -16,9 +16,6 @@ from lupin_msgs.msg import SensorReading, TagReading
 from lupin_msgs.srv import GetTagReading
 
 
-SECONDS_IN_DAY = 24 * 60 * 60
-
-
 class GreenhouseBridgeNode(Node):
     """Wraps a single GreenhouseSimulator instance behind a ROS 2 service."""
 
@@ -85,17 +82,12 @@ class GreenhouseBridgeNode(Node):
             return response
 
         wall_now = self.get_clock().now().to_msg()
-        sim_seconds = float(self._sim.current_time())
         data = self._sim.get_sensor_data(tag_id)
 
         reading = TagReading()
         reading.tag_id = tag_id
         reading.stamp = wall_now
-        # Defense-in-depth on the [0, 86400) contract documented in
-        # TagReading.msg. mdp-greenhouse>=1.0.6 wraps the result too, but
-        # the conversion underneath is still wrong (see README), so the
-        # bridge keeps ownership of the range guarantee.
-        reading.sim_time_of_day_seconds = sim_seconds % float(SECONDS_IN_DAY)
+        reading.sim_time_of_day_seconds = float(self._sim.current_time())
 
         for name, value in data.items():
             if name == 'timestamp':

@@ -11,10 +11,10 @@ import rclpy
 
 from lupin_msgs.srv import GetTagReading
 
-from lupin_greenhouse_bridge.bridge_node import (
-    SECONDS_IN_DAY,
-    GreenhouseBridgeNode,
-)
+from lupin_greenhouse_bridge.bridge_node import GreenhouseBridgeNode
+
+
+SECONDS_IN_DAY = 24 * 60 * 60
 
 
 class TestBridgeContract(unittest.TestCase):
@@ -56,9 +56,7 @@ class TestBridgeContract(unittest.TestCase):
         for sensor_reading in response.reading.readings:
             self.assertNotEqual(sensor_reading.name, '')
 
-    def test_sim_time_of_day_is_wrapped_to_24h_window(self):
-        # Lock the [0, 86400) contract on TagReading.sim_time_of_day_seconds
-        # regardless of what upstream's current_time() does.
+    def test_sim_time_of_day_is_in_24h_window(self):
         response = self._call('1')
         self.assertEqual(response.status, GetTagReading.Response.STATUS_OK)
         self.assertGreaterEqual(response.reading.sim_time_of_day_seconds, 0.0)
