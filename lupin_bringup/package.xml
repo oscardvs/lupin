@@ -4,7 +4,7 @@
   <name>lupin_bringup</name>
   <version>0.0.1</version>
   <description>Top-level launch files, params, and system glue for MDP Team Lupin.</description>
-  <maintainer email="TODO@student.tudelft.nl">Team Lupin</maintainer>
+  <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>

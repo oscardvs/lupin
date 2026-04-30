@@ -196,6 +196,59 @@ ros2 launch lupin_bringup hardware.launch.py
 
 (Launch files will be added by the team in subsequent MRs.)
 
+### Greenhouse Gazebo world
+
+For perception / navigation work that needs the actual greenhouse layout
+(matched to `mdp-greenhouse`'s tag and table coordinates), use:
+
+```bash
+ros2 launch lupin_bringup greenhouse_sim.launch.py
+```
+
+This brings up Gazebo with the generated greenhouse world, spawns the
+MIRTE Master with its Astra Pro Plus depth-camera plugin
+(`/camera/image_raw`, `/camera/depth/image_raw`, `/camera/points`,
+`/camera/camera_info`), and starts the standard ros2_control + twist_mux
+pipeline. Override the spawn pose with `x:=`, `y:=`, `yaw:=` if needed —
+the default puts the robot in the south aisle facing the tables.
+
+The world's tag and table positions are derived from the
+`tag_locations.json` shipped inside the `mdp-greenhouse` Python package,
+so the Gazebo origin is the same as the bridge's coordinate frame —
+nav2, the bridge, and AprilTag detection all agree about positions.
+
+For autonomous navigation in this world, the greenhouse has no
+pre-built map — pair it with slam_toolbox + Nav2 in SLAM mode, see
+[Sim — Nav2 + slam_toolbox in a world without a saved map](#sim--nav2--slam_toolbox-in-a-world-without-a-saved-map)
+below.
+
+#### Regenerating the world
+
+The committed `lupin_bringup/worlds/greenhouse.world` is a deterministic
+output of `lupin_bringup/scripts/generate_greenhouse_world.py`. Re-run
+the script if `mdp-greenhouse` ever publishes a new layout:
+
+```bash
+python3 src/lupin/lupin_bringup/scripts/generate_greenhouse_world.py
+colcon build --packages-select lupin_bringup --symlink-install
+```
+
+By default the script reads `tag_locations.json` from the installed
+`greenhouse_sim` package (via `importlib.resources`); pass `--input` to
+point it elsewhere.
+
+#### Heads-up for perception integration
+
+The tag visuals in this world are deliberately ugly **bright magenta
+placeholders** (model names `apriltag_<id>_PLACEHOLDER`, visual names
+`TAG_<id>_PLACEHOLDER_NEEDS_TEXTURE`) — present at the right pose so
+the depth camera registers them, but **an AprilTag detector pointed at
+this world will not detect anything** until they're replaced with real
+`tag36h11` textures. Don't spend time debugging "why doesn't my
+detector find anything" — it's the textures. See the TODO inside
+`_render_tag` in `scripts/generate_greenhouse_world.py` for the
+swap-in path.
+
 ### Sim — full Nav2 stack
 
 When you want autonomy in Gazebo (KRR Course small-house world,
