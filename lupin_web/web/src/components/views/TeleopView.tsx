@@ -65,12 +65,12 @@ export function TeleopView() {
   return (
     <div className="flex w-full flex-col gap-3 p-3 sm:gap-4 sm:p-4">
       {estopActive ? (
-        <div className="reticle relative flex flex-wrap items-center gap-3 rounded-sm border-2 border-destructive bg-destructive/10 px-3 py-2.5 text-sm sm:px-4 sm:py-3">
+        <div className="reticle relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm border-2 border-destructive bg-destructive/10 px-3 py-2.5 text-sm sm:px-4 sm:py-3">
           <span className="reticle-bl" aria-hidden />
           <span className="reticle-br" aria-hidden />
           <Square className="h-5 w-5 shrink-0 fill-destructive text-destructive" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
+          <div className="flex-1 min-w-[12rem]">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="font-semibold uppercase tracking-[0.16em] text-destructive">
                 E-stop engaged
               </span>
@@ -80,7 +80,12 @@ export function TeleopView() {
               {estopReason ? ESTOP_REASON_LABELS[estopReason] : 'Unknown reason'}
             </div>
           </div>
-          <Button variant="default" size="sm" onClick={estopReset} className="shrink-0">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={estopReset}
+            className="w-full shrink-0 sm:w-auto"
+          >
             <RotateCcw className="mr-2 h-4 w-4" />
             Reset E-stop
           </Button>
@@ -90,18 +95,21 @@ export function TeleopView() {
       {/* primary console region — two stick stations + readout HUD */}
       <div
         className={cn(
-          'reticle relative rounded-sm border border-hairline bg-card/35 p-4 sm:p-6 scanline',
+          'reticle relative rounded-sm border border-hairline bg-card/35 p-3 sm:p-6 scanline',
           estopActive && 'pointer-events-none opacity-50',
         )}
       >
         <span className="reticle-bl" aria-hidden />
         <span className="reticle-br" aria-hidden />
 
-        {/* Console header */}
-        <div className="mb-4 flex items-baseline gap-2">
-          <span className="tag tag-strong">drive console</span>
-          <span className="tag tag-accent">PNL-DRV-01</span>
-          <span className="ml-auto tag">2 axes · linear + angular</span>
+        {/* Console header — flex-wrap so chrome lines break cleanly on narrow viewports
+            instead of breaking mid-token (e.g. "PNL-DRV-" / "01"). */}
+        <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 sm:mb-4">
+          <span className="tag tag-strong whitespace-nowrap">drive console</span>
+          <span className="tag tag-accent whitespace-nowrap">PNL-DRV-01</span>
+          <span className="ml-auto hidden whitespace-nowrap tag md:inline-block">
+            2 axes · linear + angular
+          </span>
         </div>
 
         {/* Three direct flex children: stick-1, stick-2, readout */}
@@ -153,7 +161,7 @@ export function TeleopView() {
             onValueChange={(v) => updateSettings({ speedScale: v[0] })}
             className="flex-1"
           />
-          <div className="flex w-20 items-baseline justify-end gap-0.5">
+          <div className="flex w-20 shrink-0 items-baseline justify-end gap-0.5">
             <span className="ticker text-base text-foreground">{speedScale.toFixed(2)}</span>
             <span className="tag">×</span>
           </div>
