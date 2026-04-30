@@ -29,9 +29,12 @@ export function BatteryCard() {
 
   return (
     <Card className="flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle>Battery</CardTitle>
-        <CardDescription className="font-mono">{batteryTopic}</CardDescription>
+      <CardHeader>
+        <CardTitle>
+          Battery
+          <span className="tag tag-accent ml-auto">PNL-PWR-01</span>
+        </CardTitle>
+        <CardDescription>{batteryTopic}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 text-sm">
         <div className="grid grid-cols-3 gap-2 text-center">
@@ -40,8 +43,8 @@ export function BatteryCard() {
           <Stat label="current" value={battery?.current == null ? '—' : `${battery.current.toFixed(2)} A`} />
         </div>
         <div className="flex items-end justify-between gap-3">
-          <div className="text-xs text-muted-foreground">Voltage · last {HISTORY_SECONDS}s</div>
-          <Sparkline values={series} className="text-emerald-400" width={160} height={32} />
+          <div className="tag">voltage · last {HISTORY_SECONDS}s</div>
+          <Sparkline values={series} className="text-primary" width={160} height={32} />
         </div>
       </CardContent>
     </Card>
@@ -50,9 +53,9 @@ export function BatteryCard() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border bg-muted/30 px-2 py-1.5">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="font-mono text-sm tabular-nums">{value}</div>
+    <div className="rounded-sm border border-hairline bg-background/40 px-2 py-1.5">
+      <div className="tag">{label}</div>
+      <div className="ticker text-sm mt-0.5">{value}</div>
     </div>
   )
 }

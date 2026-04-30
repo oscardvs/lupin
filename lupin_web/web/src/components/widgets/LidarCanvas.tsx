@@ -37,7 +37,8 @@ export function LidarCanvas() {
     const h = canvas.clientHeight
 
     ctx.clearRect(0, 0, w, h)
-    ctx.fillStyle = 'hsl(217 19% 11%)'
+    // dark botanical-ink fill
+    ctx.fillStyle = 'hsl(120 12% 5%)'
     ctx.fillRect(0, 0, w, h)
 
     const cx = w / 2
@@ -46,15 +47,18 @@ export function LidarCanvas() {
     const radius = Math.min(w, h) / 2 - 16
     const pxPerM = radius / maxRange
 
-    // concentric range rings
-    ctx.strokeStyle = 'hsl(217 19% 30%)'
+    // concentric range rings — dashed for 1m, solid every 5m equivalent
+    ctx.strokeStyle = 'hsl(120 8% 22%)'
     ctx.lineWidth = 1
     for (let r = 1; r <= Math.floor(maxRange); r++) {
+      ctx.setLineDash(r % 2 === 0 ? [] : [2, 4])
       ctx.beginPath()
       ctx.arc(cx, cy, r * pxPerM, 0, Math.PI * 2)
       ctx.stroke()
     }
+    ctx.setLineDash([])
     // axis cross
+    ctx.strokeStyle = 'hsl(120 8% 28%)'
     ctx.beginPath()
     ctx.moveTo(cx - radius, cy)
     ctx.lineTo(cx + radius, cy)
@@ -62,9 +66,16 @@ export function LidarCanvas() {
     ctx.lineTo(cx, cy + radius)
     ctx.stroke()
 
-    // scan points
+    // forward-bearing arc highlight (±30°)
+    ctx.strokeStyle = 'hsl(78 90% 58% / 0.18)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius - 4, -Math.PI / 2 - Math.PI / 6, -Math.PI / 2 + Math.PI / 6)
+    ctx.stroke()
+
+    // scan points — chartreuse to match the rest of the console
     if (scan && scan.ranges.length > 0) {
-      ctx.fillStyle = 'hsl(142 70% 55%)'
+      ctx.fillStyle = 'hsl(78 90% 62%)'
       const N = scan.ranges.length
       for (let i = 0; i < N; i++) {
         const r = scan.ranges[i]
@@ -77,11 +88,12 @@ export function LidarCanvas() {
       }
     }
 
-    // robot triangle at origin (pointing up = forward)
-    ctx.fillStyle = 'hsl(0 0% 95%)'
+    // robot — small chevron pointing up (forward)
+    ctx.fillStyle = 'hsl(60 18% 92%)'
     ctx.beginPath()
     ctx.moveTo(cx, cy - 8)
     ctx.lineTo(cx - 6, cy + 6)
+    ctx.lineTo(cx, cy + 3)
     ctx.lineTo(cx + 6, cy + 6)
     ctx.closePath()
     ctx.fill()
@@ -89,13 +101,18 @@ export function LidarCanvas() {
 
   return (
     <Card className="flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle>Lidar</CardTitle>
-        <CardDescription className="font-mono">{scanTopic}</CardDescription>
+      <CardHeader>
+        <CardTitle>
+          Lidar
+          <span className="tag tag-accent ml-auto">PNL-LDR-01</span>
+        </CardTitle>
+        <CardDescription>{scanTopic}</CardDescription>
       </CardHeader>
       <CardContent className="flex-1">
-        <div className="aspect-square w-full">
-          <canvas ref={canvasRef} className="h-full w-full rounded-md" />
+        <div className="relative aspect-square w-full overflow-hidden rounded-sm border border-hairline bg-background/60">
+          <canvas ref={canvasRef} className="h-full w-full" />
+          <span className="tag absolute left-2 top-2">N · forward</span>
+          <span className="tag absolute right-2 bottom-2 tabular-nums">scale · 6m</span>
         </div>
       </CardContent>
     </Card>

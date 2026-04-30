@@ -6,10 +6,22 @@ export function ClockPill() {
     const id = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(id)
   }, [])
-  const text = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+
+  const time = now.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const tz = now
+    .toLocaleTimeString([], { timeZoneName: 'short' })
+    .split(' ')
+    .slice(-1)[0]
+
   return (
-    <div className="hidden shrink-0 items-center rounded-full border bg-card/60 px-3 py-1 font-mono text-xs tabular-nums md:flex">
-      {text}
+    <div className="hidden h-9 shrink-0 items-center gap-2 rounded-sm border border-hairline bg-card/40 px-2.5 text-[11px] md:flex">
+      <span className="ticker text-foreground">{time}</span>
+      <span className="tag">{tz}</span>
     </div>
   )
 }

@@ -15,11 +15,11 @@ import { RosProvider } from '@/lib/ros'
 import { useApplyTheme } from '@/lib/settings'
 
 const TABS = [
-  { id: 'teleop', label: 'Teleop', Icon: Sliders, View: TeleopView },
-  { id: 'cameras', label: 'Cameras', Icon: Camera, View: CamerasView },
-  { id: 'telemetry', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
-  { id: 'logs', label: 'Logs', Icon: MessageSquare, View: LogsView },
-  { id: 'map', label: 'Map', Icon: MapIcon, View: MapView },
+  { id: 'teleop', code: '01', label: 'Teleop', Icon: Sliders, View: TeleopView },
+  { id: 'cameras', code: '02', label: 'Cameras', Icon: Camera, View: CamerasView },
+  { id: 'telemetry', code: '03', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
+  { id: 'logs', code: '04', label: 'Logs', Icon: MessageSquare, View: LogsView },
+  { id: 'map', code: '05', label: 'Map', Icon: MapIcon, View: MapView },
 ] as const
 
 export default function App() {
@@ -38,6 +38,7 @@ function Shell() {
   useApplyTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>('teleop')
+  const active = TABS.find((t) => t.id === tab) ?? TABS[0]
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -48,26 +49,41 @@ function Shell() {
         onValueChange={(v) => setTab(v as typeof tab)}
         className="flex flex-1 min-h-0 flex-col"
       >
-        <div className="border-b bg-background/80">
-          <TabsList className="m-2 flex h-11 w-fit max-w-full gap-0.5 overflow-x-auto px-1 sm:mx-3">
-            {TABS.map(({ id, label, Icon }) => (
+        <div className="relative flex shrink-0 items-center gap-3 border-b border-hairline bg-background/40 px-3 py-2 sm:px-4">
+          <TabsList className="flex h-9 w-fit max-w-full overflow-x-auto">
+            {TABS.map(({ id, label, code, Icon }) => (
               <TabsTrigger
                 key={id}
                 value={id}
                 className="gap-2 px-2.5 sm:px-3"
                 aria-label={label}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <span className="tag tag-accent hidden font-semibold opacity-80 sm:inline">
+                  {code}
+                </span>
+                <Icon className="h-[14px] w-[14px] shrink-0" />
                 <span className="hidden sm:inline">{label}</span>
               </TabsTrigger>
             ))}
           </TabsList>
+
+          {/* Right-aligned section breadcrumb */}
+          <div className="ml-auto hidden items-baseline gap-2 md:flex">
+            <span className="tag">section</span>
+            <span className="font-display text-[18px] leading-none text-foreground">
+              {active.label}
+            </span>
+            <span className="tag tag-accent">·{active.code}</span>
+          </div>
         </div>
+
         {TABS.map(({ id, View }) => (
-          <TabsContent key={id} value={id} className="m-0 flex flex-1 min-h-0 overflow-auto">
-            <div className="flex flex-1 min-h-0">
-              <View />
-            </div>
+          <TabsContent
+            key={id}
+            value={id}
+            className="m-0 flex flex-1 min-h-0 overflow-y-auto data-[state=active]:flex"
+          >
+            <View />
           </TabsContent>
         ))}
       </Tabs>

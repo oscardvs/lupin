@@ -15,9 +15,12 @@ export function OdometryCard() {
 
   return (
     <Card className="flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle>Odometry</CardTitle>
-        <CardDescription className="font-mono">{odomTopic}</CardDescription>
+      <CardHeader>
+        <CardTitle>
+          Odometry
+          <span className="tag tag-accent ml-auto">PNL-ODM-01</span>
+        </CardTitle>
+        <CardDescription>{odomTopic}</CardDescription>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-2 text-sm">
         <Cell label="x" unit="m" value={odom?.pose.pose.position.x ?? null} />
@@ -43,12 +46,12 @@ function Cell({
   digits?: number
 }) {
   return (
-    <div className="rounded-md border bg-muted/30 px-2 py-1.5">
+    <div className="rounded-sm border border-hairline bg-background/40 px-2 py-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className="text-[10px] text-muted-foreground">{unit}</span>
+        <span className="tag tag-accent">{label}</span>
+        <span className="tag">{unit}</span>
       </div>
-      <div className="font-mono text-base tabular-nums">
+      <div className="ticker text-base mt-0.5">
         {value == null
           ? '—'
           : `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(digits)}`}

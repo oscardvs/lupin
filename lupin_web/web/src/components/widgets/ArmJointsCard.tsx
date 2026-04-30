@@ -20,18 +20,22 @@ export function ArmJointsCard() {
 
   return (
     <Card className="flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle>Arm joints</CardTitle>
-        <CardDescription className="font-mono">{jointStatesTopic}</CardDescription>
+      <CardHeader>
+        <CardTitle>
+          Arm joints
+          <span className="tag tag-accent ml-auto">PNL-ARM-01</span>
+        </CardTitle>
+        <CardDescription>{jointStatesTopic}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 text-sm">
         {arm.length === 0 ? (
-          <div className="text-xs text-muted-foreground">No arm joints reported.</div>
+          <div className="tag">No arm joints reported.</div>
         ) : (
           arm.map((j) => (
             <div key={j.name} className="flex items-center gap-3">
-              <span className="w-28 truncate font-mono text-xs text-muted-foreground">{j.name}</span>
-              <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
+              <span className="w-28 truncate font-mono text-[11px] text-muted-foreground">{j.name}</span>
+              <div className="relative h-[3px] flex-1 overflow-hidden rounded-full bg-muted/60">
+                <span aria-hidden className="absolute inset-y-0 left-1/2 w-px bg-hairline" />
                 <div
                   className="absolute inset-y-0 left-1/2 rounded-full bg-primary"
                   style={{
@@ -40,7 +44,7 @@ export function ArmJointsCard() {
                   }}
                 />
               </div>
-              <span className="w-14 text-right font-mono text-xs tabular-nums">
+              <span className="w-14 text-right ticker text-[11px]">
                 {(j.position * RAD2DEG).toFixed(1)}°
               </span>
             </div>

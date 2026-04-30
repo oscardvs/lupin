@@ -9,6 +9,7 @@ interface EStopButtonProps {
 
 export function EStopButton({ className }: EStopButtonProps) {
   const { active, trigger } = useEStop()
+  const isActive = active
 
   return (
     <button
@@ -22,15 +23,47 @@ export function EStopButton({ className }: EStopButtonProps) {
       }}
       aria-label="Emergency stop"
       className={cn(
-        'group relative flex h-full select-none flex-col items-center justify-center gap-0.5 px-3 transition-colors sm:px-4',
-        'bg-red-600 text-white shadow-[inset_0_-3px_0_rgba(0,0,0,0.25)]',
-        'hover:bg-red-500 active:bg-red-700',
-        active && 'animate-pulse',
+        'group relative flex h-full select-none flex-col items-center justify-center gap-1 px-4 transition-colors',
+        // Diagonal hazard stripes on both edges; solid red core in the middle.
+        'bg-[linear-gradient(135deg,_hsl(8_92%_55%)_0%,_hsl(8_92%_45%)_100%)] text-white',
+        'shadow-[inset_0_-3px_0_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]',
+        'hover:brightness-110 active:brightness-90',
+        isActive && 'animate-pulse',
         className,
       )}
     >
-      <OctagonAlert className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" strokeWidth={2.5} />
-      <span className="text-sm font-extrabold leading-none tracking-widest sm:text-base">STOP</span>
+      {/* hazard chevron edge — left */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 left-0 w-2"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(135deg, rgba(0,0,0,0.85) 0 6px, transparent 6px 12px)',
+        }}
+      />
+      {/* hazard chevron edge — right */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 w-2"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(135deg, rgba(0,0,0,0.85) 0 6px, transparent 6px 12px)',
+        }}
+      />
+
+      <OctagonAlert className="h-[22px] w-[22px] shrink-0" strokeWidth={2.5} />
+      <span className="text-[12px] font-extrabold leading-none tracking-[0.22em]">
+        E·STOP
+      </span>
+
+      {/* status pip when armed */}
+      <span
+        aria-hidden
+        className={cn(
+          'absolute right-2 top-2 h-1.5 w-1.5 rounded-full',
+          isActive ? 'bg-white' : 'bg-white/30',
+        )}
+      />
     </button>
   )
 }

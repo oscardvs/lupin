@@ -20,18 +20,21 @@ export function ImuCard() {
 
   return (
     <Card className="flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle>IMU</CardTitle>
-        <CardDescription className="font-mono">{imuTopic}</CardDescription>
+      <CardHeader>
+        <CardTitle>
+          IMU
+          <span className="tag tag-accent ml-auto">PNL-IMU-01</span>
+        </CardTitle>
+        <CardDescription>{imuTopic}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="grid grid-cols-3 gap-2 text-center">
           {(['roll', 'pitch', 'yaw'] as const).map((k) => {
             const v = euler ? euler[k] * RAD2DEG : 0
             return (
-              <div key={k} className="rounded-md border bg-muted/30 px-2 py-2">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{k}</div>
-                <div className="font-mono text-base tabular-nums">
+              <div key={k} className="rounded-sm border border-hairline bg-background/40 px-2 py-2">
+                <div className="tag">{k}</div>
+                <div className="ticker text-base mt-1">
                   {imu ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}°` : '—'}
                 </div>
               </div>
@@ -40,9 +43,7 @@ export function ImuCard() {
         </div>
 
         <div className="flex flex-col gap-2 text-xs">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            angular velocity (rad/s)
-          </div>
+          <div className="tag">angular velocity · rad/s</div>
           <Bar label="ωx" value={wx} max={Math.PI} />
           <Bar label="ωy" value={wy} max={Math.PI} />
           <Bar label="ωz" value={wz} max={Math.PI} />
@@ -58,18 +59,18 @@ function Bar({ label, value, max }: { label: string; value: number; max: number 
   const positive = pct >= 0
   return (
     <div className="flex items-center gap-3">
-      <span className="w-6 font-mono text-xs text-muted-foreground">{label}</span>
-      <div className="relative h-2 flex-1 rounded-full bg-muted">
-        <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
+      <span className="w-6 font-mono text-[11px] text-primary">{label}</span>
+      <div className="relative h-[3px] flex-1 rounded-full bg-muted/60">
+        <div className="absolute inset-y-0 left-1/2 w-px bg-hairline" />
         <div
-          className={cn('absolute inset-y-0 rounded-full', positive ? 'bg-emerald-500' : 'bg-red-500')}
+          className={cn('absolute inset-y-0 rounded-full', positive ? 'bg-primary' : 'bg-warning')}
           style={{
             left: positive ? '50%' : `${50 + pct}%`,
             width: `${Math.abs(pct)}%`,
           }}
         />
       </div>
-      <span className="w-14 text-right font-mono text-xs tabular-nums">
+      <span className="w-14 text-right ticker text-[11px]">
         {value >= 0 ? '+' : '−'}
         {Math.abs(value).toFixed(2)}
       </span>

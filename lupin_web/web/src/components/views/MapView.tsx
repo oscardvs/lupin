@@ -6,18 +6,26 @@ export function MapView() {
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-3 p-3 sm:p-4">
       <Card className="flex flex-1 min-h-0 flex-col">
-        <CardHeader className="pb-2">
-          <CardTitle>Map / navigation</CardTitle>
-          <CardDescription>SLAM map, robot pose, AprilTag detections, planned path</CardDescription>
+        <CardHeader>
+          <CardTitle>
+            Map · navigation
+            <span className="tag tag-accent ml-auto">PNL-NAV-01</span>
+          </CardTitle>
+          <CardDescription>SLAM map · pose · AprilTags · planned path</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-1 items-center justify-center">
-          <div className="flex max-w-md flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center text-muted-foreground">
-            <MapIcon className="h-10 w-10 opacity-60" />
-            <div className="text-sm">Map will appear when SLAM is running.</div>
-            <div className="text-xs">
-              This pane is a placeholder for the upcoming Nav2 + slam_toolbox integration.
-              When <span className="font-mono">/map</span> and <span className="font-mono">/tf</span> are
-              published, they'll render here without changes elsewhere in the app.
+          <div className="reticle relative flex max-w-md flex-col items-center gap-3 rounded-sm border border-dashed border-hairline p-8 text-center">
+            <span className="reticle-bl" aria-hidden />
+            <span className="reticle-br" aria-hidden />
+            <MapIcon className="h-10 w-10 opacity-60 text-primary/70" />
+            <div className="font-display text-xl text-foreground">Awaiting SLAM</div>
+            <div className="tag">channel · idle</div>
+            <div className="text-xs text-muted-foreground">
+              This pane reserves the Nav2 + slam_toolbox surface. When{' '}
+              <span className="font-mono text-primary">/map</span> and{' '}
+              <span className="font-mono text-primary">/tf</span> are published, the
+              greenhouse occupancy grid and AprilTag detections will render here without
+              changes elsewhere in the console.
             </div>
           </div>
         </CardContent>

@@ -19,30 +19,49 @@ export function BatteryPill() {
   const voltageText = battery?.voltage == null ? '—' : `${battery.voltage.toFixed(2)} V`
 
   let Icon = Battery
-  let color = 'text-emerald-400'
+  let color = 'text-primary'
   if (charging) {
     Icon = BatteryCharging
-    color = 'text-sky-400'
+    color = 'text-signal'
   } else if (pct != null) {
     if (pct < 0.15) {
       Icon = BatteryWarning
-      color = 'text-red-500'
+      color = 'text-destructive'
     } else if (pct < 0.3) {
       Icon = BatteryLow
-      color = 'text-amber-400'
+      color = 'text-warning'
     }
   }
+
+  // visual cue: a thin meter under the icon to show charge level at a glance
+  const meterPct = pct == null ? 0 : Math.max(0, Math.min(1, pct))
+  const meterColor =
+    pct != null && pct < 0.15
+      ? 'bg-destructive'
+      : pct != null && pct < 0.3
+      ? 'bg-warning'
+      : charging
+      ? 'bg-signal'
+      : 'bg-primary'
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex shrink-0 items-center gap-1.5 rounded-full border bg-card/60 px-2.5 py-1 text-xs sm:px-3">
-          <Icon className={cn('h-4 w-4', color)} strokeWidth={2.25} />
-          <span className="font-mono tabular-nums">{pctText}</span>
+        <div className="relative flex h-9 shrink-0 items-center gap-2 overflow-hidden rounded-sm border border-hairline bg-card/40 px-2.5 text-[11px]">
+          <Icon className={cn('h-[15px] w-[15px]', color)} strokeWidth={2.25} />
+          <span className="ticker">{pctText}</span>
+          {/* meter line at the bottom of the pill */}
+          <span
+            aria-hidden
+            className={cn('absolute bottom-0 left-0 h-px transition-all', meterColor)}
+            style={{ width: `${meterPct * 100}%` }}
+          />
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        <div>Voltage: <span className="font-mono">{voltageText}</span></div>
+        <div>
+          Voltage: <span className="font-mono">{voltageText}</span>
+        </div>
         <div className="text-muted-foreground">Topic: {batteryTopic}</div>
       </TooltipContent>
     </Tooltip>
