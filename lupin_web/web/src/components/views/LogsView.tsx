@@ -68,7 +68,7 @@ export function LogsView() {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-3 p-3 sm:p-4">
+    <div className="flex min-h-full w-full flex-col gap-3 p-3 sm:p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={String(minLevel)} onValueChange={(v) => setMinLevel(Number(v) as RosoutLevel)}>
@@ -113,7 +113,7 @@ export function LogsView() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0 rounded-md border bg-card font-mono text-xs">
+      <ScrollArea className="flex-1 rounded-sm border border-hairline bg-card font-mono text-xs">
         <div ref={scrollViewportRef} className="max-h-[60vh] overflow-y-auto">
           {visible.length === 0 ? (
             <div className="p-4 text-muted-foreground">No log lines match the current filter.</div>

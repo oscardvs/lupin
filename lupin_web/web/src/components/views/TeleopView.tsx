@@ -63,7 +63,7 @@ export function TeleopView() {
   }, [publish, computeTwist])
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-3 p-3 sm:gap-4 sm:p-4">
+    <div className="flex w-full flex-col gap-3 p-3 sm:gap-4 sm:p-4">
       {estopActive ? (
         <div className="reticle relative flex flex-wrap items-center gap-3 rounded-sm border-2 border-destructive bg-destructive/10 px-3 py-2.5 text-sm sm:px-4 sm:py-3">
           <span className="reticle-bl" aria-hidden />
@@ -90,29 +90,29 @@ export function TeleopView() {
       {/* primary console region — two stick stations + readout HUD */}
       <div
         className={cn(
-          'reticle relative flex flex-1 min-h-0 flex-col gap-4 rounded-sm border border-hairline bg-card/35 p-3 sm:gap-6 sm:p-5 scanline',
-          'sm:flex-row sm:items-center sm:justify-around',
+          'reticle relative rounded-sm border border-hairline bg-card/35 p-4 sm:p-6 scanline',
           estopActive && 'pointer-events-none opacity-50',
         )}
       >
         <span className="reticle-bl" aria-hidden />
         <span className="reticle-br" aria-hidden />
 
-        {/* Floating section header (top-left of the console) */}
-        <div className="absolute left-3 top-2 flex items-baseline gap-2 sm:left-5 sm:top-3">
+        {/* Console header */}
+        <div className="mb-4 flex items-baseline gap-2">
           <span className="tag tag-strong">drive console</span>
           <span className="tag tag-accent">PNL-DRV-01</span>
+          <span className="ml-auto tag">2 axes · linear + angular</span>
         </div>
 
-        {/* On phones the two joysticks sit side-by-side at the top
-            so the twist readout below can use the available row width. */}
-        <div className="flex w-full items-stretch justify-around gap-3 pt-6 sm:contents sm:pt-0">
+        {/* Three direct flex children: stick-1, stick-2, readout */}
+        <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:justify-around sm:gap-6">
           <Joystick
             label="Linear · vX / vY"
             hint="↑ forward · ↔ strafe"
             size={stickSize}
             axisTags={['+X', '−Y', '−X', '+Y']}
             serial="STK-01"
+            className="shrink-0"
             onChange={(v) => {
               leftRef.current = v
             }}
@@ -123,16 +123,16 @@ export function TeleopView() {
             size={stickSize}
             axisTags={['—', 'ccw', '—', 'cw']}
             serial="STK-02"
+            className="shrink-0"
             onChange={(v) => {
               rightRef.current = v
             }}
           />
+          <TwistReadout
+            value={lastSent}
+            className="w-full max-w-xs shrink-0 sm:w-56"
+          />
         </div>
-
-        <TwistReadout
-          value={lastSent}
-          className="w-full max-w-xs sm:order-none sm:w-56"
-        />
       </div>
 
       {/* secondary controls — speed governor + STOP */}
@@ -171,7 +171,7 @@ export function TeleopView() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <Activity className="h-3 w-3 text-primary/80" />
         <span className="tag">tx</span>
         <span className="font-mono text-foreground/80">{cmdVelTopic}</span>

@@ -4,8 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export function MapView() {
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-3 p-3 sm:p-4">
-      <Card className="flex flex-1 min-h-0 flex-col">
+    <div className="flex min-h-full w-full flex-col gap-3 p-3 sm:p-4">
+      <Card className="flex flex-1 flex-col">
         <CardHeader>
           <CardTitle>
             Map · navigation
@@ -13,7 +13,7 @@ export function MapView() {
           </CardTitle>
           <CardDescription>SLAM map · pose · AprilTags · planned path</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 items-center justify-center">
+        <CardContent className="flex flex-1 items-center justify-center py-12">
           <div className="reticle relative flex max-w-md flex-col items-center gap-3 rounded-sm border border-dashed border-hairline p-8 text-center">
             <span className="reticle-bl" aria-hidden />
             <span className="reticle-br" aria-hidden />

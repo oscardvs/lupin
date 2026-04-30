@@ -91,8 +91,8 @@ export function Joystick({
       </div>
 
       <div
-        className="relative grid place-items-center"
-        style={{ width: size, height: size }}
+        className="relative grid shrink-0 place-items-center"
+        style={{ width: `${size}px`, height: `${size}px`, flex: '0 0 auto' }}
       >
         {/* concentric range rings */}
         <svg
@@ -127,17 +127,17 @@ export function Joystick({
           })}
         </svg>
 
-        {/* axis tick labels */}
-        <span className="tag absolute -top-0.5 left-1/2 -translate-x-1/2 -translate-y-full pb-1">
+        {/* axis tick labels — pointer-events-none so taps reach the nipplejs zone */}
+        <span className="tag pointer-events-none absolute -top-0.5 left-1/2 -translate-x-1/2 -translate-y-full pb-1">
           {axisTags[0]}
         </span>
-        <span className="tag absolute right-0 top-1/2 -translate-y-1/2 translate-x-full pl-1">
+        <span className="tag pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 translate-x-full pl-1">
           {axisTags[1]}
         </span>
-        <span className="tag absolute -bottom-0.5 left-1/2 -translate-x-1/2 translate-y-full pt-1">
+        <span className="tag pointer-events-none absolute -bottom-0.5 left-1/2 -translate-x-1/2 translate-y-full pt-1">
           {axisTags[2]}
         </span>
-        <span className="tag absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-1">
+        <span className="tag pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-1">
           {axisTags[3]}
         </span>
 
