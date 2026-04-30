@@ -19,28 +19,29 @@ class CmdVelMux(Node):
         cmd_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.publisher_ = self.create_publisher(Twist, out_topic, cmd_qos)
         
-        # Inputs: Manual (iPhone/Keyboard) vs Autonomous (Group Logic)
-        self.create_subscription(Twist, '/cmd_vel_manual', self.manual_callback, 10)
-        self.create_subscription(Twist, '/cmd_vel_auto', self.auto_callback, 10)
-        
-        self.last_manual_msg = Twist()
-        self.manual_active_timeout = 0.5 # Seconds to keep control after manual input stops
-        self.last_manual_time = self.get_clock().now()
+        # Subscribe to your PS4 controller
+        self.subscription = self.create_subscription(
+            Twist,
+            '/cmd_vel_manual',
+            self.listener_callback,
+            10)
+            
+        # Publish exactly what the hardware wants: a normal Twist on the main cmd_vel topic
+        self.publisher_ = self.create_publisher(
+            Twist, 
+            '/mirte_base_controller/cmd_vel', 
+            10)
 
-    def manual_callback(self, msg):
-        # If the joystick is being moved (not zero)
-        if abs(msg.linear.x) > 0.01 or abs(msg.angular.z) > 0.01:
-            self.last_manual_time = self.get_clock().now()
-            self.publisher_.publish(msg)
+    def listener_callback(self, msg):
+        # We just pass the message straight through!
+        self.publisher_.publish(msg)
 
-    def auto_callback(self, msg):
-        # Only pass autonomous commands if manual hasn't been used recently
-        now = self.get_clock().now()
-        diff = (now - self.last_manual_time).nanoseconds / 1e9
-        
-        if diff > self.manual_active_timeout:
-            self.publisher_.publish(msg)
+def main(args=None):
+    rclpy.init(args=args)
+    node = CmdVelMux()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
 
-def main():
-    rclpy.init()
-    rclpy.spin(CmdVelMux())
+if __name__ == '__main__':
+    main()
