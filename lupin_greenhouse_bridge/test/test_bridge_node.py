@@ -57,8 +57,8 @@ class TestBridgeContract(unittest.TestCase):
             self.assertNotEqual(sensor_reading.name, '')
 
     def test_sim_time_of_day_is_wrapped_to_24h_window(self):
-        # Upstream v1.0.x current_time() can return values outside [0, 86400);
-        # the bridge contract is that we always publish wrapped values.
+        # Lock the [0, 86400) contract on TagReading.sim_time_of_day_seconds
+        # regardless of what upstream's current_time() does.
         response = self._call('1')
         self.assertEqual(response.status, GetTagReading.Response.STATUS_OK)
         self.assertGreaterEqual(response.reading.sim_time_of_day_seconds, 0.0)

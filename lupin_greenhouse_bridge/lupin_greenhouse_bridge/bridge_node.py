@@ -91,9 +91,10 @@ class GreenhouseBridgeNode(Node):
         reading = TagReading()
         reading.tag_id = tag_id
         reading.stamp = wall_now
-        # Wrap to the documented [0, 86400) window. Upstream v1.0.1's
-        # current_time() returns out-of-range values; the bridge owns the
-        # contract regardless of upstream behaviour.
+        # Defense-in-depth on the [0, 86400) contract documented in
+        # TagReading.msg. mdp-greenhouse>=1.0.6 wraps the result too, but
+        # the conversion underneath is still wrong (see README), so the
+        # bridge keeps ownership of the range guarantee.
         reading.sim_time_of_day_seconds = sim_seconds % float(SECONDS_IN_DAY)
 
         for name, value in data.items():

@@ -94,8 +94,8 @@ sudo apt install python3-tk           # required for --edit / --view GUIs
 pip install mdp-greenhouse pyyaml matplotlib numpy
 ```
 
-> **Upstream packaging gotchas (v1.0.1)** — pinned here so nobody loses
-> half a day to them:
+> **Upstream packaging gotchas (still present as of v1.0.6)** — pinned
+> here so nobody loses half a day to them:
 > - The wheel declares no runtime dependencies, so a bare
 >   `pip install mdp-greenhouse` will crash on first import with
 >   `ModuleNotFoundError: No module named 'yaml'`. Install `pyyaml`,
@@ -287,14 +287,15 @@ config; sentinels mean "leave the upstream default alone"):
 | `speedup_factor` | `0.0` | Sim seconds per real second (default config: 1800 → full 24 h cycle in 48 s). |
 | `debug_seed` | `-1` | RNG seed for deterministic noise; setting this also flips `debug_mode: true`. |
 
-> **Upstream gotcha (mdp-greenhouse v1.0.1):** `current_time()` and
-> debug-mode time conversion are off by ×24, which collapses
-> sinusoidal sensor dynamics for any integer/half-integer
-> `debug_time_of_day` value. The bridge wraps published sim time to
-> `[0, 86400)` so downstream contracts hold, but until upstream fixes
-> the conversion, **`debug_time_of_day` is effectively a no-op** for
-> most values you'd pick. `debug_seed` works correctly. Tracked
-> upstream with C.Pek@tudelft.nl.
+> **Upstream gotcha (mdp-greenhouse 1.0.6):** `current_time()` now
+> wraps to `[0, 86400)`, but the underlying hour-to-seconds conversion
+> is still off — debug uses `t_h * 86400` (×24 too big), live uses
+> `1440 * hour` (×2.5 too small). Effect: `sim_time_of_day_seconds`
+> doesn't correspond to wall-clock time; treat it as opaque. The
+> bridge pins `mdp-greenhouse>=1.0.6` for the range guarantee and
+> keeps its own modulo wrap as defense-in-depth. `debug_seed`
+> unaffected. Tracked with C.Pek@tudelft.nl; partial fix landed
+> in 1.0.6, conversion still pending.
 
 The bridge has no Gazebo dependency — you can run it standalone
 (useful for offline mission-logic dev), or pair it with
