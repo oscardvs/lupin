@@ -76,6 +76,55 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+### 5. MDP greenhouse simulator (`mdp-greenhouse`)
+
+The course provides a Python-only environmental simulator that returns
+sensor readings (temperature, humidity, CO₂, light, soil moisture) at
+fixed tag locations in a virtual greenhouse — released on PyPI as
+[`mdp-greenhouse`](https://pypi.org/project/mdp-greenhouse/). This is
+the **actual sensing modality** for the project: the robot navigates to
+a tag, identifies it, and queries this library for readings. There is
+no Gazebo plugin and no ROS topic — integration goes through the
+Python API.
+
+Install the package and the dependencies it forgets to declare:
+
+```bash
+sudo apt install python3-tk           # required for --edit / --view GUIs
+pip install mdp-greenhouse pyyaml matplotlib numpy
+```
+
+> **Upstream packaging gotchas (v1.0.1)** — pinned here so nobody loses
+> half a day to them:
+> - The wheel declares no runtime dependencies, so a bare
+>   `pip install mdp-greenhouse` will crash on first import with
+>   `ModuleNotFoundError: No module named 'yaml'`. Install `pyyaml`,
+>   `matplotlib`, and `numpy` alongside it.
+> - The wheel registers no console script, so the `mdp-greenhouse` CLI
+>   shown in the upstream README is **not** on `PATH`. Invoke it as a
+>   module instead: `python -m greenhouse_sim.cli ...`
+
+Smoke-test the install:
+
+```bash
+python -m greenhouse_sim.cli --read --list-tags     # lists default tag IDs 1..22
+python -c "from greenhouse_sim.simulator import GreenhouseSimulator; \
+           s = GreenhouseSimulator(); print(s.get_sensor_data(s.tags()[0]))"
+```
+
+The default greenhouse ships 22 tag locations and 12 tables in a
+~4 m × 8 m footprint; configs live under
+`<site-packages>/greenhouse_sim/configs/`. To author your own layout,
+use `python -m greenhouse_sim.cli --init <folder>` followed by
+`--edit <folder>`.
+
+Lupin consumes this library through a ROS 2 wrapper node (planned home:
+`lupin_perception` or a new `lupin_greenhouse_bridge` package) that
+holds a long-lived `GreenhouseSimulator` instance and exposes a
+service taking a `tag_id` and returning the measurement dict. Tag IDs
+are expected to line up with the AprilTag IDs detected by
+`lupin_navigation`.
+
 ## Cloning this repository
 
 Clone Lupin's code as a **sibling** of the MIRTE vendor packages —
