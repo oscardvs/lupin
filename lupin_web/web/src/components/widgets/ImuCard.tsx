@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 const RAD2DEG = 180 / Math.PI
 
-export function ImuCard() {
+export function ImuCard({ className }: { className?: string } = {}) {
   const [{ imuTopic }] = useSettings()
   const ref = useTopic<Imu>(imuTopic, ROS_TYPE.Imu)
   useThrottledRender(10)
@@ -19,7 +19,7 @@ export function ImuCard() {
   const wz = imu?.angular_velocity.z ?? 0
 
   return (
-    <Card className="flex flex-col">
+    <Card className={cn('flex flex-col', className)}>
       <CardHeader>
         <CardTitle>
           IMU

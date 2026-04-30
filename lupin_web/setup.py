@@ -1,3 +1,6 @@
+import os
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'lupin_web'
@@ -10,6 +13,12 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        # Launch files — reachable via `ros2 launch lupin_web lupin_web.launch.py`.
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        # systemd unit + install script — installed alongside but not auto-activated.
+        # The robot operator runs `sudo lupin_web/scripts/install-systemd.sh` manually.
+        (os.path.join('share', package_name, 'systemd'), glob('systemd/*.service')),
+        (os.path.join('share', package_name, 'scripts'), glob('scripts/*.sh')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

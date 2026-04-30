@@ -4,9 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useAnimationLoop } from '@/lib/throttle'
+import { cn } from '@/lib/utils'
 import { ROS_TYPE, type LaserScan } from '@/types/ros'
 
-export function LidarCanvas() {
+export function LidarCanvas({ className }: { className?: string } = {}) {
   const [{ scanTopic }] = useSettings()
   const ref = useTopic<LaserScan>(scanTopic, ROS_TYPE.LaserScan)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -100,7 +101,7 @@ export function LidarCanvas() {
   })
 
   return (
-    <Card className="flex flex-col">
+    <Card className={cn('flex flex-col', className)}>
       <CardHeader>
         <CardTitle>
           Lidar
@@ -108,8 +109,8 @@ export function LidarCanvas() {
         </CardTitle>
         <CardDescription>{scanTopic}</CardDescription>
       </CardHeader>
-      <CardContent className="flex-1">
-        <div className="relative aspect-square w-full overflow-hidden rounded-sm border border-hairline bg-background/60">
+      <CardContent className="flex flex-1 flex-col">
+        <div className="relative w-full flex-1 min-h-[260px] overflow-hidden rounded-sm border border-hairline bg-background/60">
           <canvas ref={canvasRef} className="h-full w-full" />
           <span className="tag absolute left-2 top-2">N · forward</span>
           <span className="tag absolute right-2 bottom-2 tabular-nums">scale · 6m</span>

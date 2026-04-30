@@ -1,13 +1,14 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 /**
  * Placeholder card for system-health metrics (CPU/RAM/temp).
  * The MIRTE image doesn't currently expose these as ROS topics; once a
  * `lupin_system_metrics` node lands we'll wire the cards in here.
  */
-export function SystemCard() {
+export function SystemCard({ className }: { className?: string } = {}) {
   return (
-    <Card className="flex flex-col">
+    <Card className={cn('flex flex-col', className)}>
       <CardHeader>
         <CardTitle>
           System
