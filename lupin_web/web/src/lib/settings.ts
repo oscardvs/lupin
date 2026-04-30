@@ -31,6 +31,11 @@ export interface Settings {
   mapFrame: string
   baseFrame: string
   speedScale: number
+  // Arm
+  /** Service / topic prefix for the Hiwonder serial-bus servos (no trailing slash). */
+  armServoNamespace: string
+  /** Default angular rate sent with `set_angle_with_speed`, in degrees/second. */
+  armRateDegPerSec: number
   // Voice (Gemini Live)
   /** Google AI Studio API key. Stored in localStorage only — never committed. */
   geminiApiKey: string
@@ -75,6 +80,8 @@ export const DEFAULT_SETTINGS: Settings = {
   mapFrame: 'map',
   baseFrame: 'base_link',
   speedScale: 0.5,
+  armServoNamespace: '/io/servo/hiwonder',
+  armRateDegPerSec: 60,
   geminiApiKey: '',
   geminiModel: 'models/gemini-3.1-flash-live-preview',
   voiceLanguage: 'en-US',

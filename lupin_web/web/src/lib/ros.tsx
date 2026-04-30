@@ -49,6 +49,11 @@ interface RosCore {
   lastError: string | null
   subscribe: <T>(topicName: string, msgType: string, cb: (msg: T) => void) => () => void
   publish: <T>(topicName: string, msgType: string, msg: T) => void
+  callService: <Req, Res = unknown>(
+    serviceName: string,
+    serviceType: string,
+    request: Req,
+  ) => Promise<Res>
   publishLog: PublishLogEntry[]
   /** Underlying ROSLIB.Ros instance — null in mock mode and while disconnected. Used by TFClient consumers. */
   rosRef: React.MutableRefObject<ROSLIB.Ros | null>
@@ -63,6 +68,7 @@ const noopCore: RosCore = {
   lastError: null,
   subscribe: () => () => undefined,
   publish: () => undefined,
+  callService: () => Promise.reject(new Error('rosbridge not ready')),
   publishLog: [],
   rosRef: noopRosRef,
 }
@@ -292,6 +298,36 @@ export function RosProvider({ children }: { children: ReactNode }) {
     [mock, status, recordPublish],
   )
 
+  const callService = useCallback(
+    <Req, Res = unknown>(
+      serviceName: string,
+      serviceType: string,
+      request: Req,
+    ): Promise<Res> => {
+      recordPublish(`srv:${serviceName}`, request)
+      if (mock) {
+        return Promise.resolve({ success: true } as unknown as Res)
+      }
+      if (!rosRef.current || status !== 'connected') {
+        return Promise.reject(new Error('rosbridge not connected'))
+      }
+      const svc = new ROSLIB.Service({
+        ros: rosRef.current,
+        name: serviceName,
+        serviceType,
+      })
+      return new Promise<Res>((resolve, reject) => {
+        svc.callService(
+          new ROSLIB.ServiceRequest(request as object),
+          (res: Res) => resolve(res),
+          (err: unknown) =>
+            reject(err instanceof Error ? err : new Error(String(err))),
+        )
+      })
+    },
+    [mock, status, recordPublish],
+  )
+
   const value = useMemo<RosCore>(
     () => ({
       status,
@@ -301,10 +337,11 @@ export function RosProvider({ children }: { children: ReactNode }) {
       lastError,
       subscribe,
       publish,
+      callService,
       publishLog: publishLogRef.current,
       rosRef,
     }),
-    [status, mock, rosUrl, latencyMs, lastError, subscribe, publish],
+    [status, mock, rosUrl, latencyMs, lastError, subscribe, publish, callService],
   )
 
   return <RosContext.Provider value={value}>{children}</RosContext.Provider>
@@ -337,6 +374,14 @@ export function useTopic<T>(
 export function usePublisher<T>(topicName: string, msgType: string) {
   const { publish } = useRos()
   return useCallback((msg: T) => publish(topicName, msgType, msg), [publish, topicName, msgType])
+}
+
+export function useService<Req, Res = unknown>(serviceName: string, serviceType: string) {
+  const { callService } = useRos()
+  return useCallback(
+    (req: Req) => callService<Req, Res>(serviceName, serviceType, req),
+    [callService, serviceName, serviceType],
+  )
 }
 
 export interface MapPose {

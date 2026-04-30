@@ -158,6 +158,15 @@ export const ROSOUT_LEVEL_NAMES: Record<RosoutLevel, string> = {
   50: 'FATAL',
 }
 
+/** Hiwonder serial-bus servo position feedback, published per servo by mirte_telemetrix_cpp. */
+export interface ServoPosition {
+  header: Header
+  /** Angle in radians. */
+  angle: number
+  /** Raw 12-bit servo count. */
+  raw: number
+}
+
 /**
  * Mapping from a topic-default-name to its ROS 2 message type string,
  * for places where the type is the only thing that can disambiguate
@@ -174,7 +183,22 @@ export const ROS_TYPE = {
   OccupancyGrid: 'nav_msgs/msg/OccupancyGrid',
   Path: 'nav_msgs/msg/Path',
   PoseStamped: 'geometry_msgs/msg/PoseStamped',
+  ServoPosition: 'mirte_msgs/msg/ServoPosition',
 } as const
+
+/** mirte_msgs service type strings. */
+export const MIRTE_SRV = {
+  SetServoAngleWithSpeed: 'mirte_msgs/srv/SetServoAngleWithSpeed',
+  SetBool: 'std_srvs/srv/SetBool',
+} as const
+
+export interface SetServoAngleWithSpeedRequest {
+  /** Target angle, interpreted in degrees when `degrees: true`. */
+  angle: number
+  /** Slew rate, deg/s when `degrees: true`. */
+  rate: number
+  degrees: boolean
+}
 export type RosTypeName = keyof typeof ROS_TYPE
 
 /** Time helpers (Time → seconds, etc). */
