@@ -21,7 +21,8 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   rosUrl: '',
-  cmdVelTopic: '/cmd_vel',
+  // sim publishes via the controller's unstamped Twist input
+  cmdVelTopic: '/mirte_base_controller/cmd_vel_unstamped',
   cmdVelType: 'geometry_msgs/msg/Twist',
   imuTopic: '/imu/data',
   scanTopic: '/scan',
