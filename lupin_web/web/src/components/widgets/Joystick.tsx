@@ -17,12 +17,14 @@ interface JoystickProps {
   hint?: string
   /** Called on every move/end with normalised stick value. */
   onChange: (v: StickValue) => void
+  /** Outer container size (px). Nipple is sized at ~80% of this. */
+  size?: number
   className?: string
   /** Tint color for the rendered nipple. Hex or CSS color. */
   color?: string
 }
 
-export function Joystick({ label, hint, onChange, className, color = '#22c55e' }: JoystickProps) {
+export function Joystick({ label, hint, onChange, size = 176, className, color = '#22c55e' }: JoystickProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const managerRef = useRef<JoystickManager | null>(null)
   const onChangeRef = useRef(onChange)
@@ -30,12 +32,13 @@ export function Joystick({ label, hint, onChange, className, color = '#22c55e' }
 
   useEffect(() => {
     if (!containerRef.current) return
+    const nippleSize = Math.max(80, Math.round(size * 0.8))
     const manager = nipplejs.create({
       zone: containerRef.current,
       mode: 'static',
       position: { left: '50%', top: '50%' },
       color,
-      size: 140,
+      size: nippleSize,
       restOpacity: 0.7,
       lockX: false,
       lockY: false,
@@ -43,7 +46,6 @@ export function Joystick({ label, hint, onChange, className, color = '#22c55e' }
     managerRef.current = manager
 
     manager.on('move', (_, data) => {
-      // nipplejs returns vector with y pointing UP positive when stick is up.
       const { x, y } = data.vector
       onChangeRef.current({ x, y, active: true })
     })
@@ -55,14 +57,15 @@ export function Joystick({ label, hint, onChange, className, color = '#22c55e' }
       manager.destroy()
       managerRef.current = null
     }
-  }, [color])
+  }, [color, size])
 
   return (
     <div className={cn('relative flex flex-col items-center gap-2', className)}>
       <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
       <div
         ref={containerRef}
-        className="relative h-44 w-44 select-none rounded-full border bg-muted/40 touch-none"
+        style={{ width: size, height: size }}
+        className="relative select-none rounded-full border bg-muted/40 touch-none"
       />
       {hint ? <div className="text-[11px] text-muted-foreground">{hint}</div> : null}
     </div>

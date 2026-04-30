@@ -68,41 +68,47 @@ export function LogsView() {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={String(minLevel)} onValueChange={(v) => setMinLevel(Number(v) as RosoutLevel)}>
-          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {levelOrder.map((lv) => (
-              <SelectItem key={lv} value={String(lv)}>
-                ≥ {ROSOUT_LEVEL_NAMES[lv]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={nodeFilter} onValueChange={setNodeFilter}>
-          <SelectTrigger className="w-48"><SelectValue placeholder="Node…" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">all nodes</SelectItem>
-            {Array.from(seenNodes.current).sort().map((n) => (
-              <SelectItem key={n} value={n}>{n}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="flex h-full min-h-0 w-full flex-col gap-3 p-3 sm:p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={String(minLevel)} onValueChange={(v) => setMinLevel(Number(v) as RosoutLevel)}>
+            <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {levelOrder.map((lv) => (
+                <SelectItem key={lv} value={String(lv)}>
+                  ≥ {ROSOUT_LEVEL_NAMES[lv]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={nodeFilter} onValueChange={setNodeFilter}>
+            <SelectTrigger className="h-9 w-44"><SelectValue placeholder="Node…" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">all nodes</SelectItem>
+              {Array.from(seenNodes.current).sort().map((n) => (
+                <SelectItem key={n} value={n}>{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search messages…"
-          className="h-9 w-56"
+          className="h-9 sm:w-56"
         />
-        <div className="ml-auto flex items-center gap-2">
-          <Label htmlFor="autoscroll" className="text-xs text-muted-foreground">auto-scroll</Label>
-          <Switch id="autoscroll" checked={autoScroll} onCheckedChange={setAutoScroll} />
-          <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
-            {paused ? <><Play className="mr-2 h-3.5 w-3.5" /> Resume</> : <><Pause className="mr-2 h-3.5 w-3.5" /> Pause</>}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="autoscroll" className="text-xs text-muted-foreground">auto-scroll</Label>
+            <Switch id="autoscroll" checked={autoScroll} onCheckedChange={setAutoScroll} />
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)} aria-label={paused ? 'Resume' : 'Pause'}>
+            {paused ? <Play className="h-3.5 w-3.5 sm:mr-2" /> : <Pause className="h-3.5 w-3.5 sm:mr-2" />}
+            <span className="hidden sm:inline">{paused ? 'Resume' : 'Pause'}</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={clear}>
-            <Trash2 className="mr-2 h-3.5 w-3.5" /> Clear
+          <Button variant="outline" size="sm" onClick={clear} aria-label="Clear">
+            <Trash2 className="h-3.5 w-3.5 sm:mr-2" />
+            <span className="hidden sm:inline">Clear</span>
           </Button>
         </div>
       </div>
@@ -114,14 +120,22 @@ export function LogsView() {
           ) : (
             <div className="divide-y divide-border/50">
               {visible.map((l, i) => (
-                <div key={i} className="grid grid-cols-[auto_auto_auto_1fr] gap-2 px-3 py-1.5">
-                  <span className="text-muted-foreground tabular-nums">
+                <div
+                  key={i}
+                  className="grid gap-x-2 gap-y-0.5 px-3 py-1.5 sm:grid-cols-[auto_auto_auto_1fr]"
+                >
+                  <span className="hidden text-muted-foreground tabular-nums sm:inline">
                     {new Date(l.stamp.sec * 1000).toLocaleTimeString()}
                   </span>
-                  <span className={cn('w-12 text-[10px] uppercase tracking-wider', levelClass[l.level])}>
-                    {ROSOUT_LEVEL_NAMES[l.level]}
-                  </span>
-                  <span className="text-sky-300">{l.name}</span>
+                  <div className="flex items-center gap-2 sm:contents">
+                    <span className="text-[10px] text-muted-foreground tabular-nums sm:hidden">
+                      {new Date(l.stamp.sec * 1000).toLocaleTimeString()}
+                    </span>
+                    <span className={cn('text-[10px] uppercase tracking-wider sm:w-12', levelClass[l.level])}>
+                      {ROSOUT_LEVEL_NAMES[l.level]}
+                    </span>
+                    <span className="truncate text-sky-300">{l.name}</span>
+                  </div>
                   <span className={cn('break-words', levelClass[l.level])}>{l.msg}</span>
                 </div>
               ))}

@@ -15,9 +15,9 @@ interface TopBarProps {
 export function TopBar({ onOpenSettings }: TopBarProps) {
   return (
     <header className="flex h-14 shrink-0 items-stretch border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex flex-1 items-center gap-2 px-3">
+      <div className="flex flex-1 min-w-0 items-center gap-2 px-2 sm:px-3">
         <Logo />
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="ml-auto flex flex-nowrap items-center gap-1.5 overflow-x-auto sm:gap-2">
           <ConnectionPill />
           <BatteryPill />
           <ClockPill />
@@ -28,6 +28,7 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
                 size="icon"
                 onClick={onOpenSettings}
                 aria-label="Settings"
+                className="shrink-0"
               >
                 <SettingsIcon className="h-5 w-5" />
               </Button>
@@ -36,18 +37,18 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
           </Tooltip>
         </div>
       </div>
-      <EStopButton className="w-24 shrink-0" />
+      <EStopButton className="w-20 shrink-0 sm:w-24" />
     </header>
   )
 }
 
 function Logo(): ReactNode {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
       <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
         <span className="text-sm font-black tracking-tight">L</span>
       </div>
-      <div className="leading-none">
+      <div className="hidden leading-none sm:block">
         <div className="text-sm font-bold tracking-tight">LUPIN</div>
         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">HMI</div>
       </div>

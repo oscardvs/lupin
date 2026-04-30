@@ -49,11 +49,16 @@ function Shell() {
         className="flex flex-1 min-h-0 flex-col"
       >
         <div className="border-b bg-background/80">
-          <TabsList className="m-2 mx-3 flex h-10 w-fit gap-0.5 overflow-x-auto">
+          <TabsList className="m-2 flex h-11 w-fit max-w-full gap-0.5 overflow-x-auto px-1 sm:mx-3">
             {TABS.map(({ id, label, Icon }) => (
-              <TabsTrigger key={id} value={id} className="gap-2">
-                <Icon className="h-4 w-4" />
-                <span>{label}</span>
+              <TabsTrigger
+                key={id}
+                value={id}
+                className="gap-2 px-2.5 sm:px-3"
+                aria-label={label}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">{label}</span>
               </TabsTrigger>
             ))}
           </TabsList>

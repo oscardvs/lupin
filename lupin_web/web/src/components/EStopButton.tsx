@@ -22,15 +22,15 @@ export function EStopButton({ className }: EStopButtonProps) {
       }}
       aria-label="Emergency stop"
       className={cn(
-        'group relative flex h-full select-none flex-col items-center justify-center gap-0.5 px-4 transition-colors',
+        'group relative flex h-full select-none flex-col items-center justify-center gap-0.5 px-3 transition-colors sm:px-4',
         'bg-red-600 text-white shadow-[inset_0_-3px_0_rgba(0,0,0,0.25)]',
         'hover:bg-red-500 active:bg-red-700',
         active && 'animate-pulse',
         className,
       )}
     >
-      <OctagonAlert className="h-6 w-6 shrink-0" strokeWidth={2.5} />
-      <span className="text-base font-extrabold leading-none tracking-widest">STOP</span>
+      <OctagonAlert className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" strokeWidth={2.5} />
+      <span className="text-sm font-extrabold leading-none tracking-widest sm:text-base">STOP</span>
     </button>
   )
 }

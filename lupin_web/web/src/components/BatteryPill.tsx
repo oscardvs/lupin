@@ -36,7 +36,7 @@ export function BatteryPill() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex items-center gap-1.5 rounded-full border bg-card/60 px-3 py-1 text-xs">
+        <div className="flex shrink-0 items-center gap-1.5 rounded-full border bg-card/60 px-2.5 py-1 text-xs sm:px-3">
           <Icon className={cn('h-4 w-4', color)} strokeWidth={2.25} />
           <span className="font-mono tabular-nums">{pctText}</span>
         </div>

@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export function MapView() {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+    <div className="flex h-full min-h-0 w-full flex-col gap-3 p-3 sm:p-4">
       <Card className="flex flex-1 min-h-0 flex-col">
         <CardHeader className="pb-2">
           <CardTitle>Map / navigation</CardTitle>
