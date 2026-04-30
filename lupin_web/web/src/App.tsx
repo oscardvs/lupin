@@ -1,78 +1,73 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { Camera, Gauge, Map as MapIcon, MessageSquare, Sliders } from 'lucide-react'
+import { useState } from 'react'
 
-import { StatusDot } from '@/components/StatusDot'
-import { Button } from '@/components/ui/button'
-import { makeTwistTopic, twist, useRos } from '@/lib/ros'
+import { SettingsDrawer } from '@/components/SettingsDrawer'
+import { TopBar } from '@/components/TopBar'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { CamerasView } from '@/components/views/CamerasView'
+import { LogsView } from '@/components/views/LogsView'
+import { MapView } from '@/components/views/MapView'
+import { TeleopView } from '@/components/views/TeleopView'
+import { TelemetryView } from '@/components/views/TelemetryView'
+import { EStopProvider } from '@/lib/estop'
+import { RosProvider } from '@/lib/ros'
+import { useApplyTheme } from '@/lib/settings'
 
-const DRIVE_TOPIC = '/mirte_base_controller/cmd_vel'
-const NUDGE_LINEAR_X = 0.1
-const NUDGE_DURATION_MS = 500
-const NUDGE_RATE_HZ = 20
+const TABS = [
+  { id: 'teleop', label: 'Teleop', Icon: Sliders, View: TeleopView },
+  { id: 'cameras', label: 'Cameras', Icon: Camera, View: CamerasView },
+  { id: 'telemetry', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
+  { id: 'logs', label: 'Logs', Icon: MessageSquare, View: LogsView },
+  { id: 'map', label: 'Map', Icon: MapIcon, View: MapView },
+] as const
 
 export default function App() {
-  const { status, lastError, ros, url } = useRos()
-  const [busy, setBusy] = useState(false)
-  const [lastSent, setLastSent] = useState<string | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const topic = useMemo(
-    () => (ros && status === 'connected' ? makeTwistTopic(ros, DRIVE_TOPIC) : null),
-    [ros, status],
+  return (
+    <TooltipProvider delayDuration={200}>
+      <RosProvider>
+        <EStopProvider>
+          <Shell />
+        </EStopProvider>
+      </RosProvider>
+    </TooltipProvider>
   )
+}
 
-  const nudgeForward = useCallback(() => {
-    if (!topic || busy) return
-    setBusy(true)
-
-    const tickMs = Math.round(1000 / NUDGE_RATE_HZ)
-    const moveMsg = twist(NUDGE_LINEAR_X, 0)
-    topic.publish(moveMsg)
-    intervalRef.current = setInterval(() => topic.publish(moveMsg), tickMs)
-
-    stopTimerRef.current = setTimeout(() => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-      topic.publish(twist(0, 0))
-      setBusy(false)
-      const ts = new Date().toLocaleTimeString()
-      setLastSent(`linear.x=${NUDGE_LINEAR_X.toFixed(2)} for ${NUDGE_DURATION_MS}ms @ ${ts}`)
-    }, NUDGE_DURATION_MS)
-  }, [topic, busy])
+function Shell() {
+  useApplyTheme()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('teleop')
 
   return (
-    <main className="mx-auto flex h-full max-w-md flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Lupin HMI</h1>
-        <p className="text-sm text-muted-foreground">
-          Browser teleop for the MIRTE Master.
-        </p>
-      </header>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <TopBar onOpenSettings={() => setSettingsOpen(true)} />
 
-      <StatusDot status={status} url={url} detail={lastError} />
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as typeof tab)}
+        className="flex flex-1 min-h-0 flex-col"
+      >
+        <div className="border-b bg-background/80">
+          <TabsList className="m-2 mx-3 flex h-10 w-fit gap-0.5 overflow-x-auto">
+            {TABS.map(({ id, label, Icon }) => (
+              <TabsTrigger key={id} value={id} className="gap-2">
+                <Icon className="h-4 w-4" />
+                <span>{label}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        {TABS.map(({ id, View }) => (
+          <TabsContent key={id} value={id} className="m-0 flex flex-1 min-h-0 overflow-auto">
+            <div className="flex flex-1 min-h-0">
+              <View />
+            </div>
+          </TabsContent>
+        ))}
+      </Tabs>
 
-      <section className="flex flex-col gap-3 rounded-md border bg-card p-4">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium">Drive test</span>
-          <span className="text-xs text-muted-foreground">
-            Publishes <code>{DRIVE_TOPIC}</code> at {NUDGE_RATE_HZ} Hz for{' '}
-            {NUDGE_DURATION_MS} ms, then zero.
-          </span>
-        </div>
-        <Button
-          size="lg"
-          onClick={nudgeForward}
-          disabled={status !== 'connected' || busy}
-        >
-          {busy ? 'Nudging…' : 'Nudge forward'}
-        </Button>
-        <div className="text-xs text-muted-foreground">
-          Last command:{' '}
-          <span className="font-mono">{lastSent ?? '—'}</span>
-        </div>
-      </section>
-    </main>
+      <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} />
+    </div>
   )
 }

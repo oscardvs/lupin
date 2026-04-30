@@ -1,4 +1,6 @@
 web/node_modules/
 web/dist/
 web/.vite/
+web/dist-node-ts/
 web/*.log
+web/*.tsbuildinfo
