@@ -1,9 +1,6 @@
-import os
-from glob import glob
-
 from setuptools import find_packages, setup
 
-package_name = 'lupin_navigation'
+package_name = 'lupin_greenhouse_bridge'
 
 setup(
     name=package_name,
@@ -13,21 +10,21 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'launch'),
-            glob('launch/*.launch.py') + glob('launch/*.launch.xml')),
-        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
-        (os.path.join('share', package_name, 'maps'),
-            glob('maps/*.yaml') + glob('maps/*.pgm')),
+        ('share/' + package_name + '/launch',
+            ['launch/greenhouse_bridge.launch.py']),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'mdp-greenhouse'],
     zip_safe=True,
     maintainer='Team Lupin',
     maintainer_email='TODO@student.tudelft.nl',
-    description='AprilTag-based localisation and path planning for MDP Team Lupin.',
+    description='ROS 2 wrapper around the mdp-greenhouse course simulator. '
+                'Exposes a GetTagReading service that returns sensor '
+                'measurements for a given greenhouse tag.',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'bridge_node = lupin_greenhouse_bridge.bridge_node:main',
         ],
     },
 )

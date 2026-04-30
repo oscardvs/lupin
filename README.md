@@ -217,6 +217,11 @@ The world's tag and table positions are derived from the
 so the Gazebo origin is the same as the bridge's coordinate frame —
 nav2, the bridge, and AprilTag detection all agree about positions.
 
+For autonomous navigation in this world, the greenhouse has no
+pre-built map — pair it with slam_toolbox + Nav2 in SLAM mode, see
+[Sim — Nav2 + slam_toolbox in a world without a saved map](#sim--nav2--slam_toolbox-in-a-world-without-a-saved-map)
+below.
+
 #### Regenerating the world
 
 The committed `lupin_bringup/worlds/greenhouse.world` is a deterministic
@@ -244,6 +249,107 @@ detector find anything" — it's the textures. See the TODO inside
 `_render_tag` in `scripts/generate_greenhouse_world.py` for the
 swap-in path.
 
+### Sim — full Nav2 stack
+
+When you want autonomy in Gazebo (KRR Course small-house world,
+slam-built map, MPPI local planner with mecanum/Omni motion, the
+existing teleop/cmd_vel_mux on `/cmd_vel_auto`), use these launches.
+The vendor sim package needs `/usr/share/gazebo/setup.sh` sourced or
+spawn_entity hangs — every teammate hits this once.
+
+```bash
+# Terminal 1 — Gazebo + the MIRTE + teleop chain:
+source /opt/ros/humble/setup.bash
+source /usr/share/gazebo/setup.sh
+source ~/ros2_ws/install/setup.bash
+
+ros2 launch lupin_hmi teleop.launch.py use_sim:=true world:=navigation
+# KRR house has ~200 models; expect 3–5 min to spawn on a typical laptop.
+# spawn_entity may print a 30 s client-side timeout — ignore, gzserver
+# continues. Wait for "Configured and activated mirte_base_controller".
+```
+
+```bash
+# Terminal 2 — Nav2 (run after the controllers are active):
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+
+ros2 launch lupin_navigation nav2.launch.py
+# Brings up map_server, AMCL (set_initial_pose at the spawn pose),
+# controller_server (MPPI, motion_model:Omni), planner_server,
+# behavior_server, bt_navigator, waypoint_follower, velocity_smoother,
+# and two lifecycle_managers. velocity_smoother's smoothed output is
+# remapped to /cmd_vel_auto so it goes through cmd_vel_mux just like
+# the joystick — manual override still wins.
+```
+
+In RViz, set Fixed Frame to `map` and use the **Nav2 Goal** tool to
+send a goal. To re-anchor AMCL after manual driving, use **2D Pose
+Estimate**.
+
+For mapping a new world (instead of using the saved
+`lupin_navigation/maps/krr_house`):
+
+```bash
+# Replace Terminal 2 with slam_toolbox in mapping mode:
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true \
+  slam_params_file:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/config/slam_toolbox_sim.yaml
+
+# Drive around (keyboard fallback if you don't have a joystick):
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args -r cmd_vel:=/cmd_vel_manual
+
+# Save (the transient_local flag is required — slam_toolbox publishes /map durable):
+cd ~/ros2_ws/src/lupin/lupin_navigation/maps
+ros2 run nav2_map_server map_saver_cli -f <name> \
+  --ros-args -p use_sim_time:=true -p map_subscribe_transient_local:=true
+```
+
+#### Sim — Nav2 + slam_toolbox in a world without a saved map
+
+Use this when you want autonomous navigation in a world that has no
+prebuilt map yet (e.g. the greenhouse): slam_toolbox builds the map
+online and Nav2 plans and follows paths against the live `/map`.
+`nav2.launch.py slam:=true` drops `map_server`, AMCL, and
+`lifecycle_manager_localization` so they don't fight slam_toolbox over
+`/map` and the `map→odom` TF.
+
+```bash
+# Terminal 1 — sim:
+ros2 launch lupin_bringup greenhouse_sim.launch.py
+# (or any other Lupin sim entry point)
+
+# Terminal 2 — slam_toolbox owns localization + the map:
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true \
+  slam_params_file:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/config/slam_toolbox_sim.yaml
+
+# Terminal 3 — Nav2 in SLAM mode (only the navigation half):
+ros2 launch lupin_navigation nav2.launch.py slam:=true
+```
+
+Send goals via the **Nav2 Goal** tool in RViz as usual. Drive a short
+loop manually first so slam_toolbox has a few scans of context — Nav2's
+global costmap won't plan beyond the explored region.
+
+To later promote the live map to a saved one, follow the
+`map_saver_cli` step from the previous section while slam_toolbox is
+still running.
+
+### Sim — known limitations
+
+- `gazebo_planar_move` (vendor URDF P3D plugin) publishes `odom →
+  base_link` at ~7 Hz from commanded velocity. Combined with mecanum
+  slip, this gives some drift between global (map) and local (odom)
+  costmaps at long range — first goal usually plans, occasional
+  long-range goals fail and trigger Nav2's clear-costmap recovery.
+  A clean fix needs URDF surgery to silence the vendor plugin's TF
+  and run a `/groundtruth/odom` bridge as the sole publisher;
+  deferred until after the sim demo. **Hardware is unaffected** —
+  real wheel encoders are accurate.
+- `cmd_vel_mux` only forwards manual Twists when nonzero, so the
+  joystick "release" doesn't actively publish a stop — autonomous
+  resumes 0.5 s later. Tracked separately.
+
 ## Repository layout
 
 | Package | Purpose |
@@ -252,6 +358,7 @@ swap-in path.
 | `lupin_navigation` | AprilTag-based localisation, path planning |
 | `lupin_perception` | Flower detection, vision pipelines |
 | `lupin_hmi` | Remote operation interface |
+| `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator (GetTagReading service) |
 | `lupin_msgs` | Custom messages, services, actions |
 | `docs/` | Architecture diagrams, design notes |
 

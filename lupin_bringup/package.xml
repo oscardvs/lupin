@@ -10,6 +10,7 @@
   <depend>rclpy</depend>
   <depend>launch</depend>
   <depend>launch_ros</depend>
+  <exec_depend>mirte_gazebo</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

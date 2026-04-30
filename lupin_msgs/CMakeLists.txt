@@ -10,14 +10,14 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
-# Interfaces will be added as the project develops, e.g.:
-#   "msg/FlowerDetection.msg"
-#   "srv/SetMode.srv"
-#   "action/NavigateToTag.action"
 set(msg_files
+  "msg/SensorReading.msg"
+  "msg/TagReading.msg"
 )
 set(srv_files
+  "srv/GetTagReading.srv"
 )
 set(action_files
 )
@@ -27,7 +27,7 @@ if(msg_files OR srv_files OR action_files)
     ${msg_files}
     ${srv_files}
     ${action_files}
-    DEPENDENCIES std_msgs geometry_msgs sensor_msgs
+    DEPENDENCIES std_msgs geometry_msgs sensor_msgs builtin_interfaces
   )
 endif()
 
