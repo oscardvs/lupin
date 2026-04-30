@@ -36,10 +36,17 @@ export default function App() {
   )
 }
 
+function initialTab(): (typeof TABS)[number]['id'] {
+  if (typeof window === 'undefined') return 'teleop'
+  const t = new URLSearchParams(window.location.search).get('tab')
+  if (t && TABS.some((tab) => tab.id === t)) return t as (typeof TABS)[number]['id']
+  return 'teleop'
+}
+
 function Shell() {
   useApplyTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('teleop')
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(initialTab)
   const active = TABS.find((t) => t.id === tab) ?? TABS[0]
 
   return (
