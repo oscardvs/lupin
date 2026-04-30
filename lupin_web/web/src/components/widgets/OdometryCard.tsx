@@ -2,11 +2,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useThrottledRender } from '@/lib/throttle'
+import { cn } from '@/lib/utils'
 import { ROS_TYPE, type Odometry, quatToEuler } from '@/types/ros'
 
 const RAD2DEG = 180 / Math.PI
 
-export function OdometryCard() {
+export function OdometryCard({ className }: { className?: string } = {}) {
   const [{ odomTopic }] = useSettings()
   const ref = useTopic<Odometry>(odomTopic, ROS_TYPE.Odometry)
   useThrottledRender(5)
@@ -14,7 +15,7 @@ export function OdometryCard() {
   const yawDeg = odom ? quatToEuler(odom.pose.pose.orientation).yaw * RAD2DEG : 0
 
   return (
-    <Card className="flex flex-col">
+    <Card className={cn('flex flex-col', className)}>
       <CardHeader>
         <CardTitle>
           Odometry

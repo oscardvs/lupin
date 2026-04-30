@@ -14,13 +14,13 @@ export function TelemetryView() {
         </span>
         <span className="tag">six channels · live</span>
       </div>
-      <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <LidarCanvas />
-        <ImuCard />
-        <OdometryCard />
-        <BatteryCard />
-        <ArmJointsCard />
-        <SystemCard />
+      <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
+        <LidarCanvas className="lg:col-span-5 lg:row-span-2" />
+        <ImuCard className="lg:col-span-4" />
+        <OdometryCard className="lg:col-span-3" />
+        <BatteryCard className="lg:col-span-3" />
+        <ArmJointsCard className="lg:col-span-2" />
+        <SystemCard className="lg:col-span-2" />
       </div>
     </div>
   )

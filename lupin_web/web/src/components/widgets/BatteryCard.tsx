@@ -5,11 +5,12 @@ import { Sparkline } from '@/components/widgets/Sparkline'
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useThrottledRender, Ring } from '@/lib/throttle'
+import { cn } from '@/lib/utils'
 import { ROS_TYPE, type BatteryState } from '@/types/ros'
 
 const HISTORY_SECONDS = 60
 
-export function BatteryCard() {
+export function BatteryCard({ className }: { className?: string } = {}) {
   const [{ batteryTopic }] = useSettings()
   const ref = useTopic<BatteryState>(batteryTopic, ROS_TYPE.BatteryState)
   const [history] = useState(() => new Ring<number>(HISTORY_SECONDS))
@@ -28,7 +29,7 @@ export function BatteryCard() {
   const series = history.snapshot()
 
   return (
-    <Card className="flex flex-col">
+    <Card className={cn('flex flex-col', className)}>
       <CardHeader>
         <CardTitle>
           Battery
