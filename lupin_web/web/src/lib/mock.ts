@@ -4,7 +4,10 @@ import {
   type JointState,
   type LaserScan,
   type Log,
+  type OccupancyGrid,
   type Odometry,
+  type Path,
+  type PoseStamped,
   type RosoutLevel,
 } from '@/types/ros'
 
@@ -156,5 +159,117 @@ export function mockLog(): Log {
     file: '',
     function: '',
     line: 0,
+  }
+}
+
+/* ----------------------------------------------------------------------- */
+/* Map / Nav2 mock — a synthetic greenhouse aisle map, a robot tracing a   */
+/* figure-eight path through it, and a fake plan from current pose to goal */
+/* ----------------------------------------------------------------------- */
+
+const MAP_RES = 0.05 // 5 cm per cell
+const MAP_W = 200 // 10 m wide
+const MAP_H = 160 // 8 m tall
+const MAP_ORIGIN_X = -5.0 // map cell [0,0] is at world (-5, -4)
+const MAP_ORIGIN_Y = -4.0
+
+let cachedMap: OccupancyGrid | null = null
+
+/** Build a static greenhouse-aisle occupancy grid once and cache it. */
+export function mockMap(): OccupancyGrid {
+  if (cachedMap) return cachedMap
+
+  const data = new Array<number>(MAP_W * MAP_H).fill(-1)
+  const set = (cx: number, cy: number, v: number) => {
+    if (cx < 0 || cy < 0 || cx >= MAP_W || cy >= MAP_H) return
+    data[cy * MAP_W + cx] = v
+  }
+
+  // Free the interior — clear corridor, walls inset by 1 cell
+  for (let y = 1; y < MAP_H - 1; y++) {
+    for (let x = 1; x < MAP_W - 1; x++) set(x, y, 0)
+  }
+
+  // Outer walls
+  for (let x = 0; x < MAP_W; x++) {
+    set(x, 0, 100)
+    set(x, MAP_H - 1, 100)
+  }
+  for (let y = 0; y < MAP_H; y++) {
+    set(0, y, 100)
+    set(MAP_W - 1, y, 100)
+  }
+
+  // Three planting rows running left-right, each ~3 cells thick
+  const rowYs = [40, 80, 120]
+  for (const ry of rowYs) {
+    for (let x = 20; x < MAP_W - 20; x++) {
+      for (let dy = 0; dy < 4; dy++) set(x, ry + dy, 100)
+    }
+  }
+
+  // A few "pots" (occupied dots) scattered along the rows
+  for (const ry of rowYs) {
+    for (let x = 25; x < MAP_W - 25; x += 14) {
+      for (let dx = 0; dx < 3; dx++)
+        for (let dy = -2; dy < 6; dy++) set(x + dx, ry + dy, 100)
+    }
+  }
+
+  cachedMap = {
+    header: makeHeader('map'),
+    info: {
+      map_load_time: makeStamp(),
+      resolution: MAP_RES,
+      width: MAP_W,
+      height: MAP_H,
+      origin: {
+        position: { x: MAP_ORIGIN_X, y: MAP_ORIGIN_Y, z: 0 },
+        orientation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    },
+    data,
+  }
+  return cachedMap
+}
+
+/** Robot's pose in map frame for the mock — figure-eight on the centre aisle. */
+export function mockMapPose(): { x: number; y: number; yaw: number } {
+  const t = elapsed() * 0.15
+  // Figure-eight in the corridor between the planting rows
+  const x = Math.sin(t) * 3.0
+  const y = Math.sin(t * 2) * 0.8
+  // Heading is the tangent of the path
+  const dx = Math.cos(t) * 3.0
+  const dy = Math.cos(t * 2) * 1.6
+  const yaw = Math.atan2(dy, dx)
+  return { x, y, yaw }
+}
+
+/** A synthetic Nav2 plan that moves with the robot — leading by ~2 s along the path. */
+export function mockPlan(): Path {
+  const t = elapsed() * 0.15
+  const poses: PoseStamped[] = []
+  const N = 40
+  for (let i = 0; i < N; i++) {
+    const dt = (i / N) * 1.2 // look ahead ~1.2 phase units
+    const u = t + dt
+    const x = Math.sin(u) * 3.0
+    const y = Math.sin(u * 2) * 0.8
+    const dx = Math.cos(u) * 3.0
+    const dy = Math.cos(u * 2) * 1.6
+    const yaw = Math.atan2(dy, dx)
+    const half = yaw / 2
+    poses.push({
+      header: makeHeader('map'),
+      pose: {
+        position: { x, y, z: 0 },
+        orientation: { x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) },
+      },
+    })
+  }
+  return {
+    header: makeHeader('map'),
+    poses,
   }
 }
