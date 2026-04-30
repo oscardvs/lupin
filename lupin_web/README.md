@@ -20,7 +20,10 @@ gear · permanent E-STOP) wraps five tabs:
   placeholder.
 - **Logs** — `/rosout` live tail with severity filter, node filter, search,
   pause/clear, auto-scroll toggle, capped at 500 rows.
-- **Map / Nav** — placeholder pane for upcoming SLAM + AprilTag work.
+- **Map** — live SLAM occupancy grid (subscribes `/map`), robot pose via
+  `ROSLIB.TFClient` against the `map → base_link` transform, latest Nav2
+  plan (`/plan`) as a chartreuse polyline, and click-and-drag to publish a
+  `geometry_msgs/PoseStamped` to `/goal_pose`. AprilTag overlay still TODO.
 
 ## Engineering notes
 
@@ -106,10 +109,50 @@ Settings → Diagnostics → "Log outgoing publishes" (or set
 JSON to the console with the topic name. Use this when debugging
 rosbridge-side wire-format issues end to end.
 
+## Deploying on the robot (hardware branch)
+
+Two ways to bring the UI up; pick whichever fits the moment.
+
+### Manual via ros2 launch
+
+```bash
+ros2 launch lupin_web lupin_web.launch.py             # serves dist/ on :8090
+ros2 launch lupin_web lupin_web.launch.py mode:=dev   # vite dev server (HMR)
+ros2 launch lupin_web lupin_web.launch.py port:=8091  # alternative port
+```
+
+The `preview` mode (default) requires `npm run build` to have produced a
+`dist/` artefact. The launch file just wraps `npm run preview` / `npm run dev`
+with the flags pinned, so you still need `npm install` to have been run once.
+
+### Auto-start at boot via systemd
+
+A system-level unit lives at `systemd/lupin-web.service` and is installed
+through `scripts/install-systemd.sh`. Idempotent — re-run any time:
+
+```bash
+# on the robot, from anywhere on the repo
+sudo ~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd.sh
+```
+
+The unit runs `npm run preview` against `dist/` as the `mirte` user. After
+each `git pull` you must rebuild and restart:
+
+```bash
+cd ~/ros2_ws/src/lupin/lupin_web/web
+npm install      # only if package-lock.json changed
+npm run build
+sudo systemctl restart lupin-web
+```
+
+Inspect with `journalctl -u lupin-web -f`. Uninstall with
+`sudo .../install-systemd.sh --uninstall`.
+
+The unit binds `:8090` only — never `:80` (course UI), `:8080` (wifi-connect
+AP captive portal), or `:9090` (rosbridge). Failure of the course web stack
+does not bring this down and vice versa.
+
 ## What's not in here yet
 
-- Actual SLAM / Nav2 integration (Map view is a placeholder)
 - AprilTag overlay on the camera stream
 - Authentication, PWA / service worker, multi-user awareness — all deferred
-- Hardware launch file + systemd unit — those land in a follow-up MR into
-  the `hardware` branch

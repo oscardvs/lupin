@@ -1,0 +1,32 @@
+[Unit]
+Description=Lupin Web HMI (static UI on :8090, talks to rosbridge on :9090)
+Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
+After=network-online.target
+Wants=network-online.target
+# Don't fight the course web stack. If the course UI on :80 fails, we still come up.
+
+[Service]
+Type=simple
+User=mirte
+Group=mirte
+# Path to the source-tree web/ directory on the robot. The robot keeps this repo
+# checked out at ~/ros2_ws/src/lupin; if that ever moves, edit this line.
+WorkingDirectory=/home/mirte/ros2_ws/src/lupin/lupin_web/web
+# Refuse to start until the build artefact exists. Run `npm run build` after every pull.
+ExecStartPre=/usr/bin/test -d dist
+ExecStart=/usr/bin/npm run preview -- --port 8090 --host 0.0.0.0
+Restart=on-failure
+RestartSec=5
+# Cap memory in case a runaway HMR session leaks.
+MemoryMax=512M
+# Best-practice hardening — read-only system, private /tmp, no privilege escalation.
+ProtectSystem=strict
+ReadWritePaths=/home/mirte/ros2_ws/src/lupin/lupin_web/web
+PrivateTmp=true
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lupin-web
+
+[Install]
+WantedBy=multi-user.target
