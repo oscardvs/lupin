@@ -1,0 +1,11 @@
+# Request a one-shot sensor reading for the specified greenhouse tag.
+
+string tag_id
+---
+# Status code constants. Add new codes at the end; existing values must not change.
+uint8 STATUS_OK=0
+uint8 STATUS_UNKNOWN_TAG=1
+
+uint8 status
+string error_message    # human-readable detail; empty when status == STATUS_OK
+TagReading reading      # populated when status == STATUS_OK; default-zeroed otherwise

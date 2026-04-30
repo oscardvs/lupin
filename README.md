@@ -305,6 +305,7 @@ still running.
 | `lupin_navigation` | AprilTag-based localisation, path planning |
 | `lupin_perception` | Flower detection, vision pipelines |
 | `lupin_hmi` | Remote operation interface |
+| `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator (GetTagReading service) |
 | `lupin_msgs` | Custom messages, services, actions |
 | `docs/` | Architecture diagrams, design notes |
 
