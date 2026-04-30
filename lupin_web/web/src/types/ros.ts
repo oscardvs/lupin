@@ -110,6 +110,34 @@ export interface BatteryState {
   serial_number: string
 }
 
+export interface PoseStamped {
+  header: Header
+  pose: Pose
+}
+
+export interface Path {
+  header: Header
+  poses: PoseStamped[]
+}
+
+export interface MapMetaData {
+  map_load_time: Time
+  resolution: number
+  width: number
+  height: number
+  origin: Pose
+}
+
+export interface OccupancyGrid {
+  header: Header
+  info: MapMetaData
+  /**
+   * Row-major occupancy values. -1 = unknown, 0 = free, 100 = occupied,
+   * intermediate values = probability * 100.
+   */
+  data: number[]
+}
+
 export type RosoutLevel = 10 | 20 | 30 | 40 | 50
 
 export interface Log {
@@ -143,6 +171,9 @@ export const ROS_TYPE = {
   JointState: 'sensor_msgs/msg/JointState',
   BatteryState: 'sensor_msgs/msg/BatteryState',
   Log: 'rcl_interfaces/msg/Log',
+  OccupancyGrid: 'nav_msgs/msg/OccupancyGrid',
+  Path: 'nav_msgs/msg/Path',
+  PoseStamped: 'geometry_msgs/msg/PoseStamped',
 } as const
 export type RosTypeName = keyof typeof ROS_TYPE
 

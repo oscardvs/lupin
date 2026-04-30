@@ -14,6 +14,12 @@ export interface Settings {
   rosoutTopic: string
   cameraTopic: string
   webVideoServerUrl: string
+  // Map / Nav2
+  mapTopic: string
+  planTopic: string
+  goalPoseTopic: string
+  mapFrame: string
+  baseFrame: string
   speedScale: number
   theme: 'dark' | 'light'
   debugPublish: boolean
@@ -32,6 +38,11 @@ export const DEFAULT_SETTINGS: Settings = {
   rosoutTopic: '/rosout',
   cameraTopic: '/camera/color/image_raw',
   webVideoServerUrl: '',
+  mapTopic: '/map',
+  planTopic: '/plan',
+  goalPoseTopic: '/goal_pose',
+  mapFrame: 'map',
+  baseFrame: 'base_link',
   speedScale: 0.5,
   theme: 'dark',
   debugPublish: false,
