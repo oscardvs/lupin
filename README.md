@@ -252,6 +252,36 @@ ros2 run nav2_map_server map_saver_cli -f <name> \
   --ros-args -p use_sim_time:=true -p map_subscribe_transient_local:=true
 ```
 
+#### Sim — Nav2 + slam_toolbox in a world without a saved map
+
+Use this when you want autonomous navigation in a world that has no
+prebuilt map yet (e.g. the greenhouse): slam_toolbox builds the map
+online and Nav2 plans and follows paths against the live `/map`.
+`nav2.launch.py slam:=true` drops `map_server`, AMCL, and
+`lifecycle_manager_localization` so they don't fight slam_toolbox over
+`/map` and the `map→odom` TF.
+
+```bash
+# Terminal 1 — sim:
+ros2 launch lupin_bringup greenhouse_sim.launch.py
+# (or any other Lupin sim entry point)
+
+# Terminal 2 — slam_toolbox owns localization + the map:
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true \
+  slam_params_file:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/config/slam_toolbox_sim.yaml
+
+# Terminal 3 — Nav2 in SLAM mode (only the navigation half):
+ros2 launch lupin_navigation nav2.launch.py slam:=true
+```
+
+Send goals via the **Nav2 Goal** tool in RViz as usual. Drive a short
+loop manually first so slam_toolbox has a few scans of context — Nav2's
+global costmap won't plan beyond the explored region.
+
+To later promote the live map to a saved one, follow the
+`map_saver_cli` step from the previous section while slam_toolbox is
+still running.
+
 ### Sim — known limitations
 
 - `gazebo_planar_move` (vendor URDF P3D plugin) publishes `odom →
