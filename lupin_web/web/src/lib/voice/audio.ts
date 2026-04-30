@@ -87,10 +87,25 @@ function downsample(input: Float32Array, fromRate: number, toRate: number): Floa
   return out
 }
 
+/**
+ * Drains time-domain samples from an AnalyserNode and returns RMS in [0, 1].
+ * Cheap enough to call every animation frame.
+ */
+export function readAnalyserRms(analyser: AnalyserNode, scratch: Float32Array): number {
+  // Cast to satisfy the lib.dom Float32Array<ArrayBuffer> constraint without
+  // forcing a copy.
+  analyser.getFloatTimeDomainData(scratch as Float32Array<ArrayBuffer>)
+  let sum = 0
+  for (let i = 0; i < scratch.length; i++) sum += scratch[i] * scratch[i]
+  return Math.sqrt(sum / scratch.length)
+}
+
 export class MicCapture {
   private ctx: AudioContext | null = null
   private stream: MediaStream | null = null
   private workletNode: AudioWorkletNode | null = null
+  private analyser: AnalyserNode | null = null
+  private scratch = new Float32Array(1024)
 
   /** Request mic, set up the worklet, and start delivering base64 PCM-16 frames at 16 kHz. */
   async start(onFrame: (b64Pcm16: string) => void): Promise<void> {
@@ -130,6 +145,15 @@ export class MicCapture {
       onFrame(int16ToBase64(float32ToPcm16(at16k)))
     }
     source.connect(node)
+    // Tap the same source into an analyser for the UI orb. The analyser is a
+    // pull-based sink — the consumer reads it on the animation clock, so it
+    // doesn't need to be connected to destination.
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 2048
+    analyser.smoothingTimeConstant = 0.4
+    source.connect(analyser)
+    this.scratch = new Float32Array(analyser.fftSize)
+    this.analyser = analyser
     // Worklet is a sink — don't connect to destination, we don't want the user
     // to hear themselves.
     this.workletNode = node
@@ -138,6 +162,8 @@ export class MicCapture {
   async stop(): Promise<void> {
     this.workletNode?.disconnect()
     this.workletNode = null
+    this.analyser?.disconnect()
+    this.analyser = null
     this.stream?.getTracks().forEach((t) => t.stop())
     this.stream = null
     if (this.ctx && this.ctx.state !== 'closed') {
@@ -148,6 +174,12 @@ export class MicCapture {
       }
     }
     this.ctx = null
+  }
+
+  /** Live mic level in [0, 1]. Returns 0 when not capturing. */
+  getLevel(): number {
+    if (!this.analyser) return 0
+    return readAnalyserRms(this.analyser, this.scratch)
   }
 
   get running(): boolean {
@@ -165,6 +197,8 @@ export class AudioPlayer {
   private nextStartTime = 0
   private active = new Set<AudioBufferSourceNode>()
   private gain: GainNode | null = null
+  private analyser: AnalyserNode | null = null
+  private scratch = new Float32Array(1024)
   private muted = false
 
   private ensureCtx(): AudioContext {
@@ -172,10 +206,23 @@ export class AudioPlayer {
       this.ctx = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE })
       this.gain = this.ctx.createGain()
       this.gain.gain.value = this.muted ? 0 : 1
-      this.gain.connect(this.ctx.destination)
+      // Insert an analyser between gain and destination so we can read the
+      // model's voice level for the reactive orb.
+      this.analyser = this.ctx.createAnalyser()
+      this.analyser.fftSize = 2048
+      this.analyser.smoothingTimeConstant = 0.5
+      this.scratch = new Float32Array(this.analyser.fftSize)
+      this.gain.connect(this.analyser)
+      this.analyser.connect(this.ctx.destination)
       this.nextStartTime = 0
     }
     return this.ctx
+  }
+
+  /** Live model-voice level in [0, 1]. Returns 0 when nothing is playing. */
+  getLevel(): number {
+    if (!this.analyser) return 0
+    return readAnalyserRms(this.analyser, this.scratch)
   }
 
   enqueue(b64Pcm16: string): void {
@@ -221,6 +268,8 @@ export class AudioPlayer {
 
   async close(): Promise<void> {
     this.flush()
+    this.analyser?.disconnect()
+    this.analyser = null
     if (this.ctx && this.ctx.state !== 'closed') {
       try {
         await this.ctx.close()

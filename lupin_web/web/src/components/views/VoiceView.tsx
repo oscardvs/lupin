@@ -1,7 +1,6 @@
 import {
   AlertCircle,
   KeyRound,
-  Loader2,
   Mic,
   MicOff,
   Power,
@@ -17,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { VoiceOrb } from '@/components/widgets/VoiceOrb'
 import { useEStop, ESTOP_REASON_LABELS } from '@/lib/estop'
 import { isMockMode, useSettings } from '@/lib/settings'
 import { useVoiceSession } from '@/lib/voice/session'
@@ -35,12 +35,32 @@ const STATUS_LABEL: Record<VoiceStatus, string> = {
 
 const STATUS_TONE: Record<VoiceStatus, string> = {
   idle: 'text-muted-foreground',
-  connecting: 'text-primary',
-  ready: 'text-primary',
+  connecting: 'text-sky-400',
+  ready: 'text-lime-300',
   listening: 'text-emerald-400',
   thinking: 'text-amber-400',
   speaking: 'text-sky-400',
   error: 'text-destructive',
+}
+
+const STATUS_DOT: Record<VoiceStatus, string> = {
+  idle: 'bg-muted-foreground',
+  connecting: 'bg-sky-400 animate-pulse',
+  ready: 'bg-lime-300 animate-pulse',
+  listening: 'bg-emerald-400 animate-pulse',
+  thinking: 'bg-amber-400 animate-pulse',
+  speaking: 'bg-sky-400 animate-pulse',
+  error: 'bg-destructive animate-pulse',
+}
+
+const STATUS_HINT: Record<VoiceStatus, string> = {
+  idle: 'Press start to begin',
+  connecting: 'Opening session…',
+  ready: 'Hold to talk',
+  listening: 'Listening…',
+  thinking: 'Thinking…',
+  speaking: 'Speaking…',
+  error: 'Session error',
 }
 
 export function VoiceView() {
@@ -130,7 +150,13 @@ export function VoiceView() {
           <span className="tag tag-accent">PNL-VOX-01</span>
           <span className="tag">{session.isLive ? 'gemini live' : 'mock'}</span>
           <span className="tag">{settings.voiceLanguage}</span>
-          <span className={cn('tag ml-auto uppercase', STATUS_TONE[session.status])}>
+          <span
+            className={cn(
+              'tag ml-auto inline-flex items-center gap-1.5 uppercase',
+              STATUS_TONE[session.status],
+            )}
+          >
+            <span className={cn('inline-block h-1.5 w-1.5 rounded-full', STATUS_DOT[session.status])} />
             {STATUS_LABEL[session.status]}
           </span>
           {session.errorDetail ? (
@@ -141,7 +167,31 @@ export function VoiceView() {
         <div className="grid gap-5 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
           {/* ───────────────── controls column ───────────────── */}
           <div className="flex flex-col items-center gap-4">
-            <PushToTalkButton session={session} disabled={!sessionRunning} />
+            <div className="flex flex-col items-center gap-2">
+              <VoiceOrb
+                status={session.status}
+                getInputLevel={session.getInputLevel}
+                getOutputLevel={session.getOutputLevel}
+                isLive={session.isLive}
+                disabled={!sessionRunning}
+                micActive={session.micActive}
+                onPress={() => {
+                  if (!settings.voicePushToTalk) return
+                  void session.beginUtterance()
+                }}
+                onRelease={() => {
+                  if (!settings.voicePushToTalk) return
+                  void session.endUtterance()
+                }}
+                size={240}
+                ariaLabel={
+                  settings.voicePushToTalk ? 'Hold to talk' : 'Open mic indicator'
+                }
+              />
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                {STATUS_HINT[session.status]}
+              </div>
+            </div>
 
             <div className="flex w-full flex-col gap-2">
               {!sessionRunning ? (
@@ -274,85 +324,6 @@ export function VoiceView() {
   )
 }
 
-function PushToTalkButton({
-  session,
-  disabled,
-}: {
-  session: ReturnType<typeof useVoiceSession>
-  disabled: boolean
-}) {
-  const [{ voicePushToTalk }] = useSettings()
-  const onPress = useCallback(() => {
-    if (!voicePushToTalk) return
-    void session.beginUtterance()
-  }, [voicePushToTalk, session])
-  const onRelease = useCallback(() => {
-    if (!voicePushToTalk) return
-    void session.endUtterance()
-  }, [voicePushToTalk, session])
-
-  const label = !voicePushToTalk
-    ? session.micActive
-      ? 'Mic open'
-      : 'Mic'
-    : session.micActive
-      ? 'Listening…'
-      : 'Hold to talk'
-
-  const Icon =
-    session.status === 'thinking' ? Loader2 : session.micActive ? Mic : MicOff
-
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onMouseDown={onPress}
-      onMouseUp={onRelease}
-      onMouseLeave={(e) => {
-        // If they drag off the button while held, treat as release.
-        if (e.buttons === 0) return
-        onRelease()
-      }}
-      onTouchStart={(e) => {
-        e.preventDefault()
-        onPress()
-      }}
-      onTouchEnd={(e) => {
-        e.preventDefault()
-        onRelease()
-      }}
-      className={cn(
-        'group relative flex h-44 w-44 select-none items-center justify-center rounded-full border-2 border-hairline bg-card/40 transition',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        disabled
-          ? 'opacity-50'
-          : session.micActive
-            ? 'border-emerald-500 bg-emerald-500/15 shadow-[0_0_0_4px_rgba(16,185,129,0.18)]'
-            : 'hover:border-primary/60 hover:bg-card/70 active:scale-[0.98]',
-      )}
-      aria-label={label}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          'absolute inset-2 rounded-full border border-dashed',
-          session.micActive ? 'border-emerald-400/50 animate-pulse' : 'border-hairline/60',
-        )}
-      />
-      <Icon
-        className={cn(
-          'h-12 w-12',
-          session.status === 'thinking' && 'animate-spin',
-          session.micActive ? 'text-emerald-300' : 'text-foreground/80',
-        )}
-      />
-      <span className="absolute -bottom-6 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </span>
-    </button>
-  )
-}
-
 function TranscriptRow({ t }: { t: TranscriptTurn }) {
   const isUser = t.role === 'user'
   const isModel = t.role === 'model'
@@ -360,7 +331,8 @@ function TranscriptRow({ t }: { t: TranscriptTurn }) {
   return (
     <div
       className={cn(
-        'flex flex-col rounded-sm border px-3 py-2 text-sm',
+        'flex flex-col rounded-sm border px-3 py-2 text-sm shadow-sm',
+        'animate-in fade-in-0 slide-in-from-bottom-2 duration-300',
         isUser && 'border-primary/30 bg-primary/5',
         isModel && 'border-sky-500/30 bg-sky-500/5',
         isSystem && 'border-dashed border-hairline bg-background/60 text-muted-foreground',
@@ -369,8 +341,22 @@ function TranscriptRow({ t }: { t: TranscriptTurn }) {
       )}
     >
       <div className="flex items-baseline gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        <span>{t.role}</span>
-        {!t.final ? <span className="tag">…streaming</span> : null}
+        <span
+          className={cn(
+            'font-semibold',
+            isUser && 'text-primary',
+            isModel && 'text-sky-300',
+            isSystem && 'text-muted-foreground',
+          )}
+        >
+          {t.role}
+        </span>
+        {!t.final ? (
+          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-current" />
+            streaming
+          </span>
+        ) : null}
       </div>
       <div className="whitespace-pre-wrap break-words text-foreground">{t.text}</div>
     </div>
@@ -385,9 +371,10 @@ function ToolRow({ t }: { t: ToolInvocation }) {
     <div
       className={cn(
         'rounded-sm border px-2 py-1.5 text-[11px]',
+        'animate-in fade-in-0 slide-in-from-right-1 duration-200',
         ok && 'border-emerald-500/40 bg-emerald-500/5',
         err && 'border-destructive/40 bg-destructive/5',
-        !settled && 'border-hairline bg-background/60',
+        !settled && 'border-hairline bg-background/60 animate-pulse',
       )}
     >
       <div className="flex items-baseline gap-1.5">

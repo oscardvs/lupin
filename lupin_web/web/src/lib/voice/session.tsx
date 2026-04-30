@@ -48,6 +48,10 @@ export interface VoiceSession {
   sendText: (text: string) => void
   /** Whether the chosen mode would actually hit the network (i.e. has a key, not mocked). */
   isLive: boolean
+  /** Live mic input level in [0, 1] — read inside an animation loop. */
+  getInputLevel: () => number
+  /** Live model-voice output level in [0, 1] — read inside an animation loop. */
+  getOutputLevel: () => number
 }
 
 export function useVoiceSession(): VoiceSession {
@@ -456,6 +460,9 @@ export function useVoiceSession(): VoiceSession {
     if (estop.active) playerRef.current?.flush()
   }, [estop.active])
 
+  const getInputLevel = useCallback(() => micRef.current?.getLevel() ?? 0, [])
+  const getOutputLevel = useCallback(() => playerRef.current?.getLevel() ?? 0, [])
+
   return {
     status,
     errorDetail,
@@ -470,6 +477,8 @@ export function useVoiceSession(): VoiceSession {
     toggleSpeakerMuted,
     sendText,
     isLive,
+    getInputLevel,
+    getOutputLevel,
   }
 }
 
