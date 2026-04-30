@@ -16,7 +16,7 @@ setup(
     install_requires=['setuptools', 'mdp-greenhouse'],
     zip_safe=True,
     maintainer='Team Lupin',
-    maintainer_email='TODO@student.tudelft.nl',
+    maintainer_email='o.a.e.devos@student.tudelft.nl',
     description='ROS 2 wrapper around the mdp-greenhouse course simulator. '
                 'Exposes a GetTagReading service that returns sensor '
                 'measurements for a given greenhouse tag.',

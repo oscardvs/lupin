@@ -4,7 +4,7 @@
   <name>lupin_greenhouse_bridge</name>
   <version>0.0.1</version>
   <description>ROS 2 wrapper around the mdp-greenhouse course simulator. Exposes a GetTagReading service that returns sensor measurements for a given greenhouse tag.</description>
-  <maintainer email="TODO@student.tudelft.nl">Team Lupin</maintainer>
+  <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>

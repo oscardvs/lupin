@@ -22,8 +22,9 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Team Lupin',
-    maintainer_email='TODO@student.tudelft.nl',
-    description='AprilTag-based localisation and path planning for MDP Team Lupin.',
+    maintainer_email='o.a.e.devos@student.tudelft.nl',
+    description='Nav2 + slam_toolbox bringup for the MIRTE Master (sim and hardware). '
+                'Planned home for AprilTag-based pose corrections.',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={

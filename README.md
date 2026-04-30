@@ -249,6 +249,60 @@ detector find anything" — it's the textures. See the TODO inside
 `_render_tag` in `scripts/generate_greenhouse_world.py` for the
 swap-in path.
 
+### Greenhouse sensor bridge (`lupin_greenhouse_bridge`)
+
+Environmental sensing in this project is **not** simulated in Gazebo —
+temperature, humidity, CO₂, light, and soil moisture come from the
+course-provided [`mdp-greenhouse`](https://pypi.org/project/mdp-greenhouse/)
+Python library, queried at fixed tag locations. `lupin_greenhouse_bridge`
+holds a long-lived `GreenhouseSimulator` instance and exposes it as a
+ROS 2 service so the rest of the stack can consume sensor readings
+through a stable contract.
+
+```bash
+ros2 launch lupin_greenhouse_bridge greenhouse_bridge.launch.py
+```
+
+That brings up one node (`/greenhouse_bridge`) advertising:
+
+| Service | Type | Purpose |
+| --- | --- | --- |
+| `/greenhouse_bridge/get_tag_reading` | `lupin_msgs/srv/GetTagReading` | Return a `TagReading` (sim-time-of-day + per-sensor `SensorReading[]`) for the requested `tag_id`. Returns `STATUS_UNKNOWN_TAG` for IDs not in the loaded greenhouse. |
+
+Quick smoke test from a second shell:
+
+```bash
+ros2 service call /greenhouse_bridge/get_tag_reading \
+  lupin_msgs/srv/GetTagReading "{tag_id: '1'}"
+```
+
+**Launch args** (all forward to `GreenhouseSimulator` and the sim-time
+config; sentinels mean "leave the upstream default alone"):
+
+| Arg | Default | Meaning |
+| --- | --- | --- |
+| `tag_file` | `''` | Path to a custom `tag_locations.json` (else use `mdp-greenhouse`'s shipped one). |
+| `sim_config_file` | `''` | Path to a custom `greenhouse_config.yaml`. |
+| `debug_time_of_day` | `-1.0` | Hours (0–24); setting this flips `debug_mode: true` so sim time freezes. |
+| `speedup_factor` | `0.0` | Sim seconds per real second (default config: 1800 → full 24 h cycle in 48 s). |
+| `debug_seed` | `-1` | RNG seed for deterministic noise; setting this also flips `debug_mode: true`. |
+
+> **Upstream gotcha (mdp-greenhouse v1.0.1):** `current_time()` and
+> debug-mode time conversion are off by ×24, which collapses
+> sinusoidal sensor dynamics for any integer/half-integer
+> `debug_time_of_day` value. The bridge wraps published sim time to
+> `[0, 86400)` so downstream contracts hold, but until upstream fixes
+> the conversion, **`debug_time_of_day` is effectively a no-op** for
+> most values you'd pick. `debug_seed` works correctly. Tracked
+> upstream with C.Pek@tudelft.nl.
+
+The bridge has no Gazebo dependency — you can run it standalone
+(useful for offline mission-logic dev), or pair it with
+`greenhouse_sim.launch.py` once tag IDs come from a real AprilTag
+detector against the world. Tag IDs in the bridge match the IDs baked
+into the generated greenhouse SDF, so service calls and AprilTag
+detections agree once the textures land.
+
 ### Sim — full Nav2 stack
 
 When you want autonomy in Gazebo (KRR Course small-house world,
@@ -355,7 +409,7 @@ still running.
 | Package | Purpose |
 | --- | --- |
 | `lupin_bringup` | Top-level launch files, parameters, system glue |
-| `lupin_navigation` | AprilTag-based localisation, path planning |
+| `lupin_navigation` | Nav2 + slam_toolbox bringup; planned home for AprilTag pose corrections |
 | `lupin_perception` | Flower detection, vision pipelines |
 | `lupin_hmi` | Remote operation interface |
 | `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator (GetTagReading service) |

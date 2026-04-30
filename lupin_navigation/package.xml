@@ -3,8 +3,8 @@
 <package format="3">
   <name>lupin_navigation</name>
   <version>0.0.1</version>
-  <description>AprilTag-based localisation and path planning for MDP Team Lupin.</description>
-  <maintainer email="TODO@student.tudelft.nl">Team Lupin</maintainer>
+  <description>Nav2 + slam_toolbox bringup for the MIRTE Master (sim and hardware). Planned home for AprilTag-based pose corrections.</description>
+  <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
