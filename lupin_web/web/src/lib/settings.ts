@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
-const STORAGE_KEY = 'lupin-hmi-settings/v1'
+// Bumped from v1 → v2 when default topics changed (IMU + battery on /io/*,
+// web_video_server on :8091). Old persisted v1 blobs override the new
+// defaults silently, so we ignore them on load and start fresh.
+const STORAGE_KEY = 'lupin-hmi-settings/v2'
 
 export interface Settings {
   rosUrl: string
@@ -62,9 +65,13 @@ function defaultRosUrl(): string {
 }
 
 function defaultWebVideoUrl(): string {
-  if (typeof window === 'undefined') return 'http://localhost:8080'
+  // The vendor MIRTE setup runs web_video_server on [::1]:8181 (localhost-only),
+  // and :8080 conflicts with the wifi-connect AP captive portal. We launch a
+  // second web_video_server bound to 0.0.0.0:8091 alongside our Vite UI so
+  // browsers on the LAN can reach the MJPEG stream.
+  if (typeof window === 'undefined') return 'http://localhost:8091'
   const host = window.location.hostname || 'localhost'
-  return `http://${host}:8080`
+  return `http://${host}:8091`
 }
 
 function readStored(): Partial<Settings> {

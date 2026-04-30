@@ -14,7 +14,9 @@ Group=mirte
 WorkingDirectory=/home/mirte/ros2_ws/src/lupin/lupin_web/web
 # Refuse to start until the build artefact exists. Run `npm run build` after every pull.
 ExecStartPre=/usr/bin/test -d dist
-ExecStart=/usr/bin/npm run preview -- --port 8090 --host 0.0.0.0
+# Run via the package launch file so we get the UI + LAN-reachable web_video_server
+# in one shot. The bash wrapper sources ROS so `ros2 launch` resolves.
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/mirte/mirte_ws/install/setup.bash && source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; exec ros2 launch lupin_web lupin_web.launch.py mode:=preview'
 Restart=on-failure
 RestartSec=5
 # Cap memory in case a runaway HMR session leaks.
