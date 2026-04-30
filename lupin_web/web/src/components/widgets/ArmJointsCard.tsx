@@ -2,11 +2,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useThrottledRender } from '@/lib/throttle'
+import { cn } from '@/lib/utils'
 import { ROS_TYPE, type JointState } from '@/types/ros'
 
 const RAD2DEG = 180 / Math.PI
 
-export function ArmJointsCard() {
+// MIRTE master arm = 5-DOF Hiwonder + gripper. Joint names come from the
+// vendor URDF; they don't share a common prefix, so match by membership.
+const ARM_JOINT_NAMES = new Set([
+  'shoulder_pan_joint',
+  'shoulder_lift_joint',
+  'elbow_joint',
+  'wrist_joint',
+  'gripper_joint',
+])
+
+export function ArmJointsCard({ className }: { className?: string } = {}) {
   const [{ jointStatesTopic }] = useSettings()
   const ref = useTopic<JointState>(jointStatesTopic, ROS_TYPE.JointState)
   useThrottledRender(10)
@@ -15,11 +26,14 @@ export function ArmJointsCard() {
   const arm = js
     ? js.name
         .map((n, i) => ({ name: n, position: js.position[i] ?? 0 }))
-        .filter((j) => j.name.startsWith('arm_'))
+        // Allow either the canonical MIRTE joint names OR a generic `arm_*`
+        // prefix so this still works against vendor URDFs that namespace
+        // their joints differently.
+        .filter((j) => ARM_JOINT_NAMES.has(j.name) || j.name.startsWith('arm_'))
     : []
 
   return (
-    <Card className="flex flex-col">
+    <Card className={cn('flex flex-col', className)}>
       <CardHeader>
         <CardTitle>
           Arm joints

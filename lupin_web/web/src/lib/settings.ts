@@ -30,11 +30,15 @@ export const DEFAULT_SETTINGS: Settings = {
   // sim publishes via the controller's unstamped Twist input
   cmdVelTopic: '/mirte_base_controller/cmd_vel_unstamped',
   cmdVelType: 'geometry_msgs/msg/Twist',
-  imuTopic: '/imu/data',
+  // The MIRTE telemetrix node publishes IMU on /io/imu/movement/data;
+  // the canonical /imu/data has no publisher on the real robot.
+  imuTopic: '/io/imu/movement/data',
   scanTopic: '/scan',
   odomTopic: '/mirte_base_controller/odom',
   jointStatesTopic: '/joint_states',
-  batteryTopic: '/battery_state',
+  // Same story for battery — /battery_state is advertised but unpublished;
+  // /io/power/power_watcher is what the telemetrix node actually publishes.
+  batteryTopic: '/io/power/power_watcher',
   rosoutTopic: '/rosout',
   cameraTopic: '/camera/color/image_raw',
   webVideoServerUrl: '',
