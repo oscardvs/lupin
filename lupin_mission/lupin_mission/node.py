@@ -239,6 +239,16 @@ class MissionOrchestratorNode(Node):
         # Loaded once on startup; the bridge uses string IDs.
         self._tag_locations: dict = load_default_tag_locations()
 
+        # Optional preset tag_sequence parameter — if non-empty, used as
+        # the default when /mission/start passes an empty tag_sequence.
+        # Keeps callers' YAML param files useful without forcing them to
+        # repeat the list in every service request.
+        try:
+            preset = self.get_parameter('tag_sequence').value or []
+        except rclpy.exceptions.ParameterUninitializedException:
+            preset = []
+        self._default_tag_sequence: list[str] = [str(t) for t in preset]
+
         # ─── runtime state ─────────────────────────────────────────────
         self._mission: Optional[InspectionMission] = None
         self._mission_started_at = TimeMsg()  # zero-stamp until first start
@@ -620,20 +630,23 @@ class MissionOrchestratorNode(Node):
             )
             return response
 
-        # Build the tag sequence: explicit list else default = all known.
+        # Build the tag sequence. Precedence: explicit request → preset
+        # tag_sequence parameter → all tags from tag_locations.json.
         if request.tag_sequence:
             tag_sequence = [str(t) for t in request.tag_sequence]
-            unknown = [t for t in tag_sequence if t not in self._tag_locations]
-            if unknown:
-                response.accepted = False
-                response.error_message = (
-                    f'unknown tag id(s) in tag_sequence: {unknown}'
-                )
-                return response
+        elif self._default_tag_sequence:
+            tag_sequence = list(self._default_tag_sequence)
         else:
             tag_sequence = sorted(
                 self._tag_locations.keys(), key=numeric_string_sort_key,
             )
+        unknown = [t for t in tag_sequence if t not in self._tag_locations]
+        if unknown:
+            response.accepted = False
+            response.error_message = (
+                f'unknown tag id(s) in tag_sequence: {unknown}'
+            )
+            return response
 
         if not tag_sequence:
             response.accepted = False
