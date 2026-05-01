@@ -20,6 +20,7 @@ const ZERO_TWIST: Twist = {
 
 export type EStopReason =
   | 'user'
+  | 'voice-agent'
   | 'visibility-hidden'
   | 'window-blur'
   | 'before-unload'
@@ -132,6 +133,7 @@ export function useCmdVel() {
 
 export const ESTOP_REASON_LABELS: Record<EStopReason, string> = {
   user: 'User pressed E-STOP',
+  'voice-agent': 'Voice agent engaged E-STOP',
   'visibility-hidden': 'Tab hidden — auto-stop',
   'window-blur': 'Window lost focus — auto-stop',
   'before-unload': 'Page unloading — auto-stop',

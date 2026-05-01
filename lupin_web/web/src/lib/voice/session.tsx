@@ -11,7 +11,6 @@
  * scripted harness so the tab demos end-to-end without a network or key.
  */
 
-import ROSLIB from 'roslib'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { AudioPlayer, MicCapture } from './audio'
@@ -241,24 +240,14 @@ export function useVoiceSession(): VoiceSession {
           }
 
           case 'nav_cancel': {
-            const rosLib = ros.rosRef.current
-            if (!rosLib) {
-              return finish({ ok: false, error: 'rosbridge not connected' })
-            }
             try {
-              // Empty CancelGoal request cancels all goals on the action server.
-              const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-                const svc = new ROSLIB.Service({
-                  ros: rosLib,
-                  name: '/navigate_to_pose/_action/cancel_goal',
-                  serviceType: 'action_msgs/srv/CancelGoal',
-                })
-                svc.callService(
-                  new ROSLIB.ServiceRequest({}),
-                  (res: unknown) => resolve(res as Record<string, unknown>),
-                  (err: unknown) => reject(err instanceof Error ? err : new Error(String(err))),
-                )
-              })
+              // Empty CancelGoal request (zero UUID + zero stamp) is the
+              // "cancel all" sentinel on the Nav2 action server.
+              const result = await ros.callService<Record<string, never>, Record<string, unknown>>(
+                '/navigate_to_pose/_action/cancel_goal',
+                'action_msgs/srv/CancelGoal',
+                {},
+              )
               return finish({ ok: true, action: 'nav_cancel', response: result })
             } catch (e) {
               return finish({
@@ -269,8 +258,8 @@ export function useVoiceSession(): VoiceSession {
           }
 
           case 'engage_estop': {
-            estop.trigger('user')
-            return finish({ ok: true, action: 'estop_engaged' })
+            estop.trigger('voice-agent')
+            return finish({ ok: true, action: 'estop_engaged', reason: 'voice-agent' })
           }
 
           case 'nav_goto_named': {
@@ -361,27 +350,12 @@ export function useVoiceSession(): VoiceSession {
               )
             }
             const preset = String(args.name ?? '')
-            // Call the arm preset service directly via the underlying ROSLIB
-            // handle. This avoids depending on a `callService` shim in ros.tsx
-            // that lives on a different feature branch — keeps merge conflicts
-            // with feat/web-arm-control to a minimum.
-            const rosLib = ros.rosRef.current
-            if (!rosLib) {
-              return finish({ ok: false, error: 'rosbridge not connected' })
-            }
             try {
-              const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-                const svc = new ROSLIB.Service({
-                  ros: rosLib,
-                  name: '/lupin/arm/preset',
-                  serviceType: 'lupin_msgs/srv/SetArmPreset',
-                })
-                svc.callService(
-                  new ROSLIB.ServiceRequest({ name: preset }),
-                  (res: unknown) => resolve(res as Record<string, unknown>),
-                  (err: unknown) => reject(err instanceof Error ? err : new Error(String(err))),
-                )
-              })
+              const result = await ros.callService<{ name: string }, Record<string, unknown>>(
+                '/lupin/arm/preset',
+                'lupin_msgs/srv/SetArmPreset',
+                { name: preset },
+              )
               return finish({ ok: true, action: 'arm_preset', name: preset, response: result })
             } catch (e) {
               return finish({
