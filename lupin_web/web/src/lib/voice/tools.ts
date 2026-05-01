@@ -122,6 +122,22 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'gripper',
+    description:
+      "Open or close the Hiwonder gripper jaw. The mechanical end-stop angles haven't been verified on the live robot yet, so we drive a conservative ±30° window. Use 'open' to release / clear the jaw, 'close' to grasp. The arm joints are unaffected — pair with arm_preset 'pick' or 'place' for full pick-and-place sequences.",
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['open', 'close'],
+          description: "Direction. 'open' drives to +30°, 'close' to -30°.",
+        },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'arm_preset',
     description:
       "Move the 4-DOF Hiwonder arm (shoulder pan / lift, elbow, wrist) to a named preset pose ('home', 'tuck', 'pick', 'place'). The gripper jaw is a separate joint and is not driven by this tool. Presets are defined on the robot side.",
@@ -178,6 +194,7 @@ export type ToolName =
   | 'nav_goto_named'
   | 'list_named_locations'
   | 'save_named_location'
+  | 'gripper'
   | 'arm_preset'
   | 'engage_estop'
   | 'query_state'

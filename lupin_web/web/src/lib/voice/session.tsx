@@ -23,7 +23,15 @@ import type { ToolInvocation, TranscriptTurn, VoiceStatus } from './types'
 import { useEStop } from '@/lib/estop'
 import { isMockMode, useSettings, type Settings, type VoiceNamedLocation } from '@/lib/settings'
 import { useMapPose, useRos, useTopic, type MapPose } from '@/lib/ros'
-import { ROS_TYPE, quatToEuler, type BatteryState, type Odometry, type PoseStamped } from '@/types/ros'
+import {
+  MIRTE_SRV,
+  ROS_TYPE,
+  quatToEuler,
+  type BatteryState,
+  type Odometry,
+  type PoseStamped,
+  type SetServoAngleWithSpeedRequest,
+} from '@/types/ros'
 
 const TURN_HISTORY_CAP = 80
 const TOOL_HISTORY_CAP = 40
@@ -306,6 +314,43 @@ export function useVoiceSession(): VoiceSession {
               voiceNamedLocations: { ...settings.voiceNamedLocations, [key]: loc },
             })
             return finish({ ok: true, action: 'saved', name: key, ...loc })
+          }
+
+          case 'gripper': {
+            if (estop.active) {
+              return finish(
+                { ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` },
+              )
+            }
+            const action = String(args.action ?? '').toLowerCase()
+            if (action !== 'open' && action !== 'close') {
+              return finish({ ok: false, error: "action must be 'open' or 'close'" })
+            }
+            // Conservative ±30° window — matches ArmView's unverified gripper range.
+            // Re-tune once the live mechanical limits are recorded; see the
+            // verification recipe in ArmView.tsx.
+            const angle = action === 'open' ? 30 : -30
+            try {
+              const res = await ros.callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
+                `${settings.armServoNamespace}/gripper/set_angle_with_speed`,
+                MIRTE_SRV.SetServoAngleWithSpeed,
+                { angle, rate: settings.armRateDegPerSec, degrees: true },
+              )
+              return finish({
+                ok: true,
+                action: 'gripper',
+                direction: action,
+                angle_deg: angle,
+                note: 'gripper range is unverified — angles capped to ±30°',
+                response: res,
+              })
+            } catch (e) {
+              return finish({
+                ok: false,
+                error: `gripper service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+              })
+            }
           }
 
           case 'arm_preset': {
