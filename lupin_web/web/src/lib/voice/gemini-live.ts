@@ -71,7 +71,7 @@ export class GeminiLiveClient {
       if (this.closed) return
       this.opts.onStatus('open')
       const setup: BidiClientMessage = {
-        setup: { config: this.buildSetup() },
+        setup: this.buildSetup(),
       }
       ws.send(JSON.stringify(setup))
     }

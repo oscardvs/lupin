@@ -243,6 +243,26 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
               </Field>
             </Section>
 
+            <Section title="Safety">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="estopAutoOnFocusLoss" className="text-sm">
+                    Auto E-stop on focus loss
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Trigger E-stop when the tab is hidden or the window loses focus. Page-unload and
+                    rosbridge-disconnect always fire regardless. Disable during dev to stop alt-tab
+                    from constantly tripping the stop.
+                  </p>
+                </div>
+                <Switch
+                  id="estopAutoOnFocusLoss"
+                  checked={settings.estopAutoOnFocusLoss}
+                  onCheckedChange={(v) => update({ estopAutoOnFocusLoss: v })}
+                />
+              </div>
+            </Section>
+
             <Section title="Diagnostics">
               <div className="flex items-center justify-between">
                 <div>

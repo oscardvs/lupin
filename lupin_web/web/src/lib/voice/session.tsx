@@ -85,9 +85,9 @@ export function useVoiceSession(): VoiceSession {
   const pushTranscript = useCallback((turn: TranscriptTurn) => {
     setTranscript((prev) => {
       const last = prev[prev.length - 1]
-      if (last && !last.final && last.role === turn.role && last.id === turn.id) {
+      if (last && !last.final && last.role === turn.role) {
         const next = prev.slice(0, -1)
-        next.push(turn)
+        next.push({ ...turn, id: last.id })
         return next
       }
       const next = [...prev, turn]
