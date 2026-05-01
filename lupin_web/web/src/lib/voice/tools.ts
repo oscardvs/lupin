@@ -53,6 +53,42 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'rotate',
+    description:
+      "Rotate the base in place by a relative yaw angle, in degrees, using the Nav2 planner (same controller as nav_goto). Positive = counter-clockwise. Use for scanning the room or reorienting before a pick. Requires localization. The robot can refuse if the rotation would place its footprint into known obstacles.",
+    parameters: {
+      type: 'object',
+      properties: {
+        angle_deg: {
+          type: 'number',
+          description: 'Relative yaw, degrees. Positive = ccw, negative = cw. Wrapped into [-180, 180].',
+        },
+      },
+      required: ['angle_deg'],
+    },
+  },
+  {
+    name: 'set_speed_cap',
+    description:
+      "Temporarily scale the voice agent's drive speed limits by a factor in [0, 1]. 1.0 means use the configured voiceMax* caps as-is; 0.5 halves them; 0.0 effectively disables drive bursts. The change is in-memory and resets when the session ends. Use when the user says 'go slower' / 'careful mode' or wants to ramp speed up after a cautious approach.",
+    parameters: {
+      type: 'object',
+      properties: {
+        value: {
+          type: 'number',
+          description: 'Speed cap factor in [0, 1]. Clamped.',
+        },
+      },
+      required: ['value'],
+    },
+  },
+  {
+    name: 'nav_cancel',
+    description:
+      'Cancel any in-flight Nav2 goal. The robot stops planning toward its current target and holds position. Safe and idempotent — call this whenever the user wants to abort a navigation in progress (e.g. "never mind", "stop going there"). Does not stop teleop motion — for a hard stop use stop or engage_estop.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'nav_goto_named',
     description:
       'Send a Nav2 goal to a pre-configured named location (e.g. "kitchen", "home"). The list of valid names is given in the system prompt at session start.',
@@ -65,9 +101,46 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'list_named_locations',
+    description:
+      'Return the current map-frame named-locations dictionary the agent can navigate to. Use this to discover what locations exist before calling nav_goto_named, especially when the user asks "where can you go?" or refers to a location by a fuzzy name.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'save_named_location',
+    description:
+      "Snapshot the robot's current map-frame pose and store it under a name so future calls can `nav_goto_named` back here. Use when the user says \"remember this spot as <name>\" or \"call this <name>\". Requires that localization is up — fails if no map→base transform is available.",
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Short identifier (e.g. "kitchen", "charging_dock"). Overwrites if the name already exists.',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'gripper',
+    description:
+      "Open or close the Hiwonder gripper jaw. The mechanical end-stop angles haven't been verified on the live robot yet, so we drive a conservative ±30° window. Use 'open' to release / clear the jaw, 'close' to grasp. The arm joints are unaffected — pair with arm_preset 'pick' or 'place' for full pick-and-place sequences.",
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['open', 'close'],
+          description: "Direction. 'open' drives to +30°, 'close' to -30°.",
+        },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'arm_preset',
     description:
-      "Move the 5-DOF Hiwonder arm to a named preset pose ('home', 'tuck', 'pick', 'place'). Presets are defined on the robot side.",
+      "Move the 4-DOF Hiwonder arm (shoulder pan / lift, elbow, wrist) to a named preset pose ('home', 'tuck', 'pick', 'place'). The gripper jaw is a separate joint and is not driven by this tool. Presets are defined on the robot side.",
     parameters: {
       type: 'object',
       properties: {
@@ -92,6 +165,12 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'engage_estop',
+    description:
+      'Trigger the same software E-stop as the red bar in the UI. Halts all motion and gates further drive / nav / arm calls until the user manually presses Reset E-stop. Use this when the user says "stop everything", "emergency stop", "kill it", or signals real concern. Prefer stop or nav_cancel for routine halts.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'speak',
     description:
       'Speak a short response without taking any action. Use this when the user asks something purely conversational. Prefer this to silently doing nothing.',
@@ -108,9 +187,16 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
 export type ToolName =
   | 'drive'
   | 'stop'
+  | 'rotate'
+  | 'set_speed_cap'
   | 'nav_goto'
+  | 'nav_cancel'
   | 'nav_goto_named'
+  | 'list_named_locations'
+  | 'save_named_location'
+  | 'gripper'
   | 'arm_preset'
+  | 'engage_estop'
   | 'query_state'
   | 'speak'
 

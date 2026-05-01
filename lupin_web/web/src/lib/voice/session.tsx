@@ -11,7 +11,6 @@
  * scripted harness so the tab demos end-to-end without a network or key.
  */
 
-import ROSLIB from 'roslib'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { AudioPlayer, MicCapture } from './audio'
@@ -21,9 +20,17 @@ import { ROBOT_TOOL_DECLARATIONS, clampNumber, type ToolName } from './tools'
 import type { ToolInvocation, TranscriptTurn, VoiceStatus } from './types'
 
 import { useEStop } from '@/lib/estop'
-import { isMockMode, useSettings, type Settings } from '@/lib/settings'
-import { useRos, useTopic } from '@/lib/ros'
-import { ROS_TYPE, quatToEuler, type BatteryState, type Odometry, type PoseStamped } from '@/types/ros'
+import { isMockMode, useSettings, type Settings, type VoiceNamedLocation } from '@/lib/settings'
+import { useMapPose, useRos, useTopic, type MapPose } from '@/lib/ros'
+import {
+  MIRTE_SRV,
+  ROS_TYPE,
+  quatToEuler,
+  type BatteryState,
+  type Odometry,
+  type PoseStamped,
+  type SetServoAngleWithSpeedRequest,
+} from '@/types/ros'
 
 const TURN_HISTORY_CAP = 80
 const TOOL_HISTORY_CAP = 40
@@ -55,7 +62,7 @@ export interface VoiceSession {
 }
 
 export function useVoiceSession(): VoiceSession {
-  const [{ ...settings }] = useSettings() as readonly [Settings, unknown, unknown]
+  const [settings, updateSettings] = useSettings()
   const ros = useRos()
   const estop = useEStop()
 
@@ -70,11 +77,23 @@ export function useVoiceSession(): VoiceSession {
   const odomRef = useTopic<Odometry>(settings.odomTopic, ROS_TYPE.Odometry)
   const batteryRef = useTopic<BatteryState>(settings.batteryTopic, ROS_TYPE.BatteryState)
 
+  // Map-frame pose, used by save_named_location. Mirrored to a ref so the
+  // dispatcher reads the latest value without re-creating itself per tick.
+  const mapPose = useMapPose(settings.mapFrame, settings.baseFrame)
+  const mapPoseRef = useRef<MapPose | null>(null)
+  useEffect(() => {
+    mapPoseRef.current = mapPose
+  }, [mapPose])
+
   const liveRef = useRef<GeminiLiveClient | null>(null)
   const micRef = useRef<MicCapture | null>(null)
   const playerRef = useRef<AudioPlayer | null>(null)
   const mockRef = useRef<MockHandle | null>(null)
   const driveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Live multiplier on the voiceMax* speed caps. Adjusted by set_speed_cap, not
+  // persisted — per-session by design so a "go slower" command doesn't bleed
+  // into the next conversation.
+  const speedCapRef = useRef<number>(1)
 
   const isLive = useMemo(
     () => !isMockMode() && settings.geminiApiKey.trim().length > 0,
@@ -143,9 +162,12 @@ export function useVoiceSession(): VoiceSession {
                 { blocked: true, error: `e-stop active: ${estop.reason}` },
               )
             }
-            const lx = clampNumber(args.linear_x, -settings.voiceMaxLinearMps, settings.voiceMaxLinearMps)
-            const ly = clampNumber(args.linear_y, -settings.voiceMaxLinearMps, settings.voiceMaxLinearMps)
-            const az = clampNumber(args.angular_z, -settings.voiceMaxAngularRps, settings.voiceMaxAngularRps)
+            const cap = speedCapRef.current
+            const linMax = settings.voiceMaxLinearMps * cap
+            const angMax = settings.voiceMaxAngularRps * cap
+            const lx = clampNumber(args.linear_x, -linMax, linMax)
+            const ly = clampNumber(args.linear_y, -linMax, linMax)
+            const az = clampNumber(args.angular_z, -angMax, angMax)
             const dur = clampNumber(args.duration_s, 0.1, MAX_DRIVE_SECONDS, 0.5)
             const twist = {
               linear: { x: lx, y: ly, z: 0 },
@@ -177,6 +199,69 @@ export function useVoiceSession(): VoiceSession {
             return finish({ ok: true, action: 'goal_sent', x, y, yaw })
           }
 
+          case 'rotate': {
+            if (estop.active) {
+              return finish(
+                { ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` },
+              )
+            }
+            const pose = mapPoseRef.current
+            if (!pose) {
+              return finish({
+                ok: false,
+                error: 'no map→base transform — cannot compute relative rotation goal',
+              })
+            }
+            const deltaRad = (clampNumber(args.angle_deg, -3600, 3600) * Math.PI) / 180
+            // Wrap to [-π, π] so Nav2 takes the shortest direction.
+            let yaw = pose.yaw + deltaRad
+            yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw))
+            publishGoal(ros, settings, pose.x, pose.y, yaw)
+            return finish({
+              ok: true,
+              action: 'rotate_goal_sent',
+              from_yaw: pose.yaw,
+              to_yaw: yaw,
+              delta_deg: clampNumber(args.angle_deg, -3600, 3600),
+            })
+          }
+
+          case 'set_speed_cap': {
+            const v = clampNumber(args.value, 0, 1, 1)
+            speedCapRef.current = v
+            return finish({
+              ok: true,
+              action: 'speed_cap_set',
+              value: v,
+              effective_max_linear_mps: settings.voiceMaxLinearMps * v,
+              effective_max_angular_rps: settings.voiceMaxAngularRps * v,
+            })
+          }
+
+          case 'nav_cancel': {
+            try {
+              // Empty CancelGoal request (zero UUID + zero stamp) is the
+              // "cancel all" sentinel on the Nav2 action server.
+              const result = await ros.callService<Record<string, never>, Record<string, unknown>>(
+                '/navigate_to_pose/_action/cancel_goal',
+                'action_msgs/srv/CancelGoal',
+                {},
+              )
+              return finish({ ok: true, action: 'nav_cancel', response: result })
+            } catch (e) {
+              return finish({
+                ok: false,
+                error: `nav cancel service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+              })
+            }
+          }
+
+          case 'engage_estop': {
+            estop.trigger('voice-agent')
+            return finish({ ok: true, action: 'estop_engaged', reason: 'voice-agent' })
+          }
+
           case 'nav_goto_named': {
             const key = String(args.name ?? '')
             const loc = settings.voiceNamedLocations[key]
@@ -196,6 +281,67 @@ export function useVoiceSession(): VoiceSession {
             return finish({ ok: true, action: 'goal_sent', name: key, ...loc })
           }
 
+          case 'list_named_locations': {
+            return finish({ ok: true, locations: settings.voiceNamedLocations })
+          }
+
+          case 'save_named_location': {
+            const key = String(args.name ?? '').trim()
+            if (!key) {
+              return finish({ ok: false, error: 'name is required' })
+            }
+            const pose = mapPoseRef.current
+            if (!pose) {
+              return finish({
+                ok: false,
+                error:
+                  'no map→base transform available — localization may not be running. Cannot save a map-frame pose.',
+              })
+            }
+            const loc: VoiceNamedLocation = { x: pose.x, y: pose.y, yaw: pose.yaw }
+            updateSettings({
+              voiceNamedLocations: { ...settings.voiceNamedLocations, [key]: loc },
+            })
+            return finish({ ok: true, action: 'saved', name: key, ...loc })
+          }
+
+          case 'gripper': {
+            if (estop.active) {
+              return finish(
+                { ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` },
+              )
+            }
+            const action = String(args.action ?? '').toLowerCase()
+            if (action !== 'open' && action !== 'close') {
+              return finish({ ok: false, error: "action must be 'open' or 'close'" })
+            }
+            // Conservative ±30° window — matches ArmView's unverified gripper range.
+            // Re-tune once the live mechanical limits are recorded; see the
+            // verification recipe in ArmView.tsx.
+            const angle = action === 'open' ? 30 : -30
+            try {
+              const res = await ros.callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
+                `${settings.armServoNamespace}/gripper/set_angle_with_speed`,
+                MIRTE_SRV.SetServoAngleWithSpeed,
+                { angle, rate: settings.armRateDegPerSec, degrees: true },
+              )
+              return finish({
+                ok: true,
+                action: 'gripper',
+                direction: action,
+                angle_deg: angle,
+                note: 'gripper range is unverified — angles capped to ±30°',
+                response: res,
+              })
+            } catch (e) {
+              return finish({
+                ok: false,
+                error: `gripper service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+              })
+            }
+          }
+
           case 'arm_preset': {
             if (estop.active) {
               return finish(
@@ -204,27 +350,12 @@ export function useVoiceSession(): VoiceSession {
               )
             }
             const preset = String(args.name ?? '')
-            // Call the arm preset service directly via the underlying ROSLIB
-            // handle. This avoids depending on a `callService` shim in ros.tsx
-            // that lives on a different feature branch — keeps merge conflicts
-            // with feat/web-arm-control to a minimum.
-            const rosLib = ros.rosRef.current
-            if (!rosLib) {
-              return finish({ ok: false, error: 'rosbridge not connected' })
-            }
             try {
-              const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-                const svc = new ROSLIB.Service({
-                  ros: rosLib,
-                  name: '/lupin/arm/preset',
-                  serviceType: 'lupin_msgs/srv/SetArmPreset',
-                })
-                svc.callService(
-                  new ROSLIB.ServiceRequest({ name: preset }),
-                  (res: unknown) => resolve(res as Record<string, unknown>),
-                  (err: unknown) => reject(err instanceof Error ? err : new Error(String(err))),
-                )
-              })
+              const result = await ros.callService<{ name: string }, Record<string, unknown>>(
+                '/lupin/arm/preset',
+                'lupin_msgs/srv/SetArmPreset',
+                { name: preset },
+              )
               return finish({ ok: true, action: 'arm_preset', name: preset, response: result })
             } catch (e) {
               return finish({
@@ -264,7 +395,7 @@ export function useVoiceSession(): VoiceSession {
         return finish({ ok: false, error }, { error })
       }
     },
-    [ros, settings, estop, odomRef, batteryRef, pushTool, pushTranscript],
+    [ros, settings, estop, odomRef, batteryRef, mapPoseRef, updateSettings, pushTool, pushTranscript],
   )
 
   /** ───────────────────── Live mode wiring ───────────────────── */
