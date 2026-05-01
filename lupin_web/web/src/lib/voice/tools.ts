@@ -53,6 +53,12 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'nav_cancel',
+    description:
+      'Cancel any in-flight Nav2 goal. The robot stops planning toward its current target and holds position. Safe and idempotent — call this whenever the user wants to abort a navigation in progress (e.g. "never mind", "stop going there"). Does not stop teleop motion — for a hard stop use stop or engage_estop.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'nav_goto_named',
     description:
       'Send a Nav2 goal to a pre-configured named location (e.g. "kitchen", "home"). The list of valid names is given in the system prompt at session start.',
@@ -92,6 +98,12 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'engage_estop',
+    description:
+      'Trigger the same software E-stop as the red bar in the UI. Halts all motion and gates further drive / nav / arm calls until the user manually presses Reset E-stop. Use this when the user says "stop everything", "emergency stop", "kill it", or signals real concern. Prefer stop or nav_cancel for routine halts.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'speak',
     description:
       'Speak a short response without taking any action. Use this when the user asks something purely conversational. Prefer this to silently doing nothing.',
@@ -109,8 +121,10 @@ export type ToolName =
   | 'drive'
   | 'stop'
   | 'nav_goto'
+  | 'nav_cancel'
   | 'nav_goto_named'
   | 'arm_preset'
+  | 'engage_estop'
   | 'query_state'
   | 'speak'
 

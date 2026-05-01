@@ -177,6 +177,39 @@ export function useVoiceSession(): VoiceSession {
             return finish({ ok: true, action: 'goal_sent', x, y, yaw })
           }
 
+          case 'nav_cancel': {
+            const rosLib = ros.rosRef.current
+            if (!rosLib) {
+              return finish({ ok: false, error: 'rosbridge not connected' })
+            }
+            try {
+              // Empty CancelGoal request cancels all goals on the action server.
+              const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+                const svc = new ROSLIB.Service({
+                  ros: rosLib,
+                  name: '/navigate_to_pose/_action/cancel_goal',
+                  serviceType: 'action_msgs/srv/CancelGoal',
+                })
+                svc.callService(
+                  new ROSLIB.ServiceRequest({}),
+                  (res: unknown) => resolve(res as Record<string, unknown>),
+                  (err: unknown) => reject(err instanceof Error ? err : new Error(String(err))),
+                )
+              })
+              return finish({ ok: true, action: 'nav_cancel', response: result })
+            } catch (e) {
+              return finish({
+                ok: false,
+                error: `nav cancel service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+              })
+            }
+          }
+
+          case 'engage_estop': {
+            estop.trigger('user')
+            return finish({ ok: true, action: 'estop_engaged' })
+          }
+
           case 'nav_goto_named': {
             const key = String(args.name ?? '')
             const loc = settings.voiceNamedLocations[key]
