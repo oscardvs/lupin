@@ -28,7 +28,7 @@ from typing import Any, Optional
 import rclpy
 from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Time as TimeMsg
-from geometry_msgs.msg import PoseStamped, Quaternion
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Quaternion
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -191,6 +191,7 @@ class MissionOrchestratorNode(Node):
         self.declare_parameter('map_yaml_path', '')
         self.declare_parameter('localization_timeout_s', 15.0)
         self.declare_parameter('localization_covariance_threshold', 0.25)
+        self.declare_parameter('amcl_pose_topic', '/amcl_pose')
 
         # tag_sequence: type-only declaration so an empty default doesn't
         # infer as BYTE_ARRAY and reject string overrides.
@@ -219,6 +220,7 @@ class MissionOrchestratorNode(Node):
         self._localization_cov_thresh = float(
             self.get_parameter('localization_covariance_threshold').value
         )
+        self._amcl_pose_topic = str(self.get_parameter('amcl_pose_topic').value)
 
         self._approach_yaw = float(self.get_parameter('approach_yaw').value)
         self._nav_timeout = float(self.get_parameter('nav_timeout_s').value)
@@ -258,6 +260,12 @@ class MissionOrchestratorNode(Node):
         # tracked separately from the nav-attempt counter so retry logic
         # is per-tag (counter on TagResult), but timeouts are per-attempt.
         # bookkeeping for the watchdog.
+
+        # Latest AMCL pose snapshot, consumed by _poll_localization.
+        self._latest_amcl_pose: Optional[PoseWithCovarianceStamped] = None
+        # When PREPARE_LOCALIZING was entered (set in on_enter); compared
+        # to localization_timeout_s by the watchdog.
+        self._localizing_started_at: float = self._monotonic()
 
         # ─── callback group ────────────────────────────────────────────
         # Mutually-exclusive: state machine transitions are serialised
@@ -318,6 +326,23 @@ class MissionOrchestratorNode(Node):
                 reliability=QoSReliabilityPolicy.RELIABLE,
                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             ),
+        )
+
+        # AMCL pose for the localization gate. Nav2 publishes /amcl_pose
+        # with TRANSIENT_LOCAL+depth 1 (latched), so a late subscriber
+        # — like us, started after Nav2 — still sees the most recent
+        # pose. Match that QoS or the topic stays empty.
+        self._amcl_sub = self.create_subscription(
+            PoseWithCovarianceStamped,
+            self._amcl_pose_topic,
+            self._on_amcl_pose,
+            QoSProfile(
+                depth=1,
+                history=QoSHistoryPolicy.KEEP_LAST,
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+            callback_group=self._cb_group,
         )
 
         # E-stop monitor.
@@ -425,13 +450,15 @@ class MissionOrchestratorNode(Node):
         self._estop_engaged = False
         # _paused intentionally untouched.
 
-    # ─── stub: nav cancel ──────────────────────────────────────────────
-    def _cancel_inflight_nav(self, reason: str) -> None:
-        """Cancel any in-flight NavigateToPose goal. Safe if none active.
+    # ─── nav cancellation ──────────────────────────────────────────────
+    # Operator-initiated cancels (pause / E-stop / abort / skip) drop the
+    # goal handle and DECREMENT the attempt counter — this attempt didn't
+    # really happen, so the resume kick should re-issue at the same count.
+    # Nav2-internal failures (ABORTED, REJECTED, timeout) keep the attempt
+    # counted; retry logic lives in _on_inspection_nav_result and
+    # _check_nav_timeout.
 
-        Filled out properly when the inspection sub-machine lands; for now
-        just clears the handle so the stale-future guard kicks in.
-        """
+    def _cancel_inflight_nav(self, reason: str, *, refund_attempt: bool = True) -> None:
         if self._nav_goal_handle is None:
             return
         try:
@@ -441,6 +468,12 @@ class MissionOrchestratorNode(Node):
         self._nav_goal_handle = None
         self._nav_send_goal_future = None
         self._nav_get_result_future = None
+        # Refund the attempt: this particular goal didn't get a chance
+        # to fail naturally, so it shouldn't burn a retry budget.
+        if refund_attempt and self._mission is not None and not self._mission.is_complete():
+            r = self._mission.current_result()
+            if r.nav_attempts > 0:
+                r.nav_attempts -= 1
         self.get_logger().info(f'Nav2 goal cancelled ({reason}).')
 
     # ─── watchdog ──────────────────────────────────────────────────────
@@ -488,21 +521,71 @@ class MissionOrchestratorNode(Node):
             self.fault()  # type: ignore[attr-defined]
 
     def _poll_localization(self) -> None:
-        # Stub for this slice; real implementation lands with the
-        # PREPARE/RETURNING task. For now, immediately succeed so the
-        # lifecycle is testable end-to-end with a fake mission.
-        # TODO(prepare-real): replace with AMCL covariance gate.
         if self._is_blocked():
             return
-        self.localized()  # type: ignore[attr-defined]
+        elapsed = self._monotonic() - self._localizing_started_at
+        cov = self._latest_amcl_diag()
+        if cov is not None and cov <= self._localization_cov_thresh:
+            self.get_logger().info(
+                f'Localization confident (max diag cov {cov:.3f} '
+                f'<= {self._localization_cov_thresh:.3f}); proceeding.'
+            )
+            self.localized()  # type: ignore[attr-defined]
+            return
+        if elapsed > self._localization_timeout:
+            cov_str = f'{cov:.3f}' if cov is not None else 'no /amcl_pose received'
+            self._last_error = f'localization_failed ({cov_str})'
+            self.get_logger().error(
+                f'Localization did not converge within '
+                f'{self._localization_timeout:.1f}s ({cov_str}); '
+                f'transitioning to FAULT.'
+            )
+            self.fault()  # type: ignore[attr-defined]
+
+    def _latest_amcl_diag(self) -> Optional[float]:
+        """Return max(x_var, y_var, yaw_var) from latest AMCL pose, or None."""
+        msg = self._latest_amcl_pose
+        if msg is None:
+            return None
+        c = msg.pose.covariance  # 36-vector, row-major 6x6
+        # Indices: x=0, y=7, yaw=35 (z/roll/pitch are meaningless for our
+        # 2D pose; AMCL leaves them huge).
+        return float(max(c[0], c[7], c[35]))
+
+    def _on_amcl_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        self._latest_amcl_pose = msg
 
     def _check_nav_timeout(self) -> None:
-        # Stub: filled in with the inspection sub-machine task.
-        return
+        if self._is_blocked() or self._nav_goal_handle is None:
+            return
+        if self._monotonic() - self._nav_state_started_at <= self._nav_timeout:
+            return
+        # Treat the timeout as an in-progress attempt that just failed —
+        # the attempt has already been counted, so do NOT refund.
+        self.get_logger().warn(
+            f'Nav2 timeout after {self._nav_timeout:.1f}s for tag '
+            f'{self._mission.current_tag_id() if self._mission else "?"}'
+        )
+        self._cancel_inflight_nav('nav_timeout', refund_attempt=False)
+        self._handle_nav_failure('nav_timeout')
 
     def _check_scan_timeout(self) -> None:
-        # Stub: filled in with the inspection sub-machine task.
-        return
+        if self._is_blocked() or self._scan_future is None:
+            return
+        if self._monotonic() - self._scan_started_at <= self._scan_timeout:
+            return
+        self.get_logger().warn(
+            f'Bridge timeout after {self._scan_timeout:.1f}s for tag '
+            f'{self._mission.current_tag_id() if self._mission else "?"}'
+        )
+        # rclpy futures don't really cancel; just drop the reference so
+        # the stale-future guard in _on_scan_response ignores any late
+        # response that arrives after this point.
+        self._scan_future = None
+        if self._mission is not None and not self._mission.is_complete():
+            result = self._mission.mark_scan_failed('scan_timeout')
+            self._emit_observation_for(result)
+        self.scan_done()  # type: ignore[attr-defined]
 
     # ─── service handlers ──────────────────────────────────────────────
     def _handle_start_mission(self, request: StartMission.Request,
@@ -714,13 +797,304 @@ class MissionOrchestratorNode(Node):
     def _kick_current_state(self) -> None:
         """Re-enter the active state's action after pause/E-stop release.
 
-        Only INSPECTING.NAVIGATING and INSPECTING.SCANNING have ongoing
-        work that pause/E-stop can interrupt; everything else is event-
-        driven and naturally re-fires.
+        Only NAVIGATING and SCANNING have outgoing work that pause/E-stop
+        actually interrupts. RETURNING also re-issues its dock goal.
+        Everything else is event-driven (action/service callback) and
+        naturally re-fires once we stop blocking.
         """
-        # Filled in by the inspection sub-machine task; for now a no-op
-        # so /mission/resume succeeds even if no work was in flight.
-        return
+        st = self.state
+        if st == 'INSPECTING_NAVIGATING':
+            if self._nav_goal_handle is None:
+                self._send_inspection_nav_goal()
+        elif st == 'INSPECTING_SCANNING':
+            if self._scan_future is None:
+                self._call_bridge()
+        elif st == 'RETURNING':
+            if self._nav_goal_handle is None:
+                self._send_return_nav_goal()
+
+    # ─── on_enter handlers: the heart of the inspection sub-FSM ────────
+    # transitions auto-discovers methods named on_enter_<full_state>; the
+    # nested-state form uses the same `_` separator as state names.
+
+    def on_enter_PREPARE_LOCALIZING(self, event_data) -> None:
+        self._localizing_started_at = self._monotonic()
+        if self._map_yaml_path:
+            # TODO(map-loading): load the yaml via the map_server lifecycle
+            # interface. For this MR we assume Nav2 already has a map up;
+            # warn so the missing piece is visible at runtime.
+            self.get_logger().warn(
+                f'map_yaml_path={self._map_yaml_path!r} is set but '
+                'this build does not load maps — assuming Nav2 already '
+                'has one configured.'
+            )
+
+    def on_enter_INSPECTING_NAVIGATING(self, event_data) -> None:
+        # Defensive only: mission-is-None at this depth is a programming
+        # error — the only legal entry path is via /mission/start, which
+        # creates the mission before triggering any HSM transitions.
+        if self._mission is None or self._mission.is_complete():
+            self.get_logger().warn(
+                'on_enter NAVIGATING with no active mission; holding state.'
+            )
+            return
+        if self._is_blocked():
+            return
+        self._send_inspection_nav_goal()
+
+    def on_enter_INSPECTING_SCANNING(self, event_data) -> None:
+        if self._mission is None or self._mission.is_complete():
+            self.get_logger().warn(
+                'on_enter SCANNING with no active mission; holding state.'
+            )
+            return
+        if self._is_blocked():
+            return
+        self._call_bridge()
+
+    def on_enter_INSPECTING_PUBLISHING(self, event_data) -> None:
+        # Per spec, PUBLISHING is a named gate. The actual publish has
+        # already happened in _on_scan_response / nav-failure / abort /
+        # skip paths. Here we just advance the cursor and decide where
+        # to go next.
+        if self._mission is None:
+            self.get_logger().warn(
+                'on_enter PUBLISHING with no active mission; holding state.'
+            )
+            return
+        self._mission.advance()
+        if self._mission.is_complete():
+            self.inspection_complete()  # type: ignore[attr-defined]
+        else:
+            self.next_tag()  # type: ignore[attr-defined]
+
+    def on_enter_RETURNING(self, event_data) -> None:
+        if self._is_blocked():
+            return
+        self._send_return_nav_goal()
+
+    def on_enter_DONE(self, event_data) -> None:
+        self._log_final_summary()
+
+    def on_enter_FAULT(self, event_data) -> None:
+        # Cancel anything still in flight; FAULT is terminal until a
+        # fresh start_mission is requested (which will be rejected, per
+        # service handler).
+        self._cancel_inflight_nav('fault', refund_attempt=False)
+        self._scan_future = None
+
+    # ─── inspection nav: send / response / result ──────────────────────
+    def _send_inspection_nav_goal(self) -> None:
+        """Issue NavigateToPose for the current tag's (x, y).
+
+        Increments the attempt counter — refunds if cancel-by-operator.
+        """
+        if self._mission is None or self._mission.is_complete():
+            return
+        try:
+            x, y = self._mission.current_target_xy()
+        except KeyError:
+            # Tag in the sequence but not in tag_locations — should have
+            # been caught at start_mission validation, but be defensive.
+            tag_id = self._mission.current_tag_id()
+            result = self._mission.mark_unreachable(f'unknown_tag:{tag_id}')
+            self._emit_observation_for(result)
+            self.nav_unreachable()  # type: ignore[attr-defined]
+            return
+
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose = self._build_pose_stamped(x, y, self._approach_yaw)
+
+        self._mission.register_nav_attempt()
+        attempt = self._mission.current_result().nav_attempts
+        self.get_logger().info(
+            f'NavigateToPose → tag {self._mission.current_tag_id()} '
+            f'(attempt {attempt}/{self._mission.nav_max_attempts}, '
+            f'pose=({x:.2f}, {y:.2f}, yaw={self._approach_yaw:.2f}))'
+        )
+
+        self._nav_state_started_at = self._monotonic()
+        future = self._nav_client.send_goal_async(goal_msg)
+        self._nav_send_goal_future = future
+        future.add_done_callback(self._on_inspection_nav_goal_response)
+
+    def _on_inspection_nav_goal_response(self, future) -> None:
+        # Stale-future guard: if a cancel intervened between send_goal_async
+        # and the server's response, _nav_send_goal_future was nulled.
+        if future is not self._nav_send_goal_future:
+            return
+        try:
+            goal_handle = future.result()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.get_logger().error(f'send_goal raised: {exc!r}')
+            self._handle_nav_failure(f'send_goal_exception:{exc!r}')
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().warn(
+                f'Nav2 rejected goal for tag {self._mission.current_tag_id()}'
+            )
+            self._handle_nav_failure('nav_rejected')
+            return
+
+        self._nav_goal_handle = goal_handle
+        result_future = goal_handle.get_result_async()
+        self._nav_get_result_future = result_future
+        result_future.add_done_callback(self._on_inspection_nav_result)
+
+    def _on_inspection_nav_result(self, future) -> None:
+        # Stale-future guard: a different goal is now active, ignore.
+        if future is not self._nav_get_result_future:
+            return
+        try:
+            result_msg = future.result()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.get_logger().error(f'get_result raised: {exc!r}')
+            self._handle_nav_failure(f'result_exception:{exc!r}')
+            return
+
+        status = result_msg.status
+        # Clear handles once the result is in — so cancels mid-handler
+        # don't fire on a stale handle.
+        self._nav_goal_handle = None
+        self._nav_send_goal_future = None
+        self._nav_get_result_future = None
+
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self.nav_succeeded()  # type: ignore[attr-defined]
+            return
+        # Anything else (ABORTED / CANCELED / unknown) — failure path.
+        # CANCELED arriving here means Nav2 self-cancelled; an operator
+        # cancel would have nulled the future before we got here.
+        self._handle_nav_failure(f'nav_status_{status}')
+
+    def _handle_nav_failure(self, detail: str) -> None:
+        """Common path for any NAVIGATING failure (timeout, abort, reject)."""
+        if self._mission is None or self._mission.is_complete():
+            return
+        if self.state != 'INSPECTING_NAVIGATING':
+            # Pause/abort path moved us elsewhere; ignore late failure.
+            return
+        if self._is_blocked():
+            return
+        if self._mission.can_retry_nav():
+            self.get_logger().warn(
+                f'Nav failure ({detail}); retrying tag '
+                f'{self._mission.current_tag_id()}'
+            )
+            self._send_inspection_nav_goal()
+            return
+        # Out of retries — mark UNREACHABLE, emit, advance.
+        result = self._mission.mark_unreachable(detail)
+        self._emit_observation_for(result)
+        self.nav_unreachable()  # type: ignore[attr-defined]
+
+    # ─── scanning: bridge call ─────────────────────────────────────────
+    def _call_bridge(self) -> None:
+        if self._mission is None or self._mission.is_complete():
+            return
+        request = GetTagReading.Request()
+        request.tag_id = self._mission.current_tag_id()
+        self._scan_started_at = self._monotonic()
+        self._scan_future = self._bridge_client.call_async(request)
+        self._scan_future.add_done_callback(self._on_scan_response)
+
+    def _on_scan_response(self, future) -> None:
+        # Stale-future guard.
+        if future is not self._scan_future or self.state != 'INSPECTING_SCANNING':
+            return
+        self._scan_future = None
+        try:
+            response = future.result()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.get_logger().error(f'bridge call raised: {exc!r}')
+            if self._mission is not None:
+                result = self._mission.mark_scan_failed(f'service_exception:{exc!r}')
+                self._emit_observation_for(result)
+            self.scan_done()  # type: ignore[attr-defined]
+            return
+
+        if response.status == GetTagReading.Response.STATUS_OK:
+            result = self._mission.mark_scan_ok(response.reading)
+            self._emit_observation_for(result)
+        else:
+            detail = response.error_message or f'bridge_status_{response.status}'
+            result = self._mission.mark_scan_failed(detail)
+            self._emit_observation_for(result)
+        self.scan_done()  # type: ignore[attr-defined]
+
+    # ─── returning: dock goal ──────────────────────────────────────────
+    def _send_return_nav_goal(self) -> None:
+        x, y, yaw = self._dock_pose[0], self._dock_pose[1], self._dock_pose[2]
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose = self._build_pose_stamped(x, y, yaw)
+        self.get_logger().info(
+            f'NavigateToPose (RETURN) → dock=({x:.2f}, {y:.2f}, yaw={yaw:.2f})'
+        )
+        self._nav_state_started_at = self._monotonic()
+        future = self._nav_client.send_goal_async(goal_msg)
+        self._nav_send_goal_future = future
+        future.add_done_callback(self._on_return_nav_goal_response)
+
+    def _on_return_nav_goal_response(self, future) -> None:
+        if future is not self._nav_send_goal_future:
+            return
+        try:
+            goal_handle = future.result()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.get_logger().warn(f'RETURN send_goal raised: {exc!r}; treating as done')
+            self.returned()  # type: ignore[attr-defined]
+            return
+        if not goal_handle.accepted:
+            self.get_logger().warn('RETURN: Nav2 rejected dock goal; treating as done')
+            self.returned()  # type: ignore[attr-defined]
+            return
+        self._nav_goal_handle = goal_handle
+        result_future = goal_handle.get_result_async()
+        self._nav_get_result_future = result_future
+        result_future.add_done_callback(self._on_return_nav_result)
+
+    def _on_return_nav_result(self, future) -> None:
+        if future is not self._nav_get_result_future:
+            return
+        try:
+            result_msg = future.result()
+            status = result_msg.status
+        except Exception as exc:  # pragma: no cover - defensive
+            self.get_logger().warn(f'RETURN get_result raised: {exc!r}')
+            status = GoalStatus.STATUS_UNKNOWN
+        self._nav_goal_handle = None
+        self._nav_send_goal_future = None
+        self._nav_get_result_future = None
+        if status != GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().warn(
+                f'RETURN: dock goal ended with status {status}; soft-failing to DONE'
+            )
+        # Per spec: failures returning to dock are non-fatal.
+        self.returned()  # type: ignore[attr-defined]
+
+    # ─── helpers ───────────────────────────────────────────────────────
+    def _build_pose_stamped(self, x: float, y: float, yaw: float) -> PoseStamped:
+        pose = PoseStamped()
+        pose.header.frame_id = self._frame_id
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose.position.x = float(x)
+        pose.pose.position.y = float(y)
+        pose.pose.orientation = _yaw_to_quaternion(float(yaw))
+        return pose
+
+    def _log_final_summary(self) -> None:
+        if self._mission is None:
+            self.get_logger().info('Mission DONE: no mission was active.')
+            return
+        c = self._mission.counters()
+        self.get_logger().info(
+            f'Mission {self._mission.mission_id} DONE: '
+            f'total={c["total"]} ok={c["completed"]} failed={c["failed"]} '
+            f'unreachable={c["unreachable"]} skipped={c["skipped"]}'
+        )
+        for line in self._mission.summary_lines():
+            self.get_logger().info(line)
 
     # ─── routing helpers used by skip_current ──────────────────────────
     def _goto_navigating_via_publishing(self) -> None:
