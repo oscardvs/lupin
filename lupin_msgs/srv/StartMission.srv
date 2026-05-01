@@ -1,0 +1,14 @@
+# Request the orchestrator to begin a mission.
+#
+# Rejected when:
+#   - lifecycle_state is FAULT (orchestrator unhealthy)
+#   - a mission is already running (lifecycle_state in {PREPARE, INSPECTING, RETURNING})
+#   - mission_type is unknown to this build
+# Otherwise accepted; the orchestrator transitions READY → PREPARE.
+
+string mission_type              # "InspectionMission" only this MR
+string[] tag_sequence            # empty = use default (tag_locations.json, numeric order)
+---
+bool accepted
+string mission_id                # populated on accept (mission_id_prefix + uuid hex)
+string error_message             # populated on reject; empty on accept
