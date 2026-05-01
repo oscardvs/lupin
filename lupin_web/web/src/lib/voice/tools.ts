@@ -71,6 +71,27 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'list_named_locations',
+    description:
+      'Return the current map-frame named-locations dictionary the agent can navigate to. Use this to discover what locations exist before calling nav_goto_named, especially when the user asks "where can you go?" or refers to a location by a fuzzy name.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'save_named_location',
+    description:
+      "Snapshot the robot's current map-frame pose and store it under a name so future calls can `nav_goto_named` back here. Use when the user says \"remember this spot as <name>\" or \"call this <name>\". Requires that localization is up — fails if no map→base transform is available.",
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Short identifier (e.g. "kitchen", "charging_dock"). Overwrites if the name already exists.',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
     name: 'arm_preset',
     description:
       "Move the 4-DOF Hiwonder arm (shoulder pan / lift, elbow, wrist) to a named preset pose ('home', 'tuck', 'pick', 'place'). The gripper jaw is a separate joint and is not driven by this tool. Presets are defined on the robot side.",
@@ -123,6 +144,8 @@ export type ToolName =
   | 'nav_goto'
   | 'nav_cancel'
   | 'nav_goto_named'
+  | 'list_named_locations'
+  | 'save_named_location'
   | 'arm_preset'
   | 'engage_estop'
   | 'query_state'

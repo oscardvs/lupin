@@ -21,8 +21,8 @@ import { ROBOT_TOOL_DECLARATIONS, clampNumber, type ToolName } from './tools'
 import type { ToolInvocation, TranscriptTurn, VoiceStatus } from './types'
 
 import { useEStop } from '@/lib/estop'
-import { isMockMode, useSettings, type Settings } from '@/lib/settings'
-import { useRos, useTopic } from '@/lib/ros'
+import { isMockMode, useSettings, type Settings, type VoiceNamedLocation } from '@/lib/settings'
+import { useMapPose, useRos, useTopic, type MapPose } from '@/lib/ros'
 import { ROS_TYPE, quatToEuler, type BatteryState, type Odometry, type PoseStamped } from '@/types/ros'
 
 const TURN_HISTORY_CAP = 80
@@ -55,7 +55,7 @@ export interface VoiceSession {
 }
 
 export function useVoiceSession(): VoiceSession {
-  const [{ ...settings }] = useSettings() as readonly [Settings, unknown, unknown]
+  const [settings, updateSettings] = useSettings()
   const ros = useRos()
   const estop = useEStop()
 
@@ -69,6 +69,14 @@ export function useVoiceSession(): VoiceSession {
   // Live telemetry refs — read by query_state without forcing a re-render.
   const odomRef = useTopic<Odometry>(settings.odomTopic, ROS_TYPE.Odometry)
   const batteryRef = useTopic<BatteryState>(settings.batteryTopic, ROS_TYPE.BatteryState)
+
+  // Map-frame pose, used by save_named_location. Mirrored to a ref so the
+  // dispatcher reads the latest value without re-creating itself per tick.
+  const mapPose = useMapPose(settings.mapFrame, settings.baseFrame)
+  const mapPoseRef = useRef<MapPose | null>(null)
+  useEffect(() => {
+    mapPoseRef.current = mapPose
+  }, [mapPose])
 
   const liveRef = useRef<GeminiLiveClient | null>(null)
   const micRef = useRef<MicCapture | null>(null)
@@ -229,6 +237,30 @@ export function useVoiceSession(): VoiceSession {
             return finish({ ok: true, action: 'goal_sent', name: key, ...loc })
           }
 
+          case 'list_named_locations': {
+            return finish({ ok: true, locations: settings.voiceNamedLocations })
+          }
+
+          case 'save_named_location': {
+            const key = String(args.name ?? '').trim()
+            if (!key) {
+              return finish({ ok: false, error: 'name is required' })
+            }
+            const pose = mapPoseRef.current
+            if (!pose) {
+              return finish({
+                ok: false,
+                error:
+                  'no map→base transform available — localization may not be running. Cannot save a map-frame pose.',
+              })
+            }
+            const loc: VoiceNamedLocation = { x: pose.x, y: pose.y, yaw: pose.yaw }
+            updateSettings({
+              voiceNamedLocations: { ...settings.voiceNamedLocations, [key]: loc },
+            })
+            return finish({ ok: true, action: 'saved', name: key, ...loc })
+          }
+
           case 'arm_preset': {
             if (estop.active) {
               return finish(
@@ -297,7 +329,7 @@ export function useVoiceSession(): VoiceSession {
         return finish({ ok: false, error }, { error })
       }
     },
-    [ros, settings, estop, odomRef, batteryRef, pushTool, pushTranscript],
+    [ros, settings, estop, odomRef, batteryRef, mapPoseRef, updateSettings, pushTool, pushTranscript],
   )
 
   /** ───────────────────── Live mode wiring ───────────────────── */
