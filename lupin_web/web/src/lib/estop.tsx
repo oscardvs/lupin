@@ -45,7 +45,7 @@ const EStopContext = createContext<EStopValue>({
 const ESTOP_HEARTBEAT_HZ = 10
 
 export function EStopProvider({ children }: { children: ReactNode }) {
-  const [{ cmdVelTopic, cmdVelType }] = useSettings()
+  const [{ cmdVelTopic, cmdVelType, estopAutoOnFocusLoss }] = useSettings()
   const { status } = useRos()
   const publishTwist = usePublisher<Twist>(cmdVelTopic, cmdVelType)
 
@@ -63,22 +63,28 @@ export function EStopProvider({ children }: { children: ReactNode }) {
     setReason(null)
   }, [])
 
-  // DOM safety triggers — visibilitychange/blur/beforeunload all hit the e-stop.
+  // beforeunload always fires e-stop — that's the page actually closing.
   useEffect(() => {
+    const onBeforeUnload = () => trigger('before-unload')
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [trigger])
+
+  // visibilitychange / window blur are gated by Settings → Safety so dev tab
+  // switching doesn't fire e-stop constantly. Default-on for the real robot.
+  useEffect(() => {
+    if (!estopAutoOnFocusLoss) return
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') trigger('visibility-hidden')
     }
     const onBlur = () => trigger('window-blur')
-    const onBeforeUnload = () => trigger('before-unload')
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('blur', onBlur)
-    window.addEventListener('beforeunload', onBeforeUnload)
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('blur', onBlur)
-      window.removeEventListener('beforeunload', onBeforeUnload)
     }
-  }, [trigger])
+  }, [trigger, estopAutoOnFocusLoss])
 
   // rosbridge connection drop → trigger. Only fire after we have a successful
   // connection at least once, so initial connecting state doesn't auto-trigger.

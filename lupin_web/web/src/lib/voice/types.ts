@@ -71,7 +71,7 @@ export interface FunctionDeclaration {
 }
 
 export interface BidiClientMessage {
-  setup?: { config: BidiSetupConfig }
+  setup?: BidiSetupConfig
   realtimeInput?: {
     audio?: { data: string; mimeType: string }
   }

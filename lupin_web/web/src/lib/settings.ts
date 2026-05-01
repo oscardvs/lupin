@@ -55,6 +55,13 @@ export interface Settings {
   voiceNamedLocations: Record<string, VoiceNamedLocation>
   theme: 'dark' | 'light'
   debugPublish: boolean
+  /**
+   * Auto-trigger E-stop on `visibilitychange` / window `blur`. Default true for
+   * the demo robot; disable during dev when alt-tabbing fires it constantly.
+   * The `beforeunload` and rosbridge-disconnect triggers remain active either
+   * way — those are real safety events, not focus changes.
+   */
+  estopAutoOnFocusLoss: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -100,6 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   theme: 'dark',
   debugPublish: false,
+  estopAutoOnFocusLoss: true,
 }
 
 function defaultRosUrl(): string {
