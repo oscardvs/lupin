@@ -168,20 +168,28 @@ Live API handles all three with native function calling.
 
 Declared at session start; the model decides which to invoke:
 
-| Tool             | Effect                                                                  |
-|------------------|-------------------------------------------------------------------------|
-| `drive`          | Short Twist burst (`linear_x/y`, `angular_z`, `duration_s` ≤ 2 s).      |
-| `stop`           | Zero Twist, immediate.                                                  |
-| `nav_goto`       | `geometry_msgs/PoseStamped` → `goalPoseTopic` (default `/goal_pose`).   |
-| `nav_goto_named` | Same, but resolved from the named-locations map in Settings.            |
-| `arm_preset`     | `lupin_msgs/srv/SetArmPreset` service call (pending arm-side service).  |
-| `query_state`    | Reads cached `pose`, `battery`, `estop`, `nav_status`. Read-only.       |
-| `speak`          | No action — model just speaks the response.                             |
+| Tool                    | Effect                                                                  |
+|-------------------------|-------------------------------------------------------------------------|
+| `drive`                 | Short Twist burst (`linear_x/y`, `angular_z`, `duration_s` ≤ 2 s).      |
+| `stop`                  | Zero Twist, immediate.                                                  |
+| `rotate`                | Nav2 goal at current pose with yaw shifted by `angle_deg`.              |
+| `set_speed_cap`         | Per-session multiplier (0–1) on `voiceMax*` limits.                     |
+| `nav_goto`              | `geometry_msgs/PoseStamped` → `goalPoseTopic` (default `/goal_pose`).   |
+| `nav_cancel`            | `action_msgs/srv/CancelGoal` on `/navigate_to_pose/_action/cancel_goal`.|
+| `nav_goto_named`        | Same as `nav_goto`, resolved from the named-locations map in Settings.  |
+| `list_named_locations`  | Returns the live named-locations map (discovery for `nav_goto_named`).  |
+| `save_named_location`   | Snapshots the current map→base pose under a name.                       |
+| `gripper`               | Open / close jaw via `mirte_msgs/srv/SetServoAngleWithSpeed` (±30°).    |
+| `arm_preset`            | `lupin_msgs/srv/SetArmPreset` service call (pending arm-side service).  |
+| `engage_estop`          | Trigger software E-stop (reason `user`); reset stays manual.            |
+| `query_state`           | Reads cached `pose`, `battery`, `estop`, `nav_status`. Read-only.       |
+| `speak`                 | No action — model just speaks the response.                             |
 
 All motion-producing tools are gated by the same `EStop` provider as Teleop —
 when E-stop is active, calls return `ok:false, error:"e-stop active: …"` and
 the model is told to back off. `drive` is also clamped per-call to the
-`voiceMaxLinearMps` / `voiceMaxAngularRps` settings.
+`voiceMaxLinearMps` / `voiceMaxAngularRps` settings (with `set_speed_cap`'s
+in-memory multiplier on top).
 
 ### Setup
 
