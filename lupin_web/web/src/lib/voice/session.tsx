@@ -83,6 +83,10 @@ export function useVoiceSession(): VoiceSession {
   const playerRef = useRef<AudioPlayer | null>(null)
   const mockRef = useRef<MockHandle | null>(null)
   const driveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Live multiplier on the voiceMax* speed caps. Adjusted by set_speed_cap, not
+  // persisted — per-session by design so a "go slower" command doesn't bleed
+  // into the next conversation.
+  const speedCapRef = useRef<number>(1)
 
   const isLive = useMemo(
     () => !isMockMode() && settings.geminiApiKey.trim().length > 0,
@@ -151,9 +155,12 @@ export function useVoiceSession(): VoiceSession {
                 { blocked: true, error: `e-stop active: ${estop.reason}` },
               )
             }
-            const lx = clampNumber(args.linear_x, -settings.voiceMaxLinearMps, settings.voiceMaxLinearMps)
-            const ly = clampNumber(args.linear_y, -settings.voiceMaxLinearMps, settings.voiceMaxLinearMps)
-            const az = clampNumber(args.angular_z, -settings.voiceMaxAngularRps, settings.voiceMaxAngularRps)
+            const cap = speedCapRef.current
+            const linMax = settings.voiceMaxLinearMps * cap
+            const angMax = settings.voiceMaxAngularRps * cap
+            const lx = clampNumber(args.linear_x, -linMax, linMax)
+            const ly = clampNumber(args.linear_y, -linMax, linMax)
+            const az = clampNumber(args.angular_z, -angMax, angMax)
             const dur = clampNumber(args.duration_s, 0.1, MAX_DRIVE_SECONDS, 0.5)
             const twist = {
               linear: { x: lx, y: ly, z: 0 },
@@ -183,6 +190,46 @@ export function useVoiceSession(): VoiceSession {
             const yaw = clampNumber(args.yaw, -Math.PI, Math.PI)
             publishGoal(ros, settings, x, y, yaw)
             return finish({ ok: true, action: 'goal_sent', x, y, yaw })
+          }
+
+          case 'rotate': {
+            if (estop.active) {
+              return finish(
+                { ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` },
+              )
+            }
+            const pose = mapPoseRef.current
+            if (!pose) {
+              return finish({
+                ok: false,
+                error: 'no map→base transform — cannot compute relative rotation goal',
+              })
+            }
+            const deltaRad = (clampNumber(args.angle_deg, -3600, 3600) * Math.PI) / 180
+            // Wrap to [-π, π] so Nav2 takes the shortest direction.
+            let yaw = pose.yaw + deltaRad
+            yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw))
+            publishGoal(ros, settings, pose.x, pose.y, yaw)
+            return finish({
+              ok: true,
+              action: 'rotate_goal_sent',
+              from_yaw: pose.yaw,
+              to_yaw: yaw,
+              delta_deg: clampNumber(args.angle_deg, -3600, 3600),
+            })
+          }
+
+          case 'set_speed_cap': {
+            const v = clampNumber(args.value, 0, 1, 1)
+            speedCapRef.current = v
+            return finish({
+              ok: true,
+              action: 'speed_cap_set',
+              value: v,
+              effective_max_linear_mps: settings.voiceMaxLinearMps * v,
+              effective_max_angular_rps: settings.voiceMaxAngularRps * v,
+            })
           }
 
           case 'nav_cancel': {

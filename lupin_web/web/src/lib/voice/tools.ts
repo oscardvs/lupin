@@ -53,6 +53,36 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'rotate',
+    description:
+      "Rotate the base in place by a relative yaw angle, in degrees, using the Nav2 planner (same controller as nav_goto). Positive = counter-clockwise. Use for scanning the room or reorienting before a pick. Requires localization. The robot can refuse if the rotation would place its footprint into known obstacles.",
+    parameters: {
+      type: 'object',
+      properties: {
+        angle_deg: {
+          type: 'number',
+          description: 'Relative yaw, degrees. Positive = ccw, negative = cw. Wrapped into [-180, 180].',
+        },
+      },
+      required: ['angle_deg'],
+    },
+  },
+  {
+    name: 'set_speed_cap',
+    description:
+      "Temporarily scale the voice agent's drive speed limits by a factor in [0, 1]. 1.0 means use the configured voiceMax* caps as-is; 0.5 halves them; 0.0 effectively disables drive bursts. The change is in-memory and resets when the session ends. Use when the user says 'go slower' / 'careful mode' or wants to ramp speed up after a cautious approach.",
+    parameters: {
+      type: 'object',
+      properties: {
+        value: {
+          type: 'number',
+          description: 'Speed cap factor in [0, 1]. Clamped.',
+        },
+      },
+      required: ['value'],
+    },
+  },
+  {
     name: 'nav_cancel',
     description:
       'Cancel any in-flight Nav2 goal. The robot stops planning toward its current target and holds position. Safe and idempotent — call this whenever the user wants to abort a navigation in progress (e.g. "never mind", "stop going there"). Does not stop teleop motion — for a hard stop use stop or engage_estop.',
@@ -141,6 +171,8 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
 export type ToolName =
   | 'drive'
   | 'stop'
+  | 'rotate'
+  | 'set_speed_cap'
   | 'nav_goto'
   | 'nav_cancel'
   | 'nav_goto_named'
