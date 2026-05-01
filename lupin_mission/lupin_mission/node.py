@@ -254,6 +254,12 @@ class MissionOrchestratorNode(Node):
         self._nav_send_goal_future = None
         self._nav_get_result_future = None
         self._nav_state_started_at: float = self._monotonic()
+        # Set when the operator cancels (pause / e-stop / abort / skip)
+        # between send_goal_async and the server's accept response. The
+        # accept callback checks this and cancels the just-accepted goal
+        # so a pending goal that lands AFTER the cancel doesn't drive the
+        # mission forward unexpectedly.
+        self._nav_pending_cancel: bool = False
         self._scan_future = None
         self._scan_started_at: float = self._monotonic()
 
@@ -459,15 +465,23 @@ class MissionOrchestratorNode(Node):
     # _check_nav_timeout.
 
     def _cancel_inflight_nav(self, reason: str, *, refund_attempt: bool = True) -> None:
-        if self._nav_goal_handle is None:
-            return
-        try:
-            self._nav_goal_handle.cancel_goal_async()
-        except Exception as exc:  # pragma: no cover - defensive
-            self.get_logger().warn(f'cancel_goal_async raised: {exc!r}')
+        had_inflight = (
+            self._nav_goal_handle is not None or self._nav_send_goal_future is not None
+        )
+        if self._nav_goal_handle is not None:
+            try:
+                self._nav_goal_handle.cancel_goal_async()
+            except Exception as exc:  # pragma: no cover - defensive
+                self.get_logger().warn(f'cancel_goal_async raised: {exc!r}')
+        elif self._nav_send_goal_future is not None:
+            # Goal was sent but server hasn't accepted yet — flag the
+            # accept callback to cancel the goal as soon as it lands.
+            self._nav_pending_cancel = True
         self._nav_goal_handle = None
         self._nav_send_goal_future = None
         self._nav_get_result_future = None
+        if not had_inflight:
+            return
         # Refund the attempt: this particular goal didn't get a chance
         # to fail naturally, so it shouldn't burn a retry budget.
         if refund_attempt and self._mission is not None and not self._mission.is_complete():
@@ -725,18 +739,10 @@ class MissionOrchestratorNode(Node):
         self._cancel_inflight_nav('skipped_by_operator')
         result = self._mission.mark_skipped('skipped_by_operator')
         self._emit_observation_for(result)
-        # Whatever sub-state we were in, jump to PUBLISHING so the normal
-        # advance path runs. transitions can't go directly from arbitrary
-        # source to PUBLISHING without explicit transitions; cleanest is
-        # to advance through next_tag from PUBLISHING. Implement this by
-        # routing through the PUBLISHING handler directly.
-        self._mission.advance()
-        if self._mission.is_complete():
-            # If we were in PUBLISHING, machinery would already do this;
-            # synthesise the same path from any inspection state.
-            self._goto_returning_via_publishing()
-        else:
-            self._goto_navigating_via_publishing()
+        # Route to PUBLISHING via the legal trigger for our current sub-
+        # state. PUBLISHING's on_enter handles advance + dispatch to
+        # next_tag / inspection_complete — don't double-advance.
+        self._goto_publishing_from_current()
         response.success = True
         response.message = 'skipped'
         return response
@@ -919,15 +925,24 @@ class MissionOrchestratorNode(Node):
         future.add_done_callback(self._on_inspection_nav_goal_response)
 
     def _on_inspection_nav_goal_response(self, future) -> None:
-        # Stale-future guard: if a cancel intervened between send_goal_async
-        # and the server's response, _nav_send_goal_future was nulled.
-        if future is not self._nav_send_goal_future:
-            return
         try:
             goal_handle = future.result()
         except Exception as exc:  # pragma: no cover - defensive
             self.get_logger().error(f'send_goal raised: {exc!r}')
-            self._handle_nav_failure(f'send_goal_exception:{exc!r}')
+            if future is self._nav_send_goal_future:
+                self._handle_nav_failure(f'send_goal_exception:{exc!r}')
+            return
+
+        # Stale-future guard: if a cancel intervened between send_goal_async
+        # and the server's response, _nav_send_goal_future was nulled. Tell
+        # the server the goal is no longer wanted and bail.
+        if future is not self._nav_send_goal_future:
+            if self._nav_pending_cancel and goal_handle.accepted:
+                try:
+                    goal_handle.cancel_goal_async()
+                except Exception as exc:  # pragma: no cover - defensive
+                    self.get_logger().warn(f'late-cancel raised: {exc!r}')
+            self._nav_pending_cancel = False
             return
 
         if not goal_handle.accepted:
@@ -1037,13 +1052,20 @@ class MissionOrchestratorNode(Node):
         future.add_done_callback(self._on_return_nav_goal_response)
 
     def _on_return_nav_goal_response(self, future) -> None:
-        if future is not self._nav_send_goal_future:
-            return
         try:
             goal_handle = future.result()
         except Exception as exc:  # pragma: no cover - defensive
             self.get_logger().warn(f'RETURN send_goal raised: {exc!r}; treating as done')
-            self.returned()  # type: ignore[attr-defined]
+            if future is self._nav_send_goal_future:
+                self.returned()  # type: ignore[attr-defined]
+            return
+        if future is not self._nav_send_goal_future:
+            if self._nav_pending_cancel and goal_handle.accepted:
+                try:
+                    goal_handle.cancel_goal_async()
+                except Exception:  # pragma: no cover
+                    pass
+            self._nav_pending_cancel = False
             return
         if not goal_handle.accepted:
             self.get_logger().warn('RETURN: Nav2 rejected dock goal; treating as done')
@@ -1097,32 +1119,19 @@ class MissionOrchestratorNode(Node):
             self.get_logger().info(line)
 
     # ─── routing helpers used by skip_current ──────────────────────────
-    def _goto_navigating_via_publishing(self) -> None:
-        """Force-route an arbitrary inspection sub-state through
-        PUBLISHING and on to NAVIGATING for the next tag."""
-        # transitions trigger paths require us to be in a valid source.
-        # Cheap approach: only accept skip_current from PUBLISHING, and
-        # if we're elsewhere, drive through the legal edges.
-        st = self.state
-        if st == 'INSPECTING_NAVIGATING':
-            self.nav_unreachable()  # type: ignore[attr-defined]
-            self.next_tag()  # type: ignore[attr-defined]
-        elif st == 'INSPECTING_SCANNING':
-            self.scan_done()  # type: ignore[attr-defined]
-            self.next_tag()  # type: ignore[attr-defined]
-        elif st == 'INSPECTING_PUBLISHING':
-            self.next_tag()  # type: ignore[attr-defined]
+    def _goto_publishing_from_current(self) -> None:
+        """Force-route the active inspection sub-state into PUBLISHING.
 
-    def _goto_returning_via_publishing(self) -> None:
+        on_enter_PUBLISHING owns the cursor-advance and the
+        next_tag / inspection_complete decision, so callers must NOT
+        chain a follow-up trigger here.
+        """
         st = self.state
         if st == 'INSPECTING_NAVIGATING':
             self.nav_unreachable()  # type: ignore[attr-defined]
-            self.inspection_complete()  # type: ignore[attr-defined]
         elif st == 'INSPECTING_SCANNING':
             self.scan_done()  # type: ignore[attr-defined]
-            self.inspection_complete()  # type: ignore[attr-defined]
-        elif st == 'INSPECTING_PUBLISHING':
-            self.inspection_complete()  # type: ignore[attr-defined]
+        # INSPECTING_PUBLISHING: already there, nothing to do.
 
 
 # ─── entry point ─────────────────────────────────────────────────────────
