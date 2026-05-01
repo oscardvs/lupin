@@ -6,17 +6,28 @@ running on port `9090` of the course image. **Coexists with the course web
 interface — does not replace it.** If `lupin_web` crashes, the course UI is
 still up.
 
+![Voice tab in mock mode](docs/voice-tab.png)
+
+*The Voice tab in `?mock=1` mode — same layout in every screen: top bar with
+mock/rosbridge pill, battery, clock, settings, and the persistent full-height
+E-STOP. Captured on the `feature/voice-tool-expansion` branch with no robot
+attached.*
+
 ## Surfaces
 
 A persistent top bar (logo · rosbridge pill · battery pill · clock · settings
-gear · permanent E-STOP) wraps six tabs:
+gear · permanent E-STOP) wraps seven tabs:
 
 - **Teleop** — two virtual joysticks (left = linear x/y, right = angular z),
   live Twist readout, speed-scale slider, mirrored stop button.
+- **Arm** — per-joint sliders for the 4-DOF Hiwonder arm (shoulder pan / lift,
+  elbow, wrist) plus the gripper jaw, calling
+  `mirte_msgs/srv/SetServoAngleWithSpeed`. Loud "RANGE UNVERIFIED" badge on
+  joints whose mechanical limits haven't been ground-truthed yet.
 - **Voice** — push-to-talk console wired to Google's Gemini Live API. The
-  model can drive (`drive`/`stop`), navigate (`nav_goto`/`nav_goto_named`),
-  set arm presets (`arm_preset`), and read live state (`query_state`). Mock
-  session runs without an API key. See **Voice assistant** below.
+  model has a 14-tool surface covering teleop, navigation, manipulation,
+  named-location memory, telemetry reads, and software E-stop. Mock session
+  runs without an API key. See **Voice assistant** below.
 - **Cameras** — MJPEG stream from `web_video_server` with FPS counter,
   reload, fullscreen, friendly placeholder when no stream.
 - **Telemetry** — Lidar canvas (top-down), IMU (roll/pitch/yaw + ω bars),
@@ -38,9 +49,12 @@ gear · permanent E-STOP) wraps six tabs:
   every surface works without a robot. The bar for "demoable" is a clean
   walkthrough in mock mode.
 - **E-STOP is permanent furniture, not a button.** A red full-height bar on
-  every screen. Triggers on press, `visibilitychange`, `blur`, `beforeunload`,
-  and rosbridge disconnect. While active, gates all `useCmdVel` publishes
-  and heartbeats zero-Twist at 10 Hz. Reset is manual.
+  every screen. Triggers on press, `beforeunload`, rosbridge disconnect, and
+  (toggleable via Settings → Safety) `visibilitychange` / `blur`. The voice
+  agent can trip it via the `engage_estop` tool — that path uses a dedicated
+  `voice-agent` reason so the audit trail distinguishes it from a human press.
+  While active, gates all `useCmdVel` publishes and heartbeats zero-Twist at
+  10 Hz. Reset is manual.
 - **No sign hacks.** The app publishes vanilla REP-103 Twists to whatever
   topic Settings declares (default `/cmd_vel`). The hardware quirk where
   `+linear.x` moves real Mirte backward is fixed downstream by a separate
@@ -72,14 +86,22 @@ lupin_web/
         │   ├── mock.ts       synthetic-data generators
         │   ├── throttle.ts   useThrottledRender / useAnimationLoop / Ring
         │   └── utils.ts      cn helper
+        ├── lib/voice/
+        │   ├── session.tsx   useVoiceSession — owns WS lifecycle + tool dispatch
+        │   ├── gemini-live.ts Bidi WS client (setup / mic / tool-response)
+        │   ├── tools.ts      function declarations sent in BidiSetup
+        │   ├── audio.ts      MicCapture + AudioPlayer (16 kHz / 24 kHz)
+        │   ├── mock.ts       scripted offline session
+        │   └── types.ts      wire-format types
         ├── components/
         │   ├── TopBar.tsx · ConnectionPill · BatteryPill · ClockPill
         │   ├── EStopButton.tsx · SettingsDrawer.tsx
-        │   ├── views/        Teleop / Cameras / Telemetry / Logs / Map
+        │   ├── views/        Teleop / Arm / Voice / Cameras /
+        │   │                 Telemetry / Logs / Map
         │   ├── widgets/      Joystick / TwistReadout / LidarCanvas /
         │   │                 ImuCard / OdometryCard / ArmJointsCard /
         │   │                 BatteryCard / Sparkline / CameraStream /
-        │   │                 SystemCard
+        │   │                 MapCanvas / VoiceOrb / SystemCard
         │   └── ui/            inlined shadcn primitives
         └── ...
 ```
@@ -181,7 +203,7 @@ Declared at session start; the model decides which to invoke:
 | `save_named_location`   | Snapshots the current map→base pose under a name.                       |
 | `gripper`               | Open / close jaw via `mirte_msgs/srv/SetServoAngleWithSpeed` (±30°).    |
 | `arm_preset`            | `lupin_msgs/srv/SetArmPreset` service call (pending arm-side service).  |
-| `engage_estop`          | Trigger software E-stop (reason `user`); reset stays manual.            |
+| `engage_estop`          | Trigger software E-stop (reason `voice-agent`); reset stays manual.     |
 | `query_state`           | Reads cached `pose`, `battery`, `estop`, `nav_status`. Read-only.       |
 | `speak`                 | No action — model just speaks the response.                             |
 
@@ -219,12 +241,19 @@ already has a code seam to swap in the token-fetching client.
   and `AudioContext({ sampleRate: 16000 })`. The mic capture path falls back
   to runtime resampling if the chosen sample rate is rejected.
 - Mic permission is per-origin; on the first session the browser will prompt.
-- E-stop fires on `visibilitychange`/`blur`/`beforeunload` *and* flushes
-  pending TTS playback so the model doesn't keep talking after the user
-  switches tabs.
+- E-stop fires on `beforeunload` always, and on `visibilitychange` / `blur`
+  when **Settings → Safety → Auto E-stop on focus loss** is on (default).
+  Disabling that toggle is useful during dev so alt-tabbing doesn't trip the
+  stop constantly. Either way, an E-stop flushes pending TTS playback so the
+  model doesn't keep talking after the user switches tabs.
 
 ## What's not in here yet
 
 - AprilTag overlay on the camera stream
 - Voice agent: ephemeral-token broker, persona / wake-word, multi-turn memory
+- Voice tool gaps awaiting backend: `scan_apriltags`, `detect_flowers`,
+  `get_camera_frame`, `record_observation` — deliberately not stubbed; see
+  `lib/voice/tools.ts` to add once the perception/mission node lands.
+- `nav_pause` / `nav_resume` — Nav2 has no real pause primitive; deferred
+  unless we want to fake it as cancel + remembered goal.
 - Authentication, PWA / service worker, multi-user awareness — all deferred
