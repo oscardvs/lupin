@@ -15,9 +15,14 @@ find_package(builtin_interfaces REQUIRED)
 set(msg_files
   "msg/SensorReading.msg"
   "msg/TagReading.msg"
+  "msg/FlowerObservation.msg"
+  "msg/AnomalyReport.msg"
+  "msg/Observation.msg"
+  "msg/MissionState.msg"
 )
 set(srv_files
   "srv/GetTagReading.srv"
+  "srv/StartMission.srv"
 )
 set(action_files
 )

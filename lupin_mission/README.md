@@ -1,38 +1,58 @@
-# lupin_mission
+# lupin_mission (v2)
 
-Mission orchestrator for the Lupin / FloraNova digital twin.
+Mission orchestrator for the Lupin / FloraNova digital twin. Drives the
+MIRTE Master through tag-based inspection routines via Nav2 + the
+greenhouse bridge, and broadcasts every observation as a typed ROS 2
+message so downstream consumers (web Mission tab, future digital-twin
+publishers, …) can react in real time.
 
-A single ROS 2 node, `mission_orchestrator`, that drives the MIRTE Master
-through a tag-scanning routine end-to-end:
+## Architecture
+
+Hierarchical state machine via the
+[`transitions`](https://github.com/pytransitions/transitions) library —
+top-level lifecycle plus a sub-machine for each mission type.
 
 ```
-IDLE -> NAVIGATING -> SCANNING -> LOGGING -> NAVIGATING -> ... -> DONE
+BOOT ──► READY ──► PREPARE ──► INSPECTING ──► RETURNING ──► DONE
+                       │                                      │
+                       └──────► (FAULT) ◄─────────────────────┘
+                                                              │
+                                                              └──► READY
+                                                                   (next mission)
+
+PREPARE:    LOCALIZING  (covariance gate; map loading is a TODO)
+INSPECTING: NAVIGATING → SCANNING → PUBLISHING (per tag, in sequence)
 ```
 
-For each tag in the configured sequence the orchestrator
+![Top-level lifecycle](docs/state_machine.png)
 
-1. sends a `nav2_msgs/action/NavigateToPose` goal to the tag's known
-   `(x, y)` from `mdp-greenhouse`'s `tag_locations.json`,
-2. on `STATUS_SUCCEEDED`, calls `/greenhouse_bridge/get_tag_reading` for
-   that tag's sensor readings,
-3. logs a one-line summary, appends to an in-memory mission log, and
-   moves to the next tag.
+- `INSPECTING` is the per-tag flow. NAVIGATING issues NavigateToPose,
+  SCANNING calls the greenhouse bridge, PUBLISHING is the named gate
+  (the `Observation` is actually published from SCANNING / nav-failure
+  paths — PUBLISHING is the single hook for future digital-twin work).
 
-There is no AprilTag perception in v1 — the robot navigates to known map
-coordinates and trusts that it's at the right station. Closing the loop
-with a visual confirmation lives outside this package.
+  ![INSPECTING sub-machine](docs/state_machine_inspection.png)
+
+- `PREPARE` is currently `LOCALIZING` only. A future `MappingMission`
+  will add an exploration child.
+- **Pause** and **E-stop** are *flags*, not states — they freeze the
+  active sub-state without altering the lifecycle. `/mission/resume`
+  is the only thing that unblocks. E-stop release does NOT auto-resume.
+- `FAULT` is reachable from anywhere and is terminal (rejects future
+  `/mission/start` requests). The node stays alive for introspection.
 
 ## Quickstart
 
-The orchestrator reads tag coordinates from the `mdp-greenhouse` Python
-package, which is **not** in rosdep. Install it once per workspace:
+The orchestrator no longer auto-runs on bringup — it idles in `READY`
+until you invoke `/mission/start`.
+
+Install the runtime dependency that doesn't ship in rosdep:
 
 ```bash
-pip install 'mdp-greenhouse>=1.0.3,<2'
+pip install 'mdp-greenhouse>=1.0.7,<2' 'transitions>=0.9'
 ```
 
-Then bring up the four pieces in any order before launching the
-orchestrator:
+Then bring up the four pieces in any order:
 
 ```bash
 # Terminal 1 — Greenhouse Gazebo world (sim only)
@@ -44,57 +64,108 @@ ros2 launch lupin_greenhouse_bridge greenhouse_bridge.launch.py
 # Terminal 3 — Nav2 (localisation + navigation lifecycle stack)
 ros2 launch lupin_navigation nav2.launch.py
 
-# Terminal 4 — The orchestrator
+# Terminal 4 — The orchestrator (idles in READY)
 ros2 launch lupin_mission mission.launch.py
 ```
 
-To visit a specific subset of tags instead of all 22:
+Start an inspection mission:
 
 ```bash
-ros2 launch lupin_mission mission.launch.py tag_sequence:='[1, 5, 12]'
+ros2 service call /mission/start lupin_msgs/srv/StartMission \
+  "{mission_type: 'InspectionMission', tag_sequence: []}"
 ```
+
+Empty `tag_sequence` → visit every tag from `tag_locations.json` in
+numeric-string order. Pass an explicit list to visit a subset:
+
+```bash
+ros2 service call /mission/start lupin_msgs/srv/StartMission \
+  "{mission_type: 'InspectionMission', tag_sequence: ['1','5','12']}"
+```
+
+Watch the mission live:
+
+```bash
+ros2 topic echo /mission/state                # 5 Hz status snapshot
+ros2 topic echo /floranova/observations       # one per tag completion
+```
+
+Operator controls (all `std_srvs/Trigger`):
+
+```bash
+ros2 service call /mission/pause          std_srvs/srv/Trigger
+ros2 service call /mission/resume         std_srvs/srv/Trigger
+ros2 service call /mission/abort          std_srvs/srv/Trigger
+ros2 service call /mission/skip_current   std_srvs/srv/Trigger
+```
+
+## ROS interfaces
+
+| Direction | Name | Type | Notes |
+|---|---|---|---|
+| Subscribe | `/e_stop_state` | `std_msgs/Bool` | `true` = engaged. Engaging cancels in-flight goals + freezes mission. Release does NOT auto-resume. |
+| Subscribe | `/amcl_pose` | `geometry_msgs/PoseWithCovarianceStamped` | Latched (TRANSIENT_LOCAL). Used by the LOCALIZING gate. |
+| Action client | `navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | Used for both inspection nav and RETURNING dock. |
+| Service client | `/greenhouse_bridge/get_tag_reading` | `lupin_msgs/srv/GetTagReading` | Bridge call from SCANNING. |
+| Publish | `/mission/state` | `lupin_msgs/MissionState` | 5 Hz, RELIABLE+TRANSIENT_LOCAL depth 1 (latched). |
+| Publish | `/floranova/observations` | `lupin_msgs/Observation` | Event-driven, RELIABLE+TRANSIENT_LOCAL depth 50 — late subscribers see the mission so far. |
+| Service | `/mission/start` | `lupin_msgs/srv/StartMission` | Begin a mission. Rejected if FAULT or already running. |
+| Service | `/mission/pause` | `std_srvs/Trigger` | Cancels in-flight goal, freezes progress. |
+| Service | `/mission/resume` | `std_srvs/Trigger` | Clears pause; rejects while E-stop engaged. |
+| Service | `/mission/abort` | `std_srvs/Trigger` | Marks remaining tags SKIPPED (one observation each), routes to RETURNING. |
+| Service | `/mission/skip_current` | `std_srvs/Trigger` | Marks current tag SKIPPED, advances. INSPECTING only. |
+
+## Failure policy
+
+| Event | Effect | Observation emitted? |
+|---|---|---|
+| Nav2 ABORTED / CANCELED / `nav_timeout_s` | Retry until `nav_max_attempts` reached. | Only on the final failed attempt: status `UNREACHABLE`, `tag_reading` empty. |
+| Bridge `STATUS_UNKNOWN_TAG` / exception / `scan_timeout_s` | Mark `SCAN_FAILED`, advance. | `SCAN_FAILED`, `status_detail` = bridge error / `scan_timeout`. |
+| `/mission/skip_current` | Cancel current goal, advance. | `SKIPPED`, `status_detail = skipped_by_operator`. |
+| `/mission/abort` | Cancel current goal, mark all remaining `SKIPPED`, route to RETURNING. | One `SKIPPED` per remaining tag. |
+| `/e_stop_state = true` mid-mission | Cancel in-flight goal, freeze. | None — observations resume after `/mission/resume`. |
+| Nav2 fail in RETURNING | Log warning, transition to DONE anyway. | None. |
+| `dependency_timeout_s` reached in BOOT | Transition to FAULT. | None. |
+| `localization_timeout_s` reached in PREPARE | Transition to FAULT. | None. |
 
 ## Parameters
 
-| Parameter                  | Type           | Default | Notes |
-|----------------------------|----------------|---------|-------|
-| `tag_sequence`             | `string[]`     | `[]`    | Tag IDs in visit order. Empty = all tags from `tag_locations.json` in numeric-string order. |
-| `approach_yaw`             | `double`       | `0.0`   | Yaw (rad) sent in the `NavigateToPose` goal. Single value for v1; per-tag yaw later. |
-| `nav_timeout_sec`          | `double`       | `60.0`  | Per-attempt nav timeout. On expiry the goal is cancelled and counted as a failure. |
-| `service_timeout_sec`      | `double`       | `5.0`   | Bridge service-call timeout. |
-| `dependency_timeout_sec`   | `double`       | `30.0`  | How long IDLE waits for Nav2 + bridge to appear. |
-| `nav_retry_limit`          | `int`          | `1`     | Re-issues per tag on nav failure. `1` = one retry (so up to 2 attempts total). |
-| `frame_id`                 | `string`       | `map`   | Frame used in the `PoseStamped` goal. |
+```yaml
+mission_orchestrator:
+  ros__parameters:
+    # Dependencies
+    nav_action_name: navigate_to_pose
+    bridge_service_name: /greenhouse_bridge/get_tag_reading
+    estop_topic: /e_stop_state
+    amcl_pose_topic: /amcl_pose
+    dependency_timeout_s: 30.0
 
-## What a happy run looks like
+    # Localization (PREPARE)
+    map_yaml_path: ""              # if empty, assumes Nav2 already has a map loaded
+    localization_timeout_s: 15.0
+    localization_covariance_threshold: 0.25
 
-State transitions log at `INFO` with `[state] EVENT: from->to (tag_id=X)`:
+    # Inspection
+    tag_sequence: []               # empty = all tags from tag_locations.json
+    approach_yaw: 0.0
+    nav_timeout_s: 60.0
+    nav_max_attempts: 2            # total attempts, NOT retries
+    scan_timeout_s: 5.0
 
+    # Returning (stub)
+    dock_pose: [0.0, 0.0, 0.0]     # x, y, yaw — TODO: real dock-finding
+    dock_timeout_s: 60.0
+
+    # Publishing
+    state_publish_rate_hz: 5.0
+    mission_id_prefix: "lupin"     # mission_id = f"{prefix}-{uuid4().hex[:8]}"
+    frame_id: "map"
 ```
-[INFO] [mission_orchestrator]: Mission orchestrator created: 3 tags in sequence, frame_id=map, approach_yaw=0.0
-[INFO] [mission_orchestrator]: Waiting up to 30.0s for nav2 + bridge...
-[INFO] [mission_orchestrator]: Dependencies up. Starting mission.
-[INFO] [mission_orchestrator]: [IDLE] NEXT_TAG: IDLE->NAVIGATING (tag_id=1)
-[INFO] [mission_orchestrator]: [NAVIGATING] NAV_SUCCEEDED: NAVIGATING->SCANNING (tag_id=1)
-[INFO] [mission_orchestrator]: [SCANNING] BRIDGE_OK: SCANNING->LOGGING (tag_id=1)
-[INFO] [mission_orchestrator]: [tag 1] temperature=22.4 humidity=58.1 co2=441.0 light=796.1 (sim_time=43200s)
-[INFO] [mission_orchestrator]: [LOGGING] NEXT_TAG: LOGGING->NAVIGATING (tag_id=2)
-...
-[INFO] [mission_orchestrator]: Mission DONE: attempted=3 succeeded=3 failed=0
-```
-
-## Topics / services / actions
-
-| Direction | Name                                    | Type                                     |
-|-----------|-----------------------------------------|------------------------------------------|
-| Action    | `navigate_to_pose`                      | `nav2_msgs/action/NavigateToPose` (client) |
-| Service   | `/greenhouse_bridge/get_tag_reading`    | `lupin_msgs/srv/GetTagReading` (client)  |
-
-The orchestrator publishes nothing in v1. A future digital-twin publisher
-and a `start_mission` service are flagged with `TODO` markers in the
-source.
 
 ## Tests
+
+End-to-end behavioural tests run against in-process fakes (no real
+Nav2 / bridge / AMCL / e-stop publisher needed):
 
 ```bash
 cd ~/ros2_ws
@@ -102,5 +173,15 @@ colcon test --packages-select lupin_mission --event-handlers console_direct+
 colcon test-result --verbose --test-result-base build/lupin_mission
 ```
 
-The tests spawn an in-process fake `NavigateToPose` action server and a
-fake `GetTagReading` service; they don't pull in Nav2 or the real bridge.
+Eight cases cover the lifecycle happy path, mid-mission start rejection,
+pause/resume, abort, skip_current, retry → UNREACHABLE, E-stop preempt
+with manual resume, and multi-mission within a single node lifetime.
+
+## Regenerating the state diagram
+
+```bash
+cd ~/ros2_ws/src/lupin/lupin_mission
+python3 scripts/generate_state_diagram.py docs/state_machine.png
+```
+
+Requires `pygraphviz` and the `dot` binary (`apt install graphviz`).
