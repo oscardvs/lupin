@@ -16,6 +16,8 @@
   <depend>nav2_msgs</depend>
   <depend>action_msgs</depend>
   <depend>lupin_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
 
   <!--
     The mdp-greenhouse Python package is not in rosdistro; we only use it to

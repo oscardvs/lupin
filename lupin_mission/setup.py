@@ -13,7 +13,15 @@ setup(
         ('share/' + package_name + '/launch',
             ['launch/mission.launch.py']),
     ],
-    install_requires=['setuptools', 'mdp-greenhouse>=1.0.3,<2'],
+    install_requires=[
+        'setuptools',
+        'mdp-greenhouse>=1.0.3,<2',
+        # transitions powers the hierarchical state machine in node.py /
+        # inspection_mission.py. transitions[diagrams] would also pull in
+        # graphviz; we only need that for the docs export, so we leave it
+        # off the runtime dep — the export script handles ImportError.
+        'transitions>=0.9',
+    ],
     zip_safe=True,
     maintainer='Team Lupin',
     maintainer_email='o.a.e.devos@student.tudelft.nl',
@@ -23,7 +31,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'mission_orchestrator = lupin_mission.mission_orchestrator:main',
+            'mission_orchestrator = lupin_mission.node:main',
         ],
     },
 )
