@@ -67,7 +67,7 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'arm_preset',
     description:
-      "Move the 5-DOF Hiwonder arm to a named preset pose ('home', 'tuck', 'pick', 'place'). Presets are defined on the robot side.",
+      "Move the 4-DOF Hiwonder arm (shoulder pan / lift, elbow, wrist) to a named preset pose ('home', 'tuck', 'pick', 'place'). The gripper jaw is a separate joint and is not driven by this tool. Presets are defined on the robot side.",
     parameters: {
       type: 'object',
       properties: {
