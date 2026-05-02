@@ -133,16 +133,24 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ── 3. Nav2 (slam mode) ─────────────────────────────────────────────
-    # Delayed slightly so Gazebo's controller_manager has time to publish
-    # /scan and TFs before Nav2's lifecycle managers ask for them.
-    nav2 = TimerAction(
-        period=5.0,
-        actions=[IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(pkg_nav, 'launch', 'nav2.launch.py'),
-            ),
-            launch_arguments=[('slam', 'true')],
-        )],
+    # Pass params_file and map explicitly: when this include is wrapped
+    # in a TimerAction, the inner launch's DeclareLaunchArgument defaults
+    # don't always reach RewrittenYaml in time and you get
+    # "[Errno 2] No such file or directory: ''" mid-bringup. Avoid by
+    # forwarding the values from this launch's own resolved paths.
+    nav2 = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_nav, 'launch', 'nav2.launch.py'),
+        ),
+        launch_arguments=[
+            ('slam', 'true'),
+            ('params_file', os.path.join(pkg_nav, 'config', 'nav2_params.yaml')),
+            # `map` is unused under slam:=true but RewrittenYaml still
+            # substitutes it into the params blob, so it must be a real
+            # path on disk.
+            ('map', os.path.join(pkg_nav, 'maps', 'krr_house.yaml')),
+            ('use_sim_time', 'true'),
+        ],
     )
 
     # ── 4. Greenhouse bridge ────────────────────────────────────────────
