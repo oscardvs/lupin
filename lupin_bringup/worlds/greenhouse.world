@@ -24,13 +24,13 @@
 
     <model name="wall_south">
       <static>true</static>
-      <pose>2.4000 -1.3000 1.0000 0 0 0</pose>
+      <pose>2.4000 -2.0000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -40,13 +40,13 @@
     </model>
     <model name="wall_north">
       <static>true</static>
-      <pose>2.4000 11.1000 1.0000 0 0 0</pose>
+      <pose>2.4000 11.8000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -56,13 +56,13 @@
     </model>
     <model name="wall_west">
       <static>true</static>
-      <pose>0.2000 4.9000 1.0000 0 0 0</pose>
+      <pose>-0.5000 4.9000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -72,13 +72,13 @@
     </model>
     <model name="wall_east">
       <static>true</static>
-      <pose>4.6000 4.9000 1.0000 0 0 0</pose>
+      <pose>5.3000 4.9000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>

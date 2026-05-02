@@ -403,6 +403,14 @@ def main(argv: list[str] | None = None) -> int:
              ">1 widens E-W aisles. Table sizes and x-coords are preserved.",
     )
     p.add_argument(
+        "--wall-margin",
+        type=float,
+        default=DEFAULT_WALL_MARGIN_M,
+        help="Padding from outermost tag/table to the surrounding walls (m). "
+             "Bigger values widen the perimeter aisle (e.g. between rows of "
+             "tables and the walls). Default 0.50.",
+    )
+    p.add_argument(
         "--write-layout-json",
         help="If set, also write the (possibly transformed) layout JSON here. "
              "Bridge + orchestrator should be pointed at this file when "
@@ -419,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         tag_size=args.tag_size,
         tag_height=args.tag_height,
         table_height=args.table_height,
+        wall_margin=args.wall_margin,
     )
 
     out = Path(args.output).expanduser().resolve()
