@@ -24,13 +24,13 @@
 
     <model name="wall_south">
       <static>true</static>
-      <pose>2.4000 0.6000 1.0000 0 0 0</pose>
+      <pose>2.4000 -2.0000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -40,13 +40,13 @@
     </model>
     <model name="wall_north">
       <static>true</static>
-      <pose>2.4000 9.2000 1.0000 0 0 0</pose>
+      <pose>2.4000 11.8000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
+          <geometry><box><size>5.8000 0.1000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -56,13 +56,13 @@
     </model>
     <model name="wall_west">
       <static>true</static>
-      <pose>0.2000 4.9000 1.0000 0 0 0</pose>
+      <pose>-0.5000 4.9000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -72,13 +72,13 @@
     </model>
     <model name="wall_east">
       <static>true</static>
-      <pose>4.6000 4.9000 1.0000 0 0 0</pose>
+      <pose>5.3000 4.9000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 13.8000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -88,7 +88,7 @@
     </model>
     <model name="table_1">
       <static>true</static>
-      <pose>1.2500 2.0250 0.3500 0 0 0</pose>
+      <pose>1.2500 0.5875 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>1.1000 0.2500 0.7000</size></box></geometry>
@@ -104,7 +104,7 @@
     </model>
     <model name="table_10">
       <static>true</static>
-      <pose>0.9250 7.2500 0.3500 0 0 0</pose>
+      <pose>0.9250 8.4250 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.2500 1.1000 0.7000</size></box></geometry>
@@ -120,7 +120,7 @@
     </model>
     <model name="table_11">
       <static>true</static>
-      <pose>2.3250 7.2500 0.3500 0 0 0</pose>
+      <pose>2.3250 8.4250 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.2500 1.1000 0.7000</size></box></geometry>
@@ -136,7 +136,7 @@
     </model>
     <model name="table_12">
       <static>true</static>
-      <pose>3.5250 7.2500 0.3500 0 0 0</pose>
+      <pose>3.5250 8.4250 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.2500 1.1000 0.7000</size></box></geometry>
@@ -152,7 +152,7 @@
     </model>
     <model name="table_2">
       <static>true</static>
-      <pose>3.5500 2.0250 0.3500 0 0 0</pose>
+      <pose>3.5500 0.5875 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>1.1000 0.2500 0.7000</size></box></geometry>
@@ -168,7 +168,7 @@
     </model>
     <model name="table_3">
       <static>true</static>
-      <pose>1.2500 3.0250 0.3500 0 0 0</pose>
+      <pose>1.2500 2.0875 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>1.1000 0.2500 0.7000</size></box></geometry>
@@ -184,7 +184,7 @@
     </model>
     <model name="table_4">
       <static>true</static>
-      <pose>3.5500 3.0250 0.3500 0 0 0</pose>
+      <pose>3.5500 2.0875 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>1.1000 0.2500 0.7000</size></box></geometry>
@@ -200,7 +200,7 @@
     </model>
     <model name="table_5">
       <static>true</static>
-      <pose>1.3500 4.0250 0.3500 0 0 0</pose>
+      <pose>1.3500 3.5875 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>1.1000 0.2500 0.7000</size></box></geometry>
@@ -216,7 +216,7 @@
     </model>
     <model name="table_6">
       <static>true</static>
-      <pose>3.5500 4.0250 0.3500 0 0 0</pose>
+      <pose>3.5500 3.5875 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>1.1000 0.2500 0.7000</size></box></geometry>
@@ -232,7 +232,7 @@
     </model>
     <model name="table_7">
       <static>true</static>
-      <pose>0.9250 5.5500 0.3500 0 0 0</pose>
+      <pose>0.9250 5.8750 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.2500 1.1000 0.7000</size></box></geometry>
@@ -248,7 +248,7 @@
     </model>
     <model name="table_8">
       <static>true</static>
-      <pose>2.3250 5.5500 0.3500 0 0 0</pose>
+      <pose>2.3250 5.8750 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.2500 1.1000 0.7000</size></box></geometry>
@@ -264,7 +264,7 @@
     </model>
     <model name="table_9">
       <static>true</static>
-      <pose>3.5250 5.5500 0.3500 0 0 0</pose>
+      <pose>3.5250 5.8750 0.3500 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.2500 1.1000 0.7000</size></box></geometry>
@@ -280,7 +280,7 @@
     </model>
     <model name="apriltag_1_PLACEHOLDER">
       <static>true</static>
-      <pose>0.6950 1.9800 0.4000 0 0 3.141593</pose>
+      <pose>0.6950 0.5425 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -297,7 +297,7 @@
     </model>
     <model name="apriltag_2_PLACEHOLDER">
       <static>true</static>
-      <pose>0.8000 1.8950 0.4000 0 0 -1.570796</pose>
+      <pose>0.8000 0.4575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -314,7 +314,7 @@
     </model>
     <model name="apriltag_3_PLACEHOLDER">
       <static>true</static>
-      <pose>1.7000 1.8950 0.4000 0 0 -1.570796</pose>
+      <pose>1.7000 0.4575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -331,7 +331,7 @@
     </model>
     <model name="apriltag_4_PLACEHOLDER">
       <static>true</static>
-      <pose>3.0800 2.8950 0.4000 0 0 -1.570796</pose>
+      <pose>3.0800 1.9575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -348,7 +348,7 @@
     </model>
     <model name="apriltag_5_PLACEHOLDER">
       <static>true</static>
-      <pose>3.0800 3.8950 0.4000 0 0 -1.570796</pose>
+      <pose>3.0800 3.4575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -365,7 +365,7 @@
     </model>
     <model name="apriltag_6_PLACEHOLDER">
       <static>true</static>
-      <pose>2.4550 6.0200 0.4000 0 0 0.000000</pose>
+      <pose>2.4550 6.3450 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -382,7 +382,7 @@
     </model>
     <model name="apriltag_7_PLACEHOLDER">
       <static>true</static>
-      <pose>3.1000 1.8950 0.4000 0 0 -1.570796</pose>
+      <pose>3.1000 0.4575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -399,7 +399,7 @@
     </model>
     <model name="apriltag_8_PLACEHOLDER">
       <static>true</static>
-      <pose>4.1050 2.0000 0.4000 0 0 0.000000</pose>
+      <pose>4.0000 0.4575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -416,7 +416,7 @@
     </model>
     <model name="apriltag_9_PLACEHOLDER">
       <static>true</static>
-      <pose>0.8000 2.8950 0.4000 0 0 -1.570796</pose>
+      <pose>0.8000 1.9575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -433,7 +433,7 @@
     </model>
     <model name="apriltag_10_PLACEHOLDER">
       <static>true</static>
-      <pose>3.6000 2.8950 0.4000 0 0 -1.570796</pose>
+      <pose>3.6000 1.9575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -450,7 +450,7 @@
     </model>
     <model name="apriltag_11_PLACEHOLDER">
       <static>true</static>
-      <pose>1.2000 3.8950 0.4000 0 0 -1.570796</pose>
+      <pose>1.2000 3.4575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -467,7 +467,7 @@
     </model>
     <model name="apriltag_12_PLACEHOLDER">
       <static>true</static>
-      <pose>3.7000 3.8950 0.4000 0 0 -1.570796</pose>
+      <pose>3.7000 3.4575 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -484,7 +484,7 @@
     </model>
     <model name="apriltag_13_PLACEHOLDER">
       <static>true</static>
-      <pose>0.7950 5.2000 0.4000 0 0 3.141593</pose>
+      <pose>0.9000 5.3200 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -501,7 +501,7 @@
     </model>
     <model name="apriltag_14_PLACEHOLDER">
       <static>true</static>
-      <pose>2.1950 5.7000 0.4000 0 0 3.141593</pose>
+      <pose>2.1950 6.1000 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -518,7 +518,7 @@
     </model>
     <model name="apriltag_15_PLACEHOLDER">
       <static>true</static>
-      <pose>3.5000 4.9950 0.4000 0 0 -1.570796</pose>
+      <pose>3.3950 5.4050 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -535,7 +535,7 @@
     </model>
     <model name="apriltag_16_PLACEHOLDER">
       <static>true</static>
-      <pose>1.0550 6.9000 0.4000 0 0 0.000000</pose>
+      <pose>0.9700 7.8700 0.4000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -552,7 +552,7 @@
     </model>
     <model name="apriltag_17_PLACEHOLDER">
       <static>true</static>
-      <pose>2.1950 7.6000 0.4000 0 0 3.141593</pose>
+      <pose>2.3000 8.9800 0.4000 0 0 1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -569,7 +569,7 @@
     </model>
     <model name="apriltag_18_PLACEHOLDER">
       <static>true</static>
-      <pose>3.5000 6.6950 0.4000 0 0 -1.570796</pose>
+      <pose>3.3950 7.9550 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -586,7 +586,7 @@
     </model>
     <model name="apriltag_19_PLACEHOLDER">
       <static>true</static>
-      <pose>3.3950 7.5000 0.4000 0 0 3.141593</pose>
+      <pose>3.3950 8.8000 0.4000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -603,7 +603,7 @@
     </model>
     <model name="apriltag_20_PLACEHOLDER">
       <static>true</static>
-      <pose>1.0550 7.7200 0.4000 0 0 0.000000</pose>
+      <pose>1.0550 8.8950 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -620,7 +620,7 @@
     </model>
     <model name="apriltag_21_PLACEHOLDER">
       <static>true</static>
-      <pose>2.4550 7.7200 0.4000 0 0 0.000000</pose>
+      <pose>2.4550 8.8950 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>
@@ -637,7 +637,7 @@
     </model>
     <model name="apriltag_22_PLACEHOLDER">
       <static>true</static>
-      <pose>3.6550 7.7200 0.4000 0 0 0.000000</pose>
+      <pose>3.6550 8.8950 0.4000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.1600 0.1600</size></box></geometry>

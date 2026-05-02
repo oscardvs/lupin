@@ -107,19 +107,87 @@ ros2 service call /mission/skip_current   std_srvs/srv/Trigger
 | Subscribe | `/amcl_pose` | `geometry_msgs/PoseWithCovarianceStamped` | Latched (TRANSIENT_LOCAL). Used by the LOCALIZING gate. |
 | Action client | `navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | Used for both inspection nav and RETURNING dock. |
 | Service client | `/greenhouse_bridge/get_tag_reading` | `lupin_msgs/srv/GetTagReading` | Bridge call from SCANNING. |
+| Service client | `/perception/confirm_tag` | `lupin_msgs/srv/ConfirmTag` | Pre-bridge visual gate. Only created when `require_visual_confirmation: true`. |
 | Publish | `/mission/state` | `lupin_msgs/MissionState` | 5 Hz, RELIABLE+TRANSIENT_LOCAL depth 1 (latched). |
-| Publish | `/floranova/observations` | `lupin_msgs/Observation` | Event-driven, RELIABLE+TRANSIENT_LOCAL depth 50 — late subscribers see the mission so far. |
+| Publish | `/floranova/observations` | `lupin_msgs/Observation` | Event-driven, RELIABLE+TRANSIENT_LOCAL depth 50 — late subscribers see the mission so far. `tag_pose_in_map` is populated from the latest AMCL snapshot on `STATUS_OK` only; on UNREACHABLE/SCAN_FAILED/SKIPPED the field is left zero (`orientation.w==0`) — that's the "missing" sentinel the digital-twin consumer expects. |
 | Service | `/mission/start` | `lupin_msgs/srv/StartMission` | Begin a mission. Rejected if FAULT or already running. |
 | Service | `/mission/pause` | `std_srvs/Trigger` | Cancels in-flight goal, freezes progress. |
 | Service | `/mission/resume` | `std_srvs/Trigger` | Clears pause; rejects while E-stop engaged. |
 | Service | `/mission/abort` | `std_srvs/Trigger` | Marks remaining tags SKIPPED (one observation each), routes to RETURNING. |
 | Service | `/mission/skip_current` | `std_srvs/Trigger` | Marks current tag SKIPPED, advances. INSPECTING only. |
 
+## Approach poses (per-tag goal construction)
+
+`tag_locations.json` gives each tag an `(x, y)` only — no orientation, no
+indication of which side the camera should approach from. The orchestrator
+synthesises the missing yaw from the *table* the tag belongs to.
+
+For each NavigateToPose:
+
+1. Pick the nearest table by bbox-centre distance (lex tiebreak — deterministic).
+2. The tag's outward normal = unit vector from that table's centre to the tag.
+3. Goal pose = `tag + standoff * normal`. Goal yaw points back at the tag, so
+   the front-facing camera frames the AprilTag head-on.
+4. If geometry can't run (no tables loaded, tag at table centre), fall back
+   to the global `approach_yaw` parameter and skip the standoff.
+
+The log line on every nav goal surfaces `derived_from=geometry|override|fallback`
+plus the picked `table=<id>` and `standoff=<m>`, so operators can read the
+chosen path off the orchestrator's stdout.
+
+### Per-tag overrides
+
+When the geometric heuristic doesn't capture reality — leaf occlusion,
+shelf-mounted tag, glare from a window — drop a partial or full override
+into the `approach_overrides_file` YAML. Sim leaves the file empty;
+hardware operators populate it without rebuilding ROS code.
+
+```yaml
+overrides:
+  "12":                       # partial override: tighter standoff
+    standoff: 0.35            # geometry yaw + position kept
+  "17":                       # full override: bypass geometry entirely
+    goal_x: 4.10
+    goal_y: 5.83
+    yaw: 3.14
+    standoff: 0.4
+```
+
+Any subset of `goal_x`/`goal_y`/`yaw`/`standoff` is allowed — missing
+fields fall through to the geometry result. Standoff is clamped to
+`[0.2, 1.5]` m.
+
+### Visual confirmation (hardware gate)
+
+When `require_visual_confirmation: true`, the orchestrator calls
+`/perception/confirm_tag` at the start of SCANNING **before** the bridge
+call. The `MissionState.mission_phase` field reads `CONFIRMING` while the
+service call is in flight; if perception responds `detected: true`, the
+flow proceeds to the bridge call as usual. On `detected: false` or a
+`visual_confirmation_timeout_s` lapse, the tag is marked `SCAN_FAILED`
+with the perception's `error_message` (or `confirm_timeout`) and the
+mission advances. The perception node itself is **not** part of this
+package — see `lupin_msgs/srv/ConfirmTag.srv` for the contract a future
+detector implementation must satisfy.
+
+Sim leaves the gate off (`false`) and the bridge oracle path is used directly.
+
+### Per-leg AMCL drift gate
+
+Before each NavigateToPose the orchestrator re-checks `_max_diag_var()`
+against `nav_localization_cov_threshold`. The start-of-mission gate
+catches "we never localised" — this gate catches drift accumulated over
+a long patrol (kidnap, low-feature aisle). On gate failure: no goal is
+sent, the tag is marked `UNREACHABLE` with `status_detail=amcl_drift_var=<value>`,
+and the mission advances.
+
 ## Failure policy
 
 | Event | Effect | Observation emitted? |
 |---|---|---|
 | Nav2 ABORTED / CANCELED / `nav_timeout_s` | Retry until `nav_max_attempts` reached. | Only on the final failed attempt: status `UNREACHABLE`, `tag_reading` empty. |
+| AMCL drift > `nav_localization_cov_threshold` (per-leg) | Refuse goal, mark `UNREACHABLE`, advance. | `UNREACHABLE`, `status_detail = amcl_drift_var=<value>`. |
+| Visual confirm `detected=false` / `visual_confirmation_timeout_s` | Mark `SCAN_FAILED`, advance. | `SCAN_FAILED`, `status_detail` = perception's `error_message` or `confirm_timeout`. |
 | Bridge `STATUS_UNKNOWN_TAG` / exception / `scan_timeout_s` | Mark `SCAN_FAILED`, advance. | `SCAN_FAILED`, `status_detail` = bridge error / `scan_timeout`. |
 | `/mission/skip_current` | Cancel current goal, advance. | `SKIPPED`, `status_detail = skipped_by_operator`. |
 | `/mission/abort` | Cancel current goal, mark all remaining `SKIPPED`, route to RETURNING. | One `SKIPPED` per remaining tag. |
@@ -147,10 +215,16 @@ mission_orchestrator:
 
     # Inspection
     tag_sequence: []               # empty = all tags from tag_locations.json
-    approach_yaw: 0.0
+    approach_yaw: 0.0              # fallback heading when geometry can't run
+    approach_standoff_m: 0.5       # distance from tag along its outward normal
+    approach_overrides_file: ""    # optional per-tag YAML; see "Approach poses" below
     nav_timeout_s: 60.0
     nav_max_attempts: 2            # total attempts, NOT retries
+    nav_localization_cov_threshold: 0.25  # max diag(x,y,yaw); refuse goal if AMCL drifted past this
     scan_timeout_s: 5.0
+    require_visual_confirmation: false    # hardware-only gate; sim leaves false
+    visual_confirmation_service: /perception/confirm_tag
+    visual_confirmation_timeout_s: 3.0
 
     # Returning (stub)
     dock_pose: [0.0, 0.0, 0.0]     # x, y, yaw — TODO: real dock-finding

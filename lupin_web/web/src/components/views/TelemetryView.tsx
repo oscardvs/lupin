@@ -2,6 +2,7 @@ import { ArmJointsCard } from '@/components/widgets/ArmJointsCard'
 import { BatteryCard } from '@/components/widgets/BatteryCard'
 import { ImuCard } from '@/components/widgets/ImuCard'
 import { LidarCanvas } from '@/components/widgets/LidarCanvas'
+import { ObservationsCard } from '@/components/widgets/ObservationsCard'
 import { OdometryCard } from '@/components/widgets/OdometryCard'
 import { SystemCard } from '@/components/widgets/SystemCard'
 
@@ -12,7 +13,7 @@ export function TelemetryView() {
         <span className="font-display text-[20px] leading-none text-foreground">
           Instrumentation
         </span>
-        <span className="tag">six channels · live</span>
+        <span className="tag">live channels &amp; mission readings</span>
       </div>
       <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
         <LidarCanvas className="lg:col-span-5 lg:row-span-2" />
@@ -21,6 +22,7 @@ export function TelemetryView() {
         <BatteryCard className="lg:col-span-3" />
         <ArmJointsCard className="lg:col-span-2" />
         <SystemCard className="lg:col-span-2" />
+        <ObservationsCard className="lg:col-span-12" />
       </div>
     </div>
   )

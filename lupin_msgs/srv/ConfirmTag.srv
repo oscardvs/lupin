@@ -1,0 +1,28 @@
+# Visually confirm a specific AprilTag is in frame from the robot's current pose.
+#
+# Called by the orchestrator at the start of SCANNING, *before* the bridge
+# call, when the `require_visual_confirmation` parameter is true. Implemented
+# by an external perception node (e.g. apriltag_ros wrapped in a service
+# shim, or a DIY detector). NOT implemented in sim — the simulator's bridge
+# already returns readings keyed by tag id, so visual confirmation is a
+# hardware-only gate.
+#
+# Semantics:
+#   - The implementation should observe the camera for up to its own
+#     internal timeout (≪ orchestrator's visual_confirmation_timeout_s) and
+#     return as soon as the expected tag is detected with sufficient
+#     confidence.
+#   - If the expected tag is never detected (different tag visible, no tags
+#     visible, lighting/occlusion), set detected=false and populate
+#     error_message with a human-readable reason — the orchestrator surfaces
+#     it in /mission/state.last_error and the HMI mission log.
+#   - tag_pose_in_map carries the perception's best estimate of the tag's
+#     map-frame pose. Used as a future hook for visual servoing / pose
+#     refinement; current orchestrator only inspects `detected`.
+
+string expected_tag_id
+---
+bool detected
+float64 detection_confidence    # [0, 1]; implementation-specific scale
+geometry_msgs/Pose tag_pose_in_map  # zero when detected=false
+string error_message            # empty when detected=true

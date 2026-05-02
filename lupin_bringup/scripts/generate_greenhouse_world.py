@@ -45,7 +45,63 @@ DEFAULT_TABLE_HEIGHT_M = 0.70      # typical greenhouse bench top height
 DEFAULT_WALL_HEIGHT_M = 2.0
 DEFAULT_WALL_THICKNESS_M = 0.10
 DEFAULT_WALL_MARGIN_M = 0.50       # padding from outer tag/table extent
+DEFAULT_AISLE_EXPAND_Y = 1.0       # >1 widens E-W aisles (see _expand_layout_y)
 DEFAULT_WORLD_NAME = "greenhouse"
+
+
+# --- Layout transforms -------------------------------------------------------
+
+
+def _expand_layout_y(layout: dict[str, Any], factor: float) -> dict[str, Any]:
+    """Scale y-coordinates of tables and tags about the layout's y-midpoint.
+
+    The upstream JSON packs greenhouse rows with ~0.75 m E-W aisles between
+    them; with a 0.22 m robot and any sensible Nav2 inflation_radius those
+    aisles fully fill with cost and the planner cannot thread them. Pushing
+    rows apart in y is the simplest unblock.
+
+    Table SIZES are preserved — only their y-centers move. Tag (x, y) move
+    the same way so each tag follows its table. x is untouched (N-S aisles
+    are already wide enough). ``factor=1.0`` is identity.
+    """
+    if factor == 1.0:
+        return layout
+    if factor <= 0:
+        raise ValueError(f"aisle_expand_y must be positive, got {factor}")
+
+    y_min, y_max = _layout_y_bounds(layout)
+    y_center = (y_min + y_max) / 2.0
+
+    def scale(y: float) -> float:
+        return y_center + (y - y_center) * factor
+
+    out = {**layout}  # shallow copy; rebuild tables/tags below
+    out["tables"] = {}
+    for name, rect in layout.get("tables", {}).items():
+        cy_old = (rect["y0"] + rect["y1"]) / 2.0
+        sy = rect["y1"] - rect["y0"]
+        cy_new = scale(cy_old)
+        out["tables"][name] = {
+            "x0": rect["x0"],
+            "x1": rect["x1"],
+            "y0": cy_new - sy / 2.0,
+            "y1": cy_new + sy / 2.0,
+        }
+    out["tags"] = {}
+    for tag_id, tag in layout.get("tags", {}).items():
+        out["tags"][tag_id] = {**tag, "y": scale(float(tag["y"]))}
+    return out
+
+
+def _layout_y_bounds(layout: dict[str, Any]) -> tuple[float, float]:
+    ys: list[float] = []
+    for tag in layout.get("tags", {}).values():
+        ys.append(float(tag["y"]))
+    for tbl in layout.get("tables", {}).values():
+        ys.extend([float(tbl["y0"]), float(tbl["y1"])])
+    if not ys:
+        raise ValueError("tag_locations.json has neither tags nor tables")
+    return min(ys), max(ys)
 
 
 # --- SDF rendering helpers ---------------------------------------------------
@@ -339,21 +395,50 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--tag-size", type=float, default=DEFAULT_TAG_SIZE_M)
     p.add_argument("--tag-height", type=float, default=DEFAULT_TAG_HEIGHT_M)
     p.add_argument("--table-height", type=float, default=DEFAULT_TABLE_HEIGHT_M)
+    p.add_argument(
+        "--aisle-expand-y",
+        type=float,
+        default=DEFAULT_AISLE_EXPAND_Y,
+        help="Scale y-coords of tables and tags about the layout y-midpoint. "
+             ">1 widens E-W aisles. Table sizes and x-coords are preserved.",
+    )
+    p.add_argument(
+        "--wall-margin",
+        type=float,
+        default=DEFAULT_WALL_MARGIN_M,
+        help="Padding from outermost tag/table to the surrounding walls (m). "
+             "Bigger values widen the perimeter aisle (e.g. between rows of "
+             "tables and the walls). Default 0.50.",
+    )
+    p.add_argument(
+        "--write-layout-json",
+        help="If set, also write the (possibly transformed) layout JSON here. "
+             "Bridge + orchestrator should be pointed at this file when "
+             "--aisle-expand-y != 1 so their tag coords match the world.",
+    )
     args = p.parse_args(argv)
 
     src = _resolve_input(args.input)
     layout = json.loads(src.read_text())
+    layout = _expand_layout_y(layout, args.aisle_expand_y)
     sdf = build_world(
         layout,
         world_name=args.world_name,
         tag_size=args.tag_size,
         tag_height=args.tag_height,
         table_height=args.table_height,
+        wall_margin=args.wall_margin,
     )
 
     out = Path(args.output).expanduser().resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(sdf)
+
+    if args.write_layout_json:
+        layout_out = Path(args.write_layout_json).expanduser().resolve()
+        layout_out.parent.mkdir(parents=True, exist_ok=True)
+        layout_out.write_text(json.dumps(layout, indent=2, sort_keys=True))
+        print(f"wrote {layout_out}", file=sys.stderr)
 
     n_tags = len(layout.get("tags", {}))
     n_tables = len(layout.get("tables", {}))
