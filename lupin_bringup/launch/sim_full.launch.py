@@ -260,6 +260,13 @@ def generate_launch_description() -> LaunchDescription:
         'config',
         'tag_locations_widened.json',
     )
+    # Optional per-tag approach-pose overrides — empty stub in sim, hardware
+    # operators populate it when geometry doesn't match the physical layout.
+    approach_overrides = os.path.join(
+        get_package_share_directory('lupin_bringup'),
+        'config',
+        'approach_overrides.yaml',
+    )
 
     bridge = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -276,6 +283,7 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments=[
             ('dependency_timeout_s', LaunchConfiguration('dependency_timeout_s')),
             ('tag_locations_file', widened_tag_locations),
+            ('approach_overrides_file', approach_overrides),
         ],
     )
 

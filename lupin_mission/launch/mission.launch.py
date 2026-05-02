@@ -34,9 +34,19 @@ def generate_launch_description():
         DeclareLaunchArgument('tag_locations_file', default_value=''),
         # Inspection
         DeclareLaunchArgument('approach_yaw', default_value='0.0'),
+        DeclareLaunchArgument('approach_standoff_m', default_value='0.5'),
+        DeclareLaunchArgument('approach_overrides_file', default_value=''),
         DeclareLaunchArgument('nav_timeout_s', default_value='60.0'),
         DeclareLaunchArgument('nav_max_attempts', default_value='2'),
+        DeclareLaunchArgument(
+            'nav_localization_cov_threshold', default_value='0.25',
+        ),
         DeclareLaunchArgument('scan_timeout_s', default_value='5.0'),
+        DeclareLaunchArgument('require_visual_confirmation', default_value='false'),
+        DeclareLaunchArgument(
+            'visual_confirmation_service', default_value='/perception/confirm_tag',
+        ),
+        DeclareLaunchArgument('visual_confirmation_timeout_s', default_value='3.0'),
         # Returning
         DeclareLaunchArgument('dock_timeout_s', default_value='60.0'),
         # Publishing
@@ -68,9 +78,23 @@ def generate_launch_description():
             ),
             'tag_locations_file': LaunchConfiguration('tag_locations_file'),
             'approach_yaw': LaunchConfiguration('approach_yaw'),
+            'approach_standoff_m': LaunchConfiguration('approach_standoff_m'),
+            'approach_overrides_file': LaunchConfiguration('approach_overrides_file'),
             'nav_timeout_s': LaunchConfiguration('nav_timeout_s'),
             'nav_max_attempts': LaunchConfiguration('nav_max_attempts'),
+            'nav_localization_cov_threshold': LaunchConfiguration(
+                'nav_localization_cov_threshold',
+            ),
             'scan_timeout_s': LaunchConfiguration('scan_timeout_s'),
+            'require_visual_confirmation': LaunchConfiguration(
+                'require_visual_confirmation',
+            ),
+            'visual_confirmation_service': LaunchConfiguration(
+                'visual_confirmation_service',
+            ),
+            'visual_confirmation_timeout_s': LaunchConfiguration(
+                'visual_confirmation_timeout_s',
+            ),
             'dock_timeout_s': LaunchConfiguration('dock_timeout_s'),
             'state_publish_rate_hz': LaunchConfiguration('state_publish_rate_hz'),
             'mission_id_prefix': LaunchConfiguration('mission_id_prefix'),

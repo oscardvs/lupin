@@ -46,12 +46,21 @@ from std_srvs.srv import Trigger
 from transitions.extensions import HierarchicalGraphMachine
 
 from lupin_msgs.msg import MissionState, Observation
-from lupin_msgs.srv import GetTagReading, StartMission
+from lupin_msgs.srv import ConfirmTag, GetTagReading, StartMission
 
 from .estop_monitor import EStopMonitor
 from .inspection_mission import InspectionMission
 from .observations import make_tag_observation
-from .tag_locations import load_default_tag_locations, numeric_string_sort_key
+from .approach import (
+    TagApproach,
+    compute_approach,
+    load_approach_overrides,
+)
+from .tag_locations import (
+    load_default_tables,
+    load_default_tag_locations,
+    numeric_string_sort_key,
+)
 
 
 # ─── HSM topology ────────────────────────────────────────────────────────
@@ -202,9 +211,31 @@ class MissionOrchestratorNode(Node):
         # infer as BYTE_ARRAY and reject string overrides.
         self.declare_parameter('tag_sequence', Parameter.Type.STRING_ARRAY)
         self.declare_parameter('approach_yaw', 0.0)
+        self.declare_parameter('approach_standoff_m', 0.5)
+        self.declare_parameter('approach_overrides_file', '')
         self.declare_parameter('nav_timeout_s', 60.0)
         self.declare_parameter('nav_max_attempts', 2)
         self.declare_parameter('scan_timeout_s', 5.0)
+        # Visual confirmation gate. False (default) = bridge oracle path,
+        # which is what sim uses. True = call /perception/confirm_tag before
+        # the bridge — for hardware where the camera must actually see the
+        # AprilTag before we trust the reading. The perception node ships
+        # in a follow-up MR; this MR only defines the interface.
+        self.declare_parameter('require_visual_confirmation', False)
+        self.declare_parameter(
+            'visual_confirmation_service', '/perception/confirm_tag',
+        )
+        self.declare_parameter('visual_confirmation_timeout_s', 3.0)
+
+        # Per-leg AMCL drift gate. Re-uses the start-of-mission covariance
+        # check (max diagonal of x/y/yaw) before *each* NavigateToPose so
+        # we don't drive to a goal pose computed from a stale localisation.
+        # Default = same value as the initial localization gate, so existing
+        # tunings carry over; hardware can loosen it via launch arg if AMCL
+        # is borderline-stable in low-feature aisles.
+        self.declare_parameter(
+            'nav_localization_cov_threshold', 0.25,
+        )
 
         self.declare_parameter('dock_pose', [0.0, 0.0, 0.0])
         self.declare_parameter('dock_timeout_s', 60.0)
@@ -228,9 +259,25 @@ class MissionOrchestratorNode(Node):
         self._amcl_pose_topic = str(self.get_parameter('amcl_pose_topic').value)
 
         self._approach_yaw = float(self.get_parameter('approach_yaw').value)
+        self._approach_standoff = float(self.get_parameter('approach_standoff_m').value)
+        self._approach_overrides_file = str(
+            self.get_parameter('approach_overrides_file').value or ''
+        )
         self._nav_timeout = float(self.get_parameter('nav_timeout_s').value)
         self._nav_max_attempts = int(self.get_parameter('nav_max_attempts').value)
         self._scan_timeout = float(self.get_parameter('scan_timeout_s').value)
+        self._require_visual_confirmation = bool(
+            self.get_parameter('require_visual_confirmation').value
+        )
+        self._visual_confirmation_service = str(
+            self.get_parameter('visual_confirmation_service').value
+        )
+        self._visual_confirmation_timeout = float(
+            self.get_parameter('visual_confirmation_timeout_s').value
+        )
+        self._nav_localization_cov_thresh = float(
+            self.get_parameter('nav_localization_cov_threshold').value
+        )
 
         self._dock_pose = list(self.get_parameter('dock_pose').value or [0.0, 0.0, 0.0])
         self._dock_timeout = float(self.get_parameter('dock_timeout_s').value)
@@ -244,8 +291,34 @@ class MissionOrchestratorNode(Node):
         # Loaded once on startup; the bridge uses string IDs.
         tag_file = str(self.get_parameter('tag_locations_file').value or '')
         self._tag_locations: dict = load_default_tag_locations(tag_file or None)
+        # Tables drive per-tag approach-pose geometry (the robot parks on the
+        # outside of the nearest table edge). Loaded from the same JSON.
+        self._table_locations: dict = load_default_tables(tag_file or None)
         if tag_file:
-            self.get_logger().info(f'Loaded tag locations from {tag_file}')
+            self.get_logger().info(
+                f'Loaded tag locations from {tag_file} '
+                f'(tags={len(self._tag_locations)}, tables={len(self._table_locations)})'
+            )
+
+        # Per-tag approach-pose overrides — operator-tunable, optional. Empty
+        # path = no overrides, sim leaves it that way; hardware populates the
+        # YAML when geometry doesn't match the physical layout.
+        try:
+            self._approach_overrides = load_approach_overrides(
+                self._approach_overrides_file
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            # Misconfigured override file is operator-fixable — log loudly
+            # and continue with no overrides rather than blocking startup.
+            self.get_logger().error(
+                f'Failed to load approach overrides ({self._approach_overrides_file}): {exc}'
+            )
+            self._approach_overrides = {}
+        if self._approach_overrides:
+            self.get_logger().info(
+                f'Loaded {len(self._approach_overrides)} approach override(s) from '
+                f'{self._approach_overrides_file}'
+            )
 
         # Optional preset tag_sequence parameter — if non-empty, used as
         # the default when /mission/start passes an empty tag_sequence.
@@ -280,6 +353,10 @@ class MissionOrchestratorNode(Node):
         self._nav_pending_cancel: bool = False
         self._scan_future = None
         self._scan_started_at: float = self._monotonic()
+        # Visual-confirmation in-flight state. None when not waiting on
+        # /perception/confirm_tag. Watchdog enforces the timeout.
+        self._confirm_future = None
+        self._confirm_started_at: float = self._monotonic()
 
         # tracked separately from the nav-attempt counter so retry logic
         # is per-tag (counter on TagResult), but timeouts are per-attempt.
@@ -326,6 +403,16 @@ class MissionOrchestratorNode(Node):
             self._bridge_service_name,
             callback_group=self._cb_group,
         )
+        # Perception client only created when the gate is enabled. Sim
+        # leaves _confirm_client = None and the SCANNING entry skips
+        # straight to the bridge call.
+        self._confirm_client: Optional[Any] = None
+        if self._require_visual_confirmation:
+            self._confirm_client = self.create_client(
+                ConfirmTag,
+                self._visual_confirmation_service,
+                callback_group=self._cb_group,
+            )
 
         # Observations: RELIABLE + TRANSIENT_LOCAL with depth 50 so a late
         # subscriber (e.g. the web Mission tab) sees the mission so far.
@@ -523,7 +610,13 @@ class MissionOrchestratorNode(Node):
         elif state == 'INSPECTING_NAVIGATING':
             self._check_nav_timeout()
         elif state == 'INSPECTING_SCANNING':
-            self._check_scan_timeout()
+            # Mid-state we may be waiting on either /perception/confirm_tag
+            # or the bridge — the corresponding future is non-None. Both
+            # have their own timeouts; check whichever is in flight.
+            if self._confirm_future is not None:
+                self._check_confirm_timeout()
+            else:
+                self._check_scan_timeout()
         # READY, INSPECTING_PUBLISHING, RETURNING, DONE, FAULT: nothing
         # for the watchdog to do.
 
@@ -535,7 +628,14 @@ class MissionOrchestratorNode(Node):
         elapsed = self._monotonic() - self._boot_started_at
         nav_ready = self._nav_client.server_is_ready()
         bridge_ready = self._bridge_client.service_is_ready()
-        if nav_ready and bridge_ready:
+        # When visual confirmation is required, the perception service is a
+        # hard dependency — refuse to leave BOOT without it. Sim leaves the
+        # gate off and skips this branch entirely.
+        confirm_ready = (
+            self._confirm_client is None
+            or self._confirm_client.service_is_ready()
+        )
+        if nav_ready and bridge_ready and confirm_ready:
             self.get_logger().info('Dependencies up. Orchestrator READY.')
             self.deps_up()  # type: ignore[attr-defined]
             return
@@ -545,6 +645,8 @@ class MissionOrchestratorNode(Node):
                 missing.append(self._nav_action_name)
             if not bridge_ready:
                 missing.append(self._bridge_service_name)
+            if not confirm_ready:
+                missing.append(self._visual_confirmation_service)
             self._last_error = f'dependency_timeout: {", ".join(missing)}'
             self.get_logger().error(
                 f'Dependencies did not appear within '
@@ -616,6 +718,30 @@ class MissionOrchestratorNode(Node):
         self._scan_future = None
         if self._mission is not None and not self._mission.is_complete():
             result = self._mission.mark_scan_failed('scan_timeout')
+            self._emit_observation_for(result)
+        self.scan_done()  # type: ignore[attr-defined]
+
+    def _check_confirm_timeout(self) -> None:
+        """Mirror of :meth:`_check_scan_timeout` for /perception/confirm_tag.
+
+        Drops the in-flight future, marks the tag SCAN_FAILED with a
+        dedicated detail string the operator can grep ('confirm_timeout'),
+        and advances the FSM. Same shape as the scan-timeout path so the
+        scan/publish/advance flow downstream is unchanged.
+        """
+        if self._is_blocked() or self._confirm_future is None:
+            return
+        elapsed = self._monotonic() - self._confirm_started_at
+        if elapsed <= self._visual_confirmation_timeout:
+            return
+        self.get_logger().warn(
+            f'Visual confirm timeout after {self._visual_confirmation_timeout:.1f}s '
+            f'for tag '
+            f'{self._mission.current_tag_id() if self._mission else "?"}'
+        )
+        self._confirm_future = None
+        if self._mission is not None and not self._mission.is_complete():
+            result = self._mission.mark_scan_failed('confirm_timeout')
             self._emit_observation_for(result)
         self.scan_done()  # type: ignore[attr-defined]
 
@@ -811,7 +937,14 @@ class MissionOrchestratorNode(Node):
         state = self.state
         if state.startswith('INSPECTING'):
             msg.lifecycle_state = 'INSPECTING'
-            msg.mission_phase = state[len('INSPECTING_'):] if '_' in state else ''
+            phase = state[len('INSPECTING_'):] if '_' in state else ''
+            # SCANNING is the umbrella state for both visual confirmation
+            # and the bridge call. Surface the finer-grained phase to the
+            # operator so the HMI strip and event log can show what the
+            # orchestrator is actually waiting on.
+            if phase == 'SCANNING' and self._confirm_future is not None:
+                phase = 'CONFIRMING'
+            msg.mission_phase = phase
         elif state.startswith('PREPARE'):
             msg.lifecycle_state = 'PREPARE'
             msg.mission_phase = state[len('PREPARE_'):] if '_' in state else ''
@@ -850,8 +983,15 @@ class MissionOrchestratorNode(Node):
             if self._nav_goal_handle is None:
                 self._send_inspection_nav_goal()
         elif st == 'INSPECTING_SCANNING':
-            if self._scan_future is None:
-                self._call_bridge()
+            # Re-fire whichever sub-call hasn't started yet. Visual-confirm
+            # comes first when enabled; the bridge call only lands once
+            # confirmation succeeds. If both futures are None we're either
+            # at first entry or just resumed mid-state.
+            if self._scan_future is None and self._confirm_future is None:
+                if self._require_visual_confirmation:
+                    self._call_visual_confirm()
+                else:
+                    self._call_bridge()
         elif st == 'RETURNING':
             if self._nav_goal_handle is None:
                 self._send_return_nav_goal()
@@ -893,7 +1033,13 @@ class MissionOrchestratorNode(Node):
             return
         if self._is_blocked():
             return
-        self._call_bridge()
+        # Hardware-style flow: visually confirm the AprilTag is in frame
+        # before trusting the bridge reading. Sim leaves the gate off and
+        # goes straight to the bridge.
+        if self._require_visual_confirmation:
+            self._call_visual_confirm()
+        else:
+            self._call_bridge()
 
     def on_enter_INSPECTING_PUBLISHING(self, event_data) -> None:
         # Per spec, PUBLISHING is a named gate. The actual publish has
@@ -925,35 +1071,77 @@ class MissionOrchestratorNode(Node):
         # service handler).
         self._cancel_inflight_nav('fault', refund_attempt=False)
         self._scan_future = None
+        self._confirm_future = None
 
     # ─── inspection nav: send / response / result ──────────────────────
     def _send_inspection_nav_goal(self) -> None:
-        """Issue NavigateToPose for the current tag's (x, y).
+        """Issue NavigateToPose for the current tag.
 
         Increments the attempt counter — refunds if cancel-by-operator.
+        Goal pose is per-tag derived (table geometry + optional overrides);
+        the legacy ``approach_yaw`` parameter survives as the fallback for
+        tags that can't be associated with a table.
         """
         if self._mission is None or self._mission.is_complete():
             return
+        tag_id = self._mission.current_tag_id()
+
+        # Per-leg AMCL gate. The start-of-mission gate confirmed AMCL was
+        # converged before we ever started; this gate catches drift that
+        # accumulates over a long patrol — kidnap, low-feature aisle, etc.
+        # If the diagonal covariance is over the threshold, refuse to send
+        # a goal computed from stale localisation. Treat as UNREACHABLE so
+        # the FSM keeps moving and the operator sees a clear log line.
+        cov = self._latest_amcl_diag()
+        if cov is None or cov > self._nav_localization_cov_thresh:
+            cov_str = f'{cov:.3f}' if cov is not None else 'unknown'
+            self.get_logger().warn(
+                f'AMCL drift gate tripped for tag {tag_id} '
+                f'(max diag cov {cov_str} > {self._nav_localization_cov_thresh:.3f}); '
+                f'marking unreachable without dispatching nav goal.'
+            )
+            result = self._mission.mark_unreachable(
+                f'amcl_drift_var={cov_str}'
+            )
+            self._emit_observation_for(result)
+            self.nav_unreachable()  # type: ignore[attr-defined]
+            return
+
         try:
-            x, y = self._mission.current_target_xy()
+            approach: TagApproach = compute_approach(
+                tag_id,
+                self._tag_locations,
+                self._table_locations,
+                standoff_m=self._approach_standoff,
+                fallback_yaw=self._approach_yaw,
+                overrides=self._approach_overrides,
+            )
         except KeyError:
             # Tag in the sequence but not in tag_locations — should have
             # been caught at start_mission validation, but be defensive.
-            tag_id = self._mission.current_tag_id()
             result = self._mission.mark_unreachable(f'unknown_tag:{tag_id}')
             self._emit_observation_for(result)
             self.nav_unreachable()  # type: ignore[attr-defined]
             return
 
         goal_msg = NavigateToPose.Goal()
-        goal_msg.pose = self._build_pose_stamped(x, y, self._approach_yaw)
+        goal_msg.pose = self._build_pose_stamped(
+            approach.goal_x, approach.goal_y, approach.goal_yaw
+        )
 
         self._mission.register_nav_attempt()
         attempt = self._mission.current_result().nav_attempts
+        # Log line surfaces derived_from + table_id so the operator can read
+        # whether geometry, an override, or the fallback won — same field
+        # appears in /mission/state's last_error if the goal gets rejected.
         self.get_logger().info(
-            f'NavigateToPose → tag {self._mission.current_tag_id()} '
+            f'NavigateToPose → tag {tag_id} '
             f'(attempt {attempt}/{self._mission.nav_max_attempts}, '
-            f'pose=({x:.2f}, {y:.2f}, yaw={self._approach_yaw:.2f}))'
+            f'goal=({approach.goal_x:.2f}, {approach.goal_y:.2f}, '
+            f'yaw={approach.goal_yaw:.2f}), '
+            f'derived_from={approach.derived_from}'
+            f"{f', table={approach.table_id}' if approach.table_id else ''}, "
+            f'standoff={approach.standoff_m:.2f}m)'
         )
 
         self._nav_state_started_at = self._monotonic()
@@ -1050,6 +1238,65 @@ class MissionOrchestratorNode(Node):
         self._scan_started_at = self._monotonic()
         self._scan_future = self._bridge_client.call_async(request)
         self._scan_future.add_done_callback(self._on_scan_response)
+
+    # ─── visual confirm: pre-scan AprilTag detection gate ──────────────
+    def _call_visual_confirm(self) -> None:
+        """Ask /perception/confirm_tag whether the expected AprilTag is in
+        frame before we call the bridge. Hardware-only path — sim never
+        creates the client.
+        """
+        if self._mission is None or self._mission.is_complete():
+            return
+        if self._confirm_client is None:  # belt-and-braces, never in this branch
+            self._call_bridge()
+            return
+        request = ConfirmTag.Request()
+        request.expected_tag_id = self._mission.current_tag_id()
+        self._confirm_started_at = self._monotonic()
+        self._confirm_future = self._confirm_client.call_async(request)
+        self._confirm_future.add_done_callback(self._on_visual_confirm_response)
+
+    def _on_visual_confirm_response(self, future) -> None:
+        # Stale-future guard, mirrors _on_scan_response.
+        if future is not self._confirm_future or self.state != 'INSPECTING_SCANNING':
+            return
+        self._confirm_future = None
+        try:
+            response = future.result()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.get_logger().error(f'visual confirm raised: {exc!r}')
+            if self._mission is not None:
+                result = self._mission.mark_scan_failed(
+                    f'confirm_exception:{exc!r}'
+                )
+                self._emit_observation_for(result)
+            self.scan_done()  # type: ignore[attr-defined]
+            return
+
+        if response.detected:
+            self.get_logger().info(
+                f'Visual confirm OK for tag '
+                f'{self._mission.current_tag_id() if self._mission else "?"} '
+                f'(confidence={response.detection_confidence:.2f}); '
+                f'proceeding to bridge.'
+            )
+            # Detected — continue with the bridge call. The orchestrator
+            # could also use response.tag_pose_in_map for visual servoing
+            # in a future MR; v1 just gates on the boolean.
+            self._call_bridge()
+            return
+
+        # Not detected — same failure shape as scan-timeout: mark, emit,
+        # advance. Operator sees the perception's reason in last_error.
+        detail = response.error_message or 'visual_confirm_missed'
+        self.get_logger().warn(
+            f'Visual confirm missed tag '
+            f'{self._mission.current_tag_id() if self._mission else "?"}: {detail}'
+        )
+        if self._mission is not None and not self._mission.is_complete():
+            result = self._mission.mark_scan_failed(detail)
+            self._emit_observation_for(result)
+        self.scan_done()  # type: ignore[attr-defined]
 
     def _on_scan_response(self, future) -> None:
         # Stale-future guard.
