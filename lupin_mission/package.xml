@@ -19,6 +19,10 @@
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
 
+  <!-- Approach-pose overrides loader reads YAML; declare the dep explicitly
+       so colcon environments without rclpy's transitive yaml don't surprise. -->
+  <exec_depend>python3-yaml</exec_depend>
+
   <!--
     The mdp-greenhouse Python package is not in rosdistro; we only use it to
     read the bundled tag_locations.json (coordinates of each greenhouse tag).

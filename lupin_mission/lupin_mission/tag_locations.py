@@ -47,6 +47,39 @@ def load_default_tag_locations(path: Optional[str] = None) -> dict:
     return data['tags']
 
 
+def load_default_tables(path: Optional[str] = None) -> dict:
+    """Return the ``tables`` sub-dict from the same tag_locations.json file.
+
+    The orchestrator's per-tag approach-pose computation needs the table
+    bounding boxes alongside the tags, so we expose a sibling loader rather
+    than widening :func:`load_default_tag_locations`'s return type and
+    breaking older callers.
+
+    Returns an empty dict (rather than raising) when the JSON has no
+    ``tables`` key — keeps mission-types that don't need geometry working
+    against legacy fixtures.
+    """
+    if path:
+        data = json.loads(Path(path).expanduser().read_text())
+        return data.get('tables', {})
+
+    try:
+        from importlib.resources import files
+    except ImportError:  # pragma: no cover - we target py3.10
+        from importlib_resources import files  # type: ignore
+
+    try:
+        cfg_path = files('greenhouse_sim').joinpath('configs/tag_locations.json')
+    except (ModuleNotFoundError, ImportError) as exc:
+        raise RuntimeError(
+            "Could not import 'greenhouse_sim'. The mdp-greenhouse package is "
+            "a runtime dependency of lupin_mission and is not in rosdep — "
+            "install it with: pip install 'mdp-greenhouse>=1.0.3,<2'"
+        ) from exc
+    data = json.loads(cfg_path.read_text())
+    return data.get('tables', {})
+
+
 def numeric_string_sort_key(tag_id: str):
     """Sort numeric tag IDs as ints (numeric IDs first), alpha IDs after."""
     try:
