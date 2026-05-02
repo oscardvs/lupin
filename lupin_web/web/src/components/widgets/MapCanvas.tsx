@@ -1,4 +1,4 @@
-import { Crosshair, Target } from 'lucide-react'
+import { Check, Crosshair, Target } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -44,6 +44,13 @@ export function MapCanvas() {
     null,
   )
 
+  // Goal staged after pointer-up but not yet published. The "navigate there?"
+  // popup confirms; clicking outside the popup discards it.
+  const [pendingGoal, setPendingGoal] = useState<{ x: number; y: number; yaw: number } | null>(
+    null,
+  )
+  const popupRef = useRef<HTMLButtonElement | null>(null)
+
   /* ----- Sizing & DPR --- */
   useEffect(() => {
     const canvas = canvasRef.current
@@ -66,8 +73,12 @@ export function MapCanvas() {
   }, [])
 
   /* ----- World <-> canvas projection -----
-     We fit the whole map into the visible canvas, preserving aspect.
-     Returned `s` is pixels per metre (canvas CSS pixels). */
+     We fit the whole map into the visible canvas, preserving aspect. When the
+     canvas is landscape but the map is portrait (or vice versa), we rotate the
+     world by 90° CCW so the map's long axis aligns with the canvas long axis —
+     this fills laptops while still working unrotated on phones in portrait.
+     Returned `s` is pixels per metre (canvas CSS pixels); `rot` is the world
+     rotation in radians (CCW). */
   const projection = useCallback(() => {
     const canvas = canvasRef.current
     const map = mapRef.current
@@ -76,21 +87,33 @@ export function MapCanvas() {
     const h = canvas.clientHeight
     const mw = map.info.width * map.info.resolution
     const mh = map.info.height * map.info.resolution
-    const s = Math.max(0.0001, Math.min(w / mw, h / mh) * 0.95)
+    const rot = (w > h) !== (mw > mh) ? Math.PI / 2 : 0
+    const cosR = Math.cos(rot)
+    const sinR = Math.sin(rot)
+    const rmw = Math.abs(cosR) * mw + Math.abs(sinR) * mh
+    const rmh = Math.abs(sinR) * mw + Math.abs(cosR) * mh
+    const s = Math.max(0.0001, Math.min(w / rmw, h / rmh) * 0.95)
     const cx = w / 2
     const cy = h / 2
     const ox = map.info.origin.position.x + mw / 2
     const oy = map.info.origin.position.y + mh / 2
-    // worldToCanvas: cv = (world - mapCenter) * s flipped on Y, then translated to canvas centre
-    const worldToCanvas = (wx: number, wy: number) => ({
-      x: cx + (wx - ox) * s,
-      y: cy - (wy - oy) * s,
-    })
-    const canvasToWorld = (px: number, py: number) => ({
-      x: ox + (px - cx) / s,
-      y: oy - (py - cy) / s,
-    })
-    return { s, worldToCanvas, canvasToWorld }
+    // worldToCanvas: rotate (world - mapCenter) by `rot` CCW, scale, then flip Y
+    // (canvas Y grows down) and translate to canvas centre.
+    const worldToCanvas = (wx: number, wy: number) => {
+      const dx = wx - ox
+      const dy = wy - oy
+      const rx = cosR * dx - sinR * dy
+      const ry = sinR * dx + cosR * dy
+      return { x: cx + rx * s, y: cy - ry * s }
+    }
+    const canvasToWorld = (px: number, py: number) => {
+      const rx = (px - cx) / s
+      const ry = -(py - cy) / s
+      const dx = cosR * rx + sinR * ry
+      const dy = -sinR * rx + cosR * ry
+      return { x: ox + dx, y: oy + dy }
+    }
+    return { s, rot, worldToCanvas, canvasToWorld }
   }, [mapRef])
 
   /* ----- Pre-rasterise the OccupancyGrid into an offscreen canvas. ----- */
@@ -159,6 +182,8 @@ export function MapCanvas() {
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const proj = projection()
     if (!proj) return
+    // Starting a new drag invalidates any pending confirmation.
+    setPendingGoal(null)
     const rect = e.currentTarget.getBoundingClientRect()
     const px = e.clientX - rect.left
     const py = e.clientY - rect.top
@@ -188,19 +213,40 @@ export function MapCanvas() {
     const dx = cur.to.x - cur.from.x
     const dy = cur.to.y - cur.from.y
     const yaw = dx * dx + dy * dy < 1e-4 ? (pose?.yaw ?? 0) : Math.atan2(dy, dx)
-    const half = yaw / 2
+    setPendingGoal({ x: cur.from.x, y: cur.from.y, yaw })
+  }
+
+  const confirmPendingGoal = () => {
+    const g = pendingGoal
+    if (!g) return
+    const half = g.yaw / 2
     const sec = Math.floor(Date.now() / 1000)
     const nanosec = (Date.now() % 1000) * 1e6
     const goal: PoseStamped = {
       header: { stamp: { sec, nanosec }, frame_id: mapFrame },
       pose: {
-        position: { x: cur.from.x, y: cur.from.y, z: 0 },
+        position: { x: g.x, y: g.y, z: 0 },
         orientation: { x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) },
       },
     }
     publishGoal(goal)
-    setCommittedGoal({ x: cur.from.x, y: cur.from.y, yaw })
+    setCommittedGoal({ x: g.x, y: g.y, yaw: g.yaw })
+    setPendingGoal(null)
   }
+
+  // Click outside the popup → cancel the pending goal. Use mousedown so it
+  // fires before any click handler on the canvas, and check `popupRef` so the
+  // confirm-button click below isn't swallowed.
+  useEffect(() => {
+    if (!pendingGoal) return
+    const onDocDown = (ev: MouseEvent | PointerEvent) => {
+      const t = ev.target as Node | null
+      if (popupRef.current && t && popupRef.current.contains(t)) return
+      setPendingGoal(null)
+    }
+    document.addEventListener('pointerdown', onDocDown, true)
+    return () => document.removeEventListener('pointerdown', onDocDown, true)
+  }, [pendingGoal])
 
   /* ----- Render loop --- */
   useAnimationLoop(mapRef, () => {
@@ -223,15 +269,24 @@ export function MapCanvas() {
     const map = mapRef.current
     if (!map) return
 
-    // Map bitmap drawn at scale
+    // Map bitmap drawn at scale, rotated about the map centre when the
+    // projection rotates the world.
     const bmp = ensureMapBitmap()
     if (bmp) {
       const mw = map.info.width * map.info.resolution
       const mh = map.info.height * map.info.resolution
-      const tl = proj.worldToCanvas(map.info.origin.position.x, map.info.origin.position.y + mh)
+      const center = proj.worldToCanvas(
+        map.info.origin.position.x + mw / 2,
+        map.info.origin.position.y + mh / 2,
+      )
+      ctx.save()
+      ctx.translate(center.x, center.y)
+      // Canvas Y is flipped vs world; world CCW rotation = canvas CW.
+      ctx.rotate(-proj.rot)
       ctx.imageSmoothingEnabled = false
-      ctx.drawImage(bmp, tl.x, tl.y, mw * proj.s, mh * proj.s)
+      ctx.drawImage(bmp, (-mw * proj.s) / 2, (-mh * proj.s) / 2, mw * proj.s, mh * proj.s)
       ctx.imageSmoothingEnabled = true
+      ctx.restore()
     }
 
     // 1m grid overlay
@@ -265,6 +320,11 @@ export function MapCanvas() {
       drawGoal(ctx, proj, committedGoal, 'hsl(192 90% 60%)')
     }
 
+    // Pending goal (awaiting user confirm in the popup)
+    if (pendingGoal) {
+      drawGoal(ctx, proj, pendingGoal, 'hsl(38 95% 60%)')
+    }
+
     // Active drag preview
     if (drag) {
       const yaw =
@@ -289,6 +349,19 @@ export function MapCanvas() {
     : !pose
     ? 'awaiting TF'
     : `pose · ${pose.x.toFixed(2)} m, ${pose.y.toFixed(2)} m, ${((pose.yaw * 180) / Math.PI).toFixed(0)}°`
+
+  /* ----- Popup screen position — anchored at the arrow tip of the pending
+     goal, then nudged so it sits clear of the chevron. */
+  const popupPos = (() => {
+    if (!pendingGoal) return null
+    const proj = projection()
+    if (!proj) return null
+    const c = proj.worldToCanvas(pendingGoal.x, pendingGoal.y)
+    const visualYaw = pendingGoal.yaw + proj.rot
+    const tipDx = Math.cos(visualYaw) * 26
+    const tipDy = -Math.sin(visualYaw) * 26
+    return { x: c.x + tipDx + 10, y: c.y + tipDy - 14 }
+  })()
 
   return (
     <Card className="flex flex-1 flex-col">
@@ -321,12 +394,28 @@ export function MapCanvas() {
               <span className="tag tag-accent flex items-center gap-1">
                 <Target className="h-3 w-3" /> drag · drop to nav
               </span>
+            ) : pendingGoal ? (
+              <span className="tag tag-accent flex items-center gap-1">
+                <Target className="h-3 w-3" /> awaiting confirm
+              </span>
             ) : (
               <span className="tag flex items-center gap-1">
                 <Crosshair className="h-3 w-3" /> click + drag · set goal
               </span>
             )}
           </div>
+          {pendingGoal && popupPos && (
+            <button
+              ref={popupRef}
+              type="button"
+              onClick={confirmPendingGoal}
+              style={{ left: popupPos.x, top: popupPos.y }}
+              className="absolute z-10 flex items-center gap-1.5 rounded-sm border border-primary/60 bg-primary/15 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-primary shadow-[0_0_18px_-6px_hsl(var(--primary)/0.7)] backdrop-blur transition-colors hover:bg-primary/25 focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <Check className="h-3 w-3" />
+              navigate there?
+            </button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -368,14 +457,14 @@ function drawMapGrid(
 
 function drawRobot(
   ctx: CanvasRenderingContext2D,
-  proj: { worldToCanvas: (x: number, y: number) => { x: number; y: number } },
+  proj: { worldToCanvas: (x: number, y: number) => { x: number; y: number }; rot: number },
   pose: { x: number; y: number; yaw: number },
 ) {
   const c = proj.worldToCanvas(pose.x, pose.y)
   ctx.save()
   ctx.translate(c.x, c.y)
-  // Canvas y is inverted vs world, so negate yaw.
-  ctx.rotate(-pose.yaw)
+  // Canvas y is inverted vs world, so negate the (world-frame yaw + view rotation).
+  ctx.rotate(-(pose.yaw + proj.rot))
   // Halo
   ctx.beginPath()
   ctx.arc(0, 0, 12, 0, Math.PI * 2)
@@ -398,14 +487,14 @@ function drawRobot(
 
 function drawGoal(
   ctx: CanvasRenderingContext2D,
-  proj: { worldToCanvas: (x: number, y: number) => { x: number; y: number } },
+  proj: { worldToCanvas: (x: number, y: number) => { x: number; y: number }; rot: number },
   goal: { x: number; y: number; yaw: number },
   color: string,
 ) {
   const c = proj.worldToCanvas(goal.x, goal.y)
   ctx.save()
   ctx.translate(c.x, c.y)
-  ctx.rotate(-goal.yaw)
+  ctx.rotate(-(goal.yaw + proj.rot))
   ctx.strokeStyle = color
   ctx.fillStyle = color
   ctx.lineWidth = 1.5
