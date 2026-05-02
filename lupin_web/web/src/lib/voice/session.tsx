@@ -410,7 +410,6 @@ export function useVoiceSession(): VoiceSession {
             if (fields.includes('pose')) out.pose = readPose(odomRef.current)
             if (fields.includes('battery')) out.battery = readBattery(batteryRef.current)
             if (fields.includes('estop')) out.estop = { active: estop.active, reason: estop.reason }
-            if (fields.includes('nav_status')) out.nav_status = { note: 'not yet wired — subscribe /navigation_state' }
             return finish({ ok: true, ...out })
           }
 

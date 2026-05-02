@@ -4,12 +4,17 @@
  * the live RosCore + EStop providers.
  *
  * Design rules (no speculative interfaces):
- *   - One tool per existing rosbridge-side capability.
- *   - Motion tools (`drive`, `nav_goto`, `nav_goto_named`, `arm_preset`) all
- *     go through e-stop and saturating speed caps from settings.
+ *   - One tool per existing rosbridge-side capability. Tools without a real
+ *     backend are NOT declared here — a tool that always errors trains the
+ *     model to stop calling it; one that silently returns empty trains it to
+ *     hallucinate "yes I did it".
+ *   - Motion tools (`drive`, `nav_goto`, `nav_forward`, `nav_goto_named`,
+ *     `rotate`, `gripper`, `arm_preset`) all go through e-stop and
+ *     saturating speed caps from settings.
  *   - `query_state` is the read path — never produces motion.
- *   - `speak` is a no-op on the wire (audio comes from the model itself);
- *     it exists so the agent has a way to reply without taking action.
+ *   - `speak` exists for transcript-only replies (e.g. when the user has
+ *     muted the speaker); normal spoken answers come from Gemini's audio
+ *     stream directly and don't need a tool call.
  */
 
 import type { FunctionDeclaration } from './types'
@@ -55,7 +60,7 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'nav_forward',
     description:
-      "Drive to a pose offset from the robot's CURRENT position, expressed in the robot's body frame. The server reads current map→base, rotates (forward_m, lateral_m) by current yaw, and publishes the resulting absolute goal — the agent does NOT need to do the math. Use this for any \"go N metres forward / back / left / right\" or \"reposition slightly\" request. Requires localization. forward_m is along the robot's current heading (positive = forward); lateral_m is the perpendicular strafe (positive = left); rotate_deg is an optional relative yaw change in degrees applied to the goal pose.",
+      "Drive to a pose offset from the robot's CURRENT position, expressed in the robot's body frame. The HMI reads the latest map→base TF, rotates (forward_m, lateral_m) by current yaw, and sends the resulting absolute Nav2 goal — the agent does NOT need to do the math. Fails if no map→base transform is available (localization down). Use this for any \"go N metres forward / back / left / right\" or \"reposition slightly\" request. forward_m is along the robot's current heading (positive = forward); lateral_m is the perpendicular strafe (positive = left); rotate_deg is an optional relative yaw change in degrees applied to the goal pose.",
     parameters: {
       type: 'object',
       properties: {
@@ -174,14 +179,14 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'query_state',
     description:
-      "Read live telemetry from the robot. 'fields' is a list of items to fetch from: pose, battery, estop, nav_status. Returns whatever subset is currently known. Read-only — never moves the robot.",
+      "Read live telemetry from the robot. 'fields' is a list of items to fetch from: pose, battery, estop. Returns whatever subset is currently known. Read-only — never moves the robot.",
     parameters: {
       type: 'object',
       properties: {
         fields: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Subset of: pose, battery, estop, nav_status.',
+          description: 'Subset of: pose, battery, estop.',
         },
       },
     },
@@ -195,11 +200,11 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'speak',
     description:
-      'Speak a short response without taking any action. Use this when the user asks something purely conversational. Prefer this to silently doing nothing.',
+      "Push a written reply into the on-screen transcript without producing any motion or audio. Do NOT call this for ordinary chat — your normal voice output already reaches the user. Use it only when the user has muted the speaker, when you want to leave a written note in the transcript log, or in the offline mock harness where there is no audio channel.",
     parameters: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'What to say.' },
+        text: { type: 'string', description: 'What to write to the transcript.' },
       },
       required: ['text'],
     },

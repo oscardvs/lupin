@@ -23,6 +23,7 @@ set(msg_files
 set(srv_files
   "srv/GetTagReading.srv"
   "srv/StartMission.srv"
+  "srv/SetArmPreset.srv"
 )
 set(action_files
 )

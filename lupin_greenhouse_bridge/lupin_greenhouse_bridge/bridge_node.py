@@ -5,6 +5,7 @@ or STATUS_UNKNOWN_TAG if the tag is not in the loaded greenhouse config.
 """
 
 import random
+from pathlib import Path
 
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -28,8 +29,13 @@ class GreenhouseBridgeNode(Node):
         self.declare_parameter('speedup_factor', 0.0)
         self.declare_parameter('debug_seed', -1)
 
-        tag_file = self.get_parameter('tag_file').value or None
-        cfg_file = self.get_parameter('sim_config_file').value or None
+        # mdp-greenhouse 1.0.7's TagManager assigns the path arg directly to
+        # self.file_path and later calls .exists() on it — passing a raw str
+        # crashes with AttributeError. Wrap in Path here until upstream fixes.
+        tag_file_str = self.get_parameter('tag_file').value
+        cfg_file_str = self.get_parameter('sim_config_file').value
+        tag_file = Path(tag_file_str) if tag_file_str else None
+        cfg_file = Path(cfg_file_str) if cfg_file_str else None
         debug_tod = float(self.get_parameter('debug_time_of_day').value)
         speedup = float(self.get_parameter('speedup_factor').value)
         debug_seed = int(self.get_parameter('debug_seed').value)
