@@ -2,21 +2,34 @@
 tests can both import it.
 
 Coordinates come from the mdp-greenhouse package's bundled
-configs/tag_locations.json. The package is pip-installed (declared in
-setup.py install_requires); colcon won't install it.
+configs/tag_locations.json by default. The package is pip-installed
+(declared in setup.py install_requires); colcon won't install it.
+
+When the world generator is run with ``--aisle-expand-y != 1``, callers
+must point this loader at the matching widened JSON via the explicit
+path argument — otherwise nav goals will land inside (now-shifted)
+tables. Bridge + orchestrator share that override.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import Optional
 
 
-def load_default_tag_locations() -> dict:
-    """Return the tags sub-dict from the installed mdp-greenhouse package.
+def load_default_tag_locations(path: Optional[str] = None) -> dict:
+    """Return the ``tags`` sub-dict from a tag_locations.json file.
 
-    Path is resolved via importlib.resources so we don't bake a
-    site-packages path into the source.
+    If ``path`` is given (and non-empty), load from that filesystem path.
+    Otherwise resolve the bundled JSON inside the installed
+    ``greenhouse_sim`` package via ``importlib.resources`` so we don't
+    bake a site-packages path into the source.
     """
+    if path:
+        data = json.loads(Path(path).expanduser().read_text())
+        return data['tags']
+
     try:
         from importlib.resources import files
     except ImportError:  # pragma: no cover - we target py3.10

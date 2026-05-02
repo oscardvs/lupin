@@ -193,6 +193,11 @@ class MissionOrchestratorNode(Node):
         self.declare_parameter('localization_covariance_threshold', 0.25)
         self.declare_parameter('amcl_pose_topic', '/amcl_pose')
 
+        # Empty → use the upstream mdp-greenhouse package JSON. Set this
+        # when the world generator was run with --aisle-expand-y != 1 so
+        # nav goals match the shifted tables.
+        self.declare_parameter('tag_locations_file', '')
+
         # tag_sequence: type-only declaration so an empty default doesn't
         # infer as BYTE_ARRAY and reject string overrides.
         self.declare_parameter('tag_sequence', Parameter.Type.STRING_ARRAY)
@@ -237,7 +242,10 @@ class MissionOrchestratorNode(Node):
 
         # ─── tag locations ─────────────────────────────────────────────
         # Loaded once on startup; the bridge uses string IDs.
-        self._tag_locations: dict = load_default_tag_locations()
+        tag_file = str(self.get_parameter('tag_locations_file').value or '')
+        self._tag_locations: dict = load_default_tag_locations(tag_file or None)
+        if tag_file:
+            self.get_logger().info(f'Loaded tag locations from {tag_file}')
 
         # Optional preset tag_sequence parameter — if non-empty, used as
         # the default when /mission/start passes an empty tag_sequence.
