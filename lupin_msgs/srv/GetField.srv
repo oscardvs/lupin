@@ -1,0 +1,30 @@
+# On-demand IDW interpolation of a sensor field over a 2D bbox.
+#
+# Computed lazily on the twin node from the per-tag observation buffers.
+# Cached by (sensor_type, observation_count, bbox, resolution) — repeat
+# calls with no new observations are free.
+#
+# Cells beyond `max_distance_to_nearest_tag` from any observed tag are
+# encoded as NaN, as are cells that fall in unexplored map area (when
+# the twin is configured to clip to /map). The HMI renders NaN as
+# transparent — that's what keeps the field honest: only paint where
+# we have data.
+
+string sensor_type            # "temperature" | "humidity" | "co2" | "light" | "soil_moisture"
+float32 resolution            # cell size, metres
+float32 bbox_min_x            # map-frame
+float32 bbox_min_y
+float32 bbox_max_x
+float32 bbox_max_y
+---
+bool ok                       # false on bad sensor_type / degenerate bbox
+string error_message
+float32[] values              # row-major, width*height; NaN for "no data"
+uint32 width                  # cells along x
+uint32 height                 # cells along y
+float32 origin_x              # map-frame x of cell (0, 0)
+float32 origin_y              # map-frame y of cell (0, 0)
+float32 resolution_used       # echoed back so the consumer doesn't re-derive it
+float32 value_min             # over the non-NaN cells; both 0 if all NaN
+float32 value_max
+uint32 sample_count           # how many observations contributed
