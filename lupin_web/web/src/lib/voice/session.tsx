@@ -199,6 +199,45 @@ export function useVoiceSession(): VoiceSession {
             return finish({ ok: true, action: 'goal_sent', x, y, yaw })
           }
 
+          case 'nav_forward': {
+            if (estop.active) {
+              return finish(
+                { ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` },
+              )
+            }
+            const pose = mapPoseRef.current
+            if (!pose) {
+              return finish({
+                ok: false,
+                error: 'no map→base transform — cannot compute relative goal',
+              })
+            }
+            const fwd = clampNumber(args.forward_m, -50, 50, 0)
+            const lat = clampNumber(args.lateral_m, -50, 50, 0)
+            const rotDeg = clampNumber(args.rotate_deg, -3600, 3600, 0)
+            // Rotate body-frame offset (fwd, lat) by current yaw to get the
+            // map-frame delta, then add to current pose.
+            const c = Math.cos(pose.yaw)
+            const s = Math.sin(pose.yaw)
+            const dx = c * fwd - s * lat
+            const dy = s * fwd + c * lat
+            const goalX = pose.x + dx
+            const goalY = pose.y + dy
+            let goalYaw = pose.yaw + (rotDeg * Math.PI) / 180
+            goalYaw = Math.atan2(Math.sin(goalYaw), Math.cos(goalYaw))
+            publishGoal(ros, settings, goalX, goalY, goalYaw)
+            return finish({
+              ok: true,
+              action: 'goal_sent',
+              from: { x: pose.x, y: pose.y, yaw: pose.yaw },
+              goal: { x: goalX, y: goalY, yaw: goalYaw },
+              forward_m: fwd,
+              lateral_m: lat,
+              rotate_deg: rotDeg,
+            })
+          }
+
           case 'rotate': {
             if (estop.active) {
               return finish(

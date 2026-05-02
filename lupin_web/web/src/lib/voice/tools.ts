@@ -41,7 +41,7 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'nav_goto',
     description:
-      "Send a Nav2 goal in the map frame. The robot's planner takes over and drives there autonomously.",
+      "Send a Nav2 goal in the MAP frame (absolute coordinates). The robot's planner drives there autonomously. Prefer 'nav_forward' for relative motion like \"go 1 m forward\" — that handles the trig server-side. Use this tool only when the user gives explicit map-frame coordinates or when targeting a known absolute pose.",
     parameters: {
       type: 'object',
       properties: {
@@ -50,6 +50,28 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
         yaw: { type: 'number', description: 'Goal heading, radians, 0 = +X.' },
       },
       required: ['x', 'y'],
+    },
+  },
+  {
+    name: 'nav_forward',
+    description:
+      "Drive to a pose offset from the robot's CURRENT position, expressed in the robot's body frame. The server reads current map→base, rotates (forward_m, lateral_m) by current yaw, and publishes the resulting absolute goal — the agent does NOT need to do the math. Use this for any \"go N metres forward / back / left / right\" or \"reposition slightly\" request. Requires localization. forward_m is along the robot's current heading (positive = forward); lateral_m is the perpendicular strafe (positive = left); rotate_deg is an optional relative yaw change in degrees applied to the goal pose.",
+    parameters: {
+      type: 'object',
+      properties: {
+        forward_m: {
+          type: 'number',
+          description: 'Distance along robot heading, metres. Positive = forward, negative = backward.',
+        },
+        lateral_m: {
+          type: 'number',
+          description: 'Lateral offset, metres. Positive = left (mecanum strafe). Default 0.',
+        },
+        rotate_deg: {
+          type: 'number',
+          description: 'Relative yaw change at the goal, degrees. Positive = ccw. Default 0.',
+        },
+      },
     },
   },
   {
@@ -190,6 +212,7 @@ export type ToolName =
   | 'rotate'
   | 'set_speed_cap'
   | 'nav_goto'
+  | 'nav_forward'
   | 'nav_cancel'
   | 'nav_goto_named'
   | 'list_named_locations'
