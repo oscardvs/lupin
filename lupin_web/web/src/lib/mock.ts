@@ -1,5 +1,7 @@
 import {
   type BatteryState,
+  type GetFieldRequest,
+  type GetFieldResponse,
   type Imu,
   type JointState,
   type LaserScan,
@@ -11,6 +13,10 @@ import {
   type Path,
   type PoseStamped,
   type RosoutLevel,
+  type SensorReading,
+  type TwinSensor,
+  type TwinState,
+  type TwinTagState,
   OBSERVATION_KIND,
   OBSERVATION_STATUS,
 } from '@/types/ros'
@@ -470,5 +476,200 @@ export function mockPlan(): Path {
   return {
     header: makeHeader('map'),
     poses,
+  }
+}
+
+/* ----------------------------------------------------------------------- */
+/* Digital-twin mock — fake TwinState + GetField responses so the HMI's    */
+/* heat map / Greenhouse State table / tulip work without a robot.         */
+/* ----------------------------------------------------------------------- */
+
+interface MockTwinTagSeed {
+  tag_id: string
+  x: number
+  y: number
+  /** Drift centre per sensor; readings drift around these over time. */
+  base: Record<TwinSensor, number>
+  /** Phase offset so each tag oscillates differently. */
+  phase: number
+}
+
+// 7 tags scattered across a synthetic 10×10 m greenhouse. Two of them have
+// values intentionally near the edge of their ideal ranges so the tulip
+// has something to react to in mock mode.
+const MOCK_TWIN_TAGS: MockTwinTagSeed[] = [
+  { tag_id: '1', x: 1.5, y: 1.5, base: { temperature: 22, humidity: 55, co2: 480, light: 500, soil_moisture: 45 }, phase: 0.0 },
+  { tag_id: '2', x: 4.5, y: 1.5, base: { temperature: 24, humidity: 60, co2: 520, light: 600, soil_moisture: 50 }, phase: 0.7 },
+  { tag_id: '3', x: 1.5, y: 4.5, base: { temperature: 21, humidity: 65, co2: 460, light: 450, soil_moisture: 40 }, phase: 1.4 },
+  { tag_id: '4', x: 4.5, y: 4.5, base: { temperature: 26, humidity: 70, co2: 700, light: 700, soil_moisture: 55 }, phase: 2.1 },
+  { tag_id: '5', x: 8.0, y: 2.5, base: { temperature: 19, humidity: 50, co2: 420, light: 350, soil_moisture: 35 }, phase: 2.8 },
+  { tag_id: '6', x: 8.0, y: 6.0, base: { temperature: 27, humidity: 78, co2: 950, light: 250, soil_moisture: 25 }, phase: 3.5 },  // stressed
+  { tag_id: '7', x: 5.5, y: 8.0, base: { temperature: 23, humidity: 58, co2: 540, light: 550, soil_moisture: 48 }, phase: 4.2 },
+]
+
+const SENSOR_DRIFT_AMPLITUDES: Record<TwinSensor, number> = {
+  temperature: 1.2,
+  humidity: 4.0,
+  co2: 35,
+  light: 50,
+  soil_moisture: 3.0,
+}
+
+function mockTagReadings(tag: MockTwinTagSeed, t: number): SensorReading[] {
+  const out: SensorReading[] = []
+  for (const sensor of ['temperature', 'humidity', 'co2', 'light', 'soil_moisture'] as const) {
+    const amp = SENSOR_DRIFT_AMPLITUDES[sensor]
+    const v = tag.base[sensor] + amp * Math.sin(t * 0.05 + tag.phase)
+    out.push({ name: sensor, value: v })
+  }
+  return out
+}
+
+function mockTagPose(tag: MockTwinTagSeed) {
+  return {
+    position: { x: tag.x, y: tag.y, z: 0 },
+    // Identity rotation; orientation.w==1 so the HMI treats this as a
+    // valid pose (zero would mean "no pose observed").
+    orientation: { x: 0, y: 0, z: 0, w: 1 },
+  }
+}
+
+/**
+ * Stagger when each tag becomes visible so the HMI's "fills in as the robot
+ * patrols" narrative reads correctly under ?mock=1. The first tag appears
+ * after 4 s, the next after 8 s, etc., so a fresh page load watches the
+ * Greenhouse State table populate and the heat map grow over ~half a minute.
+ */
+function mockVisibleTagCount(t: number): number {
+  const interval = 4
+  return Math.min(MOCK_TWIN_TAGS.length, Math.floor(t / interval) + 1)
+}
+
+export function mockTwinState(): TwinState {
+  const t = elapsed()
+  const visible = mockVisibleTagCount(t)
+  const tags: TwinTagState[] = []
+  for (let i = 0; i < visible; i++) {
+    const seed = MOCK_TWIN_TAGS[i]
+    const stale = (i === visible - 1)
+      ? (t % 4)               // newly-arrived tag is fresh
+      : ((t * 0.8) % 90) + 1  // older tags age slightly faster than wall clock
+                              // so the "X seconds ago" badge actually moves
+    // Build a builtin_interfaces/Time for last_observed by subtracting
+    // stale from "now" — keeps the durable timestamp consistent with the
+    // relative stale_seconds.
+    const observedAtSec = Date.now() / 1000 - stale
+    tags.push({
+      tag_id: seed.tag_id,
+      pose: mockTagPose(seed),
+      readings: mockTagReadings(seed, t),
+      last_observed: {
+        sec: Math.floor(observedAtSec),
+        nanosec: Math.floor((observedAtSec - Math.floor(observedAtSec)) * 1e9),
+      },
+      stale_seconds: stale,
+    })
+  }
+  return {
+    header: makeHeader('map'),
+    tags,
+  }
+}
+
+/**
+ * Synthetic GetField response — same shape the twin node returns, computed
+ * from the current mock tag set with a tiny IDW so the heat map looks
+ * consistent with the Greenhouse State table and the tulip.
+ *
+ * Mirrors the Python idw.py: nearest-tag NaN gating beyond max_distance,
+ * weighted sum within falloff_radius, exact value at coincident cells.
+ */
+export function mockTwinField(req: GetFieldRequest): GetFieldResponse {
+  const sensor = req.sensor_type as TwinSensor
+  const t = elapsed()
+  const visible = mockVisibleTagCount(t)
+  const samples: Array<{ x: number; y: number; v: number }> = []
+  for (let i = 0; i < visible; i++) {
+    const seed = MOCK_TWIN_TAGS[i]
+    const reading = mockTagReadings(seed, t).find((r) => r.name === sensor)
+    if (!reading) continue
+    samples.push({ x: seed.x, y: seed.y, v: reading.value })
+  }
+
+  if (req.resolution <= 0 || req.bbox_max_x < req.bbox_min_x || req.bbox_max_y < req.bbox_min_y) {
+    return {
+      ok: false, error_message: 'invalid bbox/resolution',
+      values: [], width: 0, height: 0,
+      origin_x: 0, origin_y: 0, resolution_used: 0,
+      value_min: 0, value_max: 0, sample_count: 0,
+    }
+  }
+
+  const width = Math.max(1, Math.ceil((req.bbox_max_x - req.bbox_min_x) / req.resolution))
+  const height = Math.max(1, Math.ceil((req.bbox_max_y - req.bbox_min_y) / req.resolution))
+  const values: (number | null)[] = new Array(width * height).fill(null)
+  // Mirror the Python idw.py defaults — keep these in sync if the
+  // backend tunings ever change. Reviewer flagged the duplication; for
+  // now a comment is the cheapest contract since the values almost
+  // never change and a /twin/get_params service would be over-engineered.
+  const POWER = 2
+  const FALLOFF = 1.5
+  const MAX_DIST = 1.5
+  const FALLOFF_SQ = FALLOFF * FALLOFF
+  const MAX_DIST_SQ = MAX_DIST * MAX_DIST
+
+  let vmin = Infinity, vmax = -Infinity
+
+  for (let j = 0; j < height; j++) {
+    const cy = req.bbox_min_y + (j + 0.5) * req.resolution
+    for (let i = 0; i < width; i++) {
+      const cx = req.bbox_min_x + (i + 0.5) * req.resolution
+      const idx = j * width + i
+
+      let nearestDsq = Infinity
+      let nearestVal = 0
+      for (const s of samples) {
+        const dx = cx - s.x, dy = cy - s.y
+        const d = dx * dx + dy * dy
+        if (d < nearestDsq) { nearestDsq = d; nearestVal = s.v }
+      }
+      if (samples.length === 0 || nearestDsq > MAX_DIST_SQ) continue
+
+      if (nearestDsq < 1e-6) {
+        values[idx] = nearestVal
+        if (nearestVal < vmin) vmin = nearestVal
+        if (nearestVal > vmax) vmax = nearestVal
+        continue
+      }
+
+      let num = 0, den = 0
+      for (const s of samples) {
+        const dx = cx - s.x, dy = cy - s.y
+        const dsq = dx * dx + dy * dy
+        if (dsq > FALLOFF_SQ) continue
+        const w = 1 / Math.pow(Math.sqrt(dsq), POWER)
+        num += w * s.v
+        den += w
+      }
+      const v = den > 0 ? num / den : nearestVal
+      values[idx] = v
+      if (v < vmin) vmin = v
+      if (v > vmax) vmax = v
+    }
+  }
+  if (!Number.isFinite(vmin)) { vmin = 0; vmax = 0 }
+
+  return {
+    ok: true,
+    error_message: '',
+    values,
+    width,
+    height,
+    origin_x: req.bbox_min_x,
+    origin_y: req.bbox_min_y,
+    resolution_used: req.resolution,
+    value_min: vmin,
+    value_max: vmax,
+    sample_count: samples.length,
   }
 }

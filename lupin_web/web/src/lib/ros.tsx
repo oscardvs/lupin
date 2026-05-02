@@ -23,6 +23,8 @@ import {
   mockOdometry,
   mockPlan,
   mockScan,
+  mockTwinField,
+  mockTwinState,
 } from '@/lib/mock'
 
 export type RosStatus = 'connecting' | 'connected' | 'closed' | 'error'
@@ -92,6 +94,8 @@ const MOCK_RATES_HZ: Record<string, number> = {
   // only sees one message per fake tag.
   'lupin_msgs/msg/MissionState': 5,
   'lupin_msgs/msg/Observation': 5,
+  // Match the twin node: TwinState ticks at 1 Hz unconditionally.
+  'lupin_msgs/msg/TwinState': 1,
 }
 
 function mockMessageFor(msgType: string): unknown {
@@ -116,8 +120,25 @@ function mockMessageFor(msgType: string): unknown {
       return mockMissionState()
     case 'lupin_msgs/msg/Observation':
       return mockObservation()
+    case 'lupin_msgs/msg/TwinState':
+      return mockTwinState()
     default:
       return null
+  }
+}
+
+/**
+ * Type-aware mock service responses. Returning {success: true} for every
+ * service call works for std_srvs/Trigger but breaks consumers that
+ * inspect typed fields on the response (e.g. GetField). Add cases here
+ * as we add typed services to the HMI.
+ */
+function mockServiceResponse(serviceType: string, request: unknown): unknown {
+  switch (serviceType) {
+    case 'lupin_msgs/srv/GetField':
+      return mockTwinField(request as Parameters<typeof mockTwinField>[0])
+    default:
+      return { success: true }
   }
 }
 
@@ -318,7 +339,7 @@ export function RosProvider({ children }: { children: ReactNode }) {
     ): Promise<Res> => {
       recordPublish(`srv:${serviceName}`, request)
       if (mock) {
-        return Promise.resolve({ success: true } as unknown as Res)
+        return Promise.resolve(mockServiceResponse(serviceType, request) as Res)
       }
       if (!rosRef.current || status !== 'connected') {
         return Promise.reject(new Error('rosbridge not connected'))

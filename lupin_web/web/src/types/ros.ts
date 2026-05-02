@@ -186,6 +186,7 @@ export const ROS_TYPE = {
   ServoPosition: 'mirte_msgs/msg/ServoPosition',
   MissionState: 'lupin_msgs/msg/MissionState',
   Observation: 'lupin_msgs/msg/Observation',
+  TwinState: 'lupin_msgs/msg/TwinState',
 } as const
 
 /** mirte_msgs service type strings. */
@@ -198,7 +199,61 @@ export const MIRTE_SRV = {
 export const LUPIN_SRV = {
   StartMission: 'lupin_msgs/srv/StartMission',
   Trigger: 'std_srvs/srv/Trigger',
+  GetField: 'lupin_msgs/srv/GetField',
 } as const
+
+/** Sensor channels the digital twin understands. Order is the canonical
+ * sensor-pill order in the HMI header. */
+export const TWIN_SENSORS = ['temperature', 'humidity', 'co2', 'light', 'soil_moisture'] as const
+export type TwinSensor = (typeof TWIN_SENSORS)[number]
+
+/** Mirror of `lupin_msgs/msg/TwinTagState`. orientation.w === 0 means
+ * "no pose observed yet" — the HMI must not render a pin for that tag.
+ *
+ * Two timestamps for two consumers:
+ *   - `last_observed` is the absolute ROS time of the last observation,
+ *     durable across export/replay; use this for any persistence.
+ *   - `stale_seconds` is a publish-time-relative convenience for the HMI
+ *     fade animation and the LAST SEEN column. */
+export interface TwinTagState {
+  tag_id: string
+  pose: Pose
+  readings: SensorReading[]
+  last_observed: Time
+  stale_seconds: number
+}
+
+/** Mirror of `lupin_msgs/msg/TwinState`. */
+export interface TwinState {
+  header: Header
+  tags: TwinTagState[]
+}
+
+/** Mirror of `lupin_msgs/srv/GetField` request/response. */
+export interface GetFieldRequest {
+  sensor_type: TwinSensor | string
+  resolution: number
+  bbox_min_x: number
+  bbox_min_y: number
+  bbox_max_x: number
+  bbox_max_y: number
+}
+
+export interface GetFieldResponse {
+  ok: boolean
+  error_message: string
+  /** Row-major width*height. NaN cells are encoded as nulls by rosbridge —
+   * the hook normalises those back to NaN before consumers see them. */
+  values: (number | null)[]
+  width: number
+  height: number
+  origin_x: number
+  origin_y: number
+  resolution_used: number
+  value_min: number
+  value_max: number
+  sample_count: number
+}
 
 /**
  * Mirror of `lupin_msgs/msg/MissionState`. Lifecycle is the top-level FSM the
