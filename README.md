@@ -184,17 +184,25 @@ Add the `source` line to `~/.bashrc` to avoid repeating it every shell.
 
 ## Running
 
-Top-level launch lives in `lupin_bringup`. The exact launch file depends on which branch you have checked out:
+Top-level launches live in `lupin_bringup`. The recommended entry points
+depend on which branch you have checked out and what you're trying to do:
 
 ```bash
-# On the `sim` branch:
-ros2 launch lupin_bringup sim.launch.py
-
-# On the `hardware` branch:
-ros2 launch lupin_bringup hardware.launch.py
+# On the `sim` branch — full greenhouse demo end-to-end
+# (Gazebo + slam_toolbox + Nav2 + bridge + v2 mission orchestrator + rosbridge + web HMI + RViz):
+ros2 launch lupin_bringup sim_full.launch.py
+# Banner at the top of the log links to http://<your-LAN-IP>:8090.
+# See "Sim — full mission run (v2 orchestrator end-to-end)" below
+# for the full end-to-end recipe + what to do once it's up.
 ```
 
-(Launch files will be added by the team in subsequent MRs.)
+Other sim-side entry points are available for partial bringup (debugging
+individual layers, KRR house testing, etc.) — see the per-scenario
+sections below.
+
+`hardware.launch.py` is forthcoming — for now, hardware bringup uses
+the per-package launches via the multi-terminal recipe documented in the
+team wiki.
 
 ### Greenhouse Gazebo world
 
@@ -402,9 +410,16 @@ web HMI — and have the robot autonomously visit AprilTag stations.
 ros2 launch lupin_bringup sim_full.launch.py
 ```
 
-This composes all eight components (incl. a synthetic `/amcl_pose` seed
-— see "Why the AMCL seed?" below) and is the right entry point for a
-demo or a quick sanity check.
+This composes the full chain (Gazebo + slam_toolbox + Nav2 + bridge +
+mission orchestrator + rosbridge + web HMI + RViz with the persistent
+`rviz/full_bringup_viz.rviz` config + the `/amcl_pose` seed — see
+"Why the AMCL seed?" below) and is the right entry point for a demo
+or a quick sanity check. The bringup is event-driven, not delay-driven:
+slam_toolbox waits for `/scan` to publish, Nav2 waits for `/map`. A
+banner at the top of the launch log prints clickable
+`http://localhost:8090` and `http://<lan-ip>:8090` URLs for the HMI.
+
+Skip pieces with `rviz:=false`, `enable_web:=false`, `seed_amcl:=false`.
 
 Once the chain settles (Gazebo loaded, `mirte_base_controller` active,
 Nav2 lifecycle managers report `Managed nodes are active`, orchestrator
@@ -498,10 +513,11 @@ and the orchestrator times out into `FAULT`.
 `ros2 run lupin_bringup seed_amcl_pose` publishes a single
 `PoseWithCovarianceStamped` with TRANSIENT_LOCAL durability and tight
 diag covariance (`0.01` on x, y, yaw), satisfying the gate. The
-`sim_full.launch.py` composition fires it automatically ten seconds
-after launch (configurable via `seed_amcl:=false`); when running the
-chain manually, run the script yourself once after the orchestrator
-hits `READY`.
+`sim_full.launch.py` composition fires it automatically alongside the
+orchestrator at startup (the orchestrator's `/amcl_pose` subscription
+is already alive, so the seed lands and is cached). Disable with
+`seed_amcl:=false`. When running the chain manually, run the script
+yourself once after the orchestrator hits `READY`.
 
 #### Tag-coordinate caveat in sim
 
@@ -533,13 +549,15 @@ expand once the chain is proven.
 
 | Package | Purpose |
 | --- | --- |
-| `lupin_bringup` | Top-level launch files, parameters, system glue |
-| `lupin_navigation` | Nav2 + slam_toolbox bringup; planned home for AprilTag pose corrections |
-| `lupin_perception` | Flower detection, vision pipelines |
-| `lupin_hmi` | Remote operation interface |
-| `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator (GetTagReading service) |
-| `lupin_msgs` | Custom messages, services, actions |
-| `docs/` | Architecture diagrams, design notes |
+| `lupin_bringup` | Top-level launch files (`sim_full.launch.py`, `greenhouse_sim.launch.py`), the greenhouse SDF + generator, RViz config, and small system-glue helpers (`seed_amcl_pose`). |
+| `lupin_navigation` | Nav2 params + slam_toolbox config; saved KRR-house map; planned home for AprilTag pose corrections. |
+| `lupin_mission` | Mission orchestrator (v2). Hierarchical state machine via `transitions`: `BOOT → READY → PREPARE → INSPECTING → RETURNING → DONE / FAULT`. Polymorphic observation publisher on `/floranova/observations`, status on `/mission/state` (5 Hz), operator services `/mission/{start,pause,resume,abort,skip_current}`, cross-cutting `/e_stop_state` monitor. See `lupin_mission/README.md`. |
+| `lupin_msgs` | Custom messages and services: `Observation`, `MissionState`, `TagReading`, `SensorReading`, `FlowerObservation`, `AnomalyReport`; `GetTagReading`, `StartMission`. |
+| `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator. Single `~/get_tag_reading` service. Open-sourced separately at `lupin_greenhouse_ros/`. |
+| `lupin_hmi` | PS4 + keyboard teleop, `cmd_vel_mux` for arbitration between manual override / Nav2 / web. |
+| `lupin_web` | Browser HMI on `:8090` — Vite + React + shadcn/ui. Tabs: Teleop, Arm, Voice, Cameras, Telemetry, Logs, Map. Talks to rosbridge on `:9090`. The Voice tab is a Gemini Live agent with a 14-tool surface (`drive`, `nav_goto`, `nav_forward`, `rotate`, `arm_preset`, `query_state`, `engage_estop`, …) that drives the robot in natural language. |
+| `lupin_perception` | Flower detection, vision pipelines (in progress). |
+| `docs/` | Architecture diagrams, design notes. |
 
 ## Contributing
 
