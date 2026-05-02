@@ -108,7 +108,7 @@ ros2 service call /mission/skip_current   std_srvs/srv/Trigger
 | Action client | `navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | Used for both inspection nav and RETURNING dock. |
 | Service client | `/greenhouse_bridge/get_tag_reading` | `lupin_msgs/srv/GetTagReading` | Bridge call from SCANNING. |
 | Publish | `/mission/state` | `lupin_msgs/MissionState` | 5 Hz, RELIABLE+TRANSIENT_LOCAL depth 1 (latched). |
-| Publish | `/floranova/observations` | `lupin_msgs/Observation` | Event-driven, RELIABLE+TRANSIENT_LOCAL depth 50 — late subscribers see the mission so far. |
+| Publish | `/floranova/observations` | `lupin_msgs/Observation` | Event-driven, RELIABLE+TRANSIENT_LOCAL depth 50 — late subscribers see the mission so far. `tag_pose_in_map` is populated from the latest AMCL snapshot on `STATUS_OK` only; on UNREACHABLE/SCAN_FAILED/SKIPPED the field is left zero (`orientation.w==0`) — that's the "missing" sentinel the digital-twin consumer expects. |
 | Service | `/mission/start` | `lupin_msgs/srv/StartMission` | Begin a mission. Rejected if FAULT or already running. |
 | Service | `/mission/pause` | `std_srvs/Trigger` | Cancels in-flight goal, freezes progress. |
 | Service | `/mission/resume` | `std_srvs/Trigger` | Clears pause; rejects while E-stop engaged. |

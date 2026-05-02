@@ -770,10 +770,25 @@ class MissionOrchestratorNode(Node):
 
     # ─── observation / state plumbing ──────────────────────────────────
     def _emit_observation_for(self, result) -> None:
-        """Build + publish the Observation for a closed TagResult."""
+        """Build + publish the Observation for a closed TagResult.
+
+        For OK results we attach the latest AMCL pose so the digital twin
+        knows where the robot was standing when it scanned the tag — that's
+        the seed for placing tag pins on the operator's map. For non-OK
+        results (UNREACHABLE / SCAN_FAILED / SKIPPED) we leave the pose
+        unset (orientation.w==0): the robot's pose at that moment isn't a
+        meaningful "where is this tag" answer.
+        """
         if self._mission is None:
             return
         stamp = self.get_clock().now().to_msg()
+        # Only meaningful when the orchestrator successfully reached the
+        # tag pose, i.e. STATUS_OK. AMCL may be None if the gate hasn't
+        # cleared yet; make_tag_observation handles None gracefully.
+        amcl_at_obs = (
+            self._latest_amcl_pose
+            if result.status == Observation.STATUS_OK else None
+        )
         msg = make_tag_observation(
             mission_id=self._mission.mission_id,
             source=self._mission.name,
@@ -782,6 +797,7 @@ class MissionOrchestratorNode(Node):
             tag_reading=result.tag_reading,
             status_detail=result.detail,
             frame_id=self._frame_id,
+            amcl_pose=amcl_at_obs,
         )
         self._obs_pub.publish(msg)
 
