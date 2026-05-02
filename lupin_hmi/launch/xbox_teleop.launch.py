@@ -5,23 +5,22 @@ Brings up:
   - teleop_twist_joy   publishing /cmd_vel_joy when LT (dead-man) is held
   - arm_teleop         driving the 4-DOF arm from the right stick + D-pad
 
-Button layout (Xbox Wireless Controller — chassis is mecanum / omni):
+Button layout (Xbox Wireless Controller — chassis is mecanum / omni,
+verified live with /tmp/joy_probe.py):
 
-    Drive (hold LT as dead-man):
-        Left stick        → translation  (forward/back + strafe)
-        Right stick X     → rotation
-        RT (turbo)        → ~2× the linear/angular scale
+    Drive (hold LB as dead-man):
+        Left stick     → translation  (forward/back + strafe)
+        Right stick X  → rotation
+        RB (turbo)     → ~2× the linear/angular scale
 
-    Arm (D-pad always live):
-        LB + Right stick  → shoulder pan / lift
-        D-pad ←/→         → elbow ±
-        D-pad ↑/↓         → wrist ±
+    Arm (LB released — modes are mutually exclusive by construction):
+        Right stick    → shoulder pan / lift  (X = pan, Y = lift)
+        D-pad ←/→      → elbow ±   (always live)
+        D-pad ↑/↓      → wrist ±   (always live)
 
-LB is the shoulder-enable button — without it, every chassis yaw on the
-right stick would also try to swing the arm. Arm and drive modes are
-ergonomically exclusive (one finger on LT vs LB) but the system does NOT
-prevent you from holding both at once; if you do, the right stick
-commands BOTH yaw and shoulder.
+LT/RT can't be the dead-man — teleop_twist_joy's enable_button only
+takes a *button* index and triggers on this controller are axes (4, 5).
+LB is the closest button equivalent.
 
 Does NOT include twist_mux — priority arbitration is owned by the bringup
 launch (sim_full.launch.py / hardware_full.launch.py) so all sources of
@@ -96,6 +95,27 @@ def generate_launch_description() -> LaunchDescription:
         Node(
             package='lupin_hmi', executable='arm_teleop', name='arm_teleop',
             output='screen',
-            parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
+            # The vendor controller_manager ticks at 10 Hz, so we publish at
+            # 10 Hz too — faster just thrashes the JTC with goals it never
+            # gets to interpolate. Step + time_from_start = 1 controller
+            # cycle's worth of motion, sized so even partial-stick deflection
+            # produces visible movement:
+            #
+            #   step_rad=0.15 + URDF velocity limit 2.0 rad/s
+            #   → full stick (1.0)  → 1.5 rad/s   (close to URDF max)
+            #   → typical push 0.6 → 0.9 rad/s
+            #   → tiny push 0.10   → 0.15 rad/s   (barely visible)
+            #
+            # deadzone shrunk to 0.05 — analog sticks rest at exactly 0.0
+            # (probed cleanly), so a 0.05 floor only filters genuine noise.
+            parameters=[{
+                'use_sim_time': LaunchConfiguration('use_sim_time'),
+                'update_rate_hz': 10.0,
+                'step_rad': 0.15,
+                'time_from_start_s': 0.20,
+                'joint_velocity': 2.0,
+                'deadzone': 0.05,
+                'gripper_step_rad': 0.04,
+            }],
         ),
     ])

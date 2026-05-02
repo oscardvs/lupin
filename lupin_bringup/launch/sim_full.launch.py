@@ -44,7 +44,7 @@ After bringup:
     2. (one-time) In Settings → Drive, set cmd_vel topic to ``/cmd_vel_manual``
        so the web joystick feeds twist_mux instead of racing Nav2 on the
        controller topic.
-    3. Drive a small loop with the Xbox controller (hold LT, push left
+    3. Drive a small loop with the Xbox controller (hold LB, push left
        stick) or the web Teleop tab so slam_toolbox has scan context.
     4. ``ros2 service call /mission/start lupin_msgs/srv/StartMission \\
          "{mission_type: 'InspectionMission', tag_sequence: ['1','2']}"``
@@ -383,17 +383,17 @@ def generate_launch_description() -> LaunchDescription:
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
     # Arm joints driven directly from /joy by lupin_hmi.arm_teleop.
     #
-    # Button layout (mecanum / omni base — both sticks used for drive):
-    #   Drive — hold LT (dead-man):
-    #     Left stick        → translation (fwd/back + strafe)
-    #     Right stick X     → rotation
-    #     RT                → turbo (~2× scale)
-    #   Arm:
-    #     LB + Right stick  → shoulder pan / lift
-    #     D-pad ←/→         → elbow ±
-    #     D-pad ↑/↓         → wrist ±
+    # Button layout (mecanum / omni — both sticks used for drive):
+    #   Drive — hold LB (dead-man):
+    #     Left stick     → translation (fwd/back + strafe)
+    #     Right stick X  → rotation
+    #     RB             → turbo (~2× scale)
+    #   Arm — LB released (mutually exclusive with drive):
+    #     Right stick    → shoulder pan / lift
+    #     D-pad ←/→      → elbow ±   (always live)
+    #     D-pad ↑/↓      → wrist ±   (always live)
     #
-    # When LT is released, /cmd_vel_joy goes silent and twist_mux times
+    # When LB is released, /cmd_vel_joy goes silent and twist_mux times
     # it out (0.3 s), handing the bus back to the web HMI or Nav2.
     xbox_teleop = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
