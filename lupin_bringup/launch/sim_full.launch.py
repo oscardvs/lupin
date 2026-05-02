@@ -273,6 +273,22 @@ def generate_launch_description() -> LaunchDescription:
         condition=_when('rviz'),
     )
 
+    # ── 8b. cmd_vel_mux (Nav2 + manual → /mirte_base_controller/cmd_vel_unstamped) ─
+    # Nav2's velocity_smoother outputs to /cmd_vel_auto on purpose — see
+    # lupin_navigation/launch/nav2.launch.py. Without this mux, nothing
+    # subscribes to /cmd_vel_auto and Nav2 commands fall on the floor;
+    # symptom is controller_server logging "Failed to make progress" after
+    # ~10 s. The mux's output topic is the sim's twist_mux input (priority
+    # 200), which then forwards to /cmd_vel → gazebo_planar_move.
+    cmd_vel_mux = Node(
+        package='lupin_hmi', executable='cmd_vel_mux', name='cmd_vel_mux',
+        parameters=[{
+            'cmd_vel_topic': '/mirte_base_controller/cmd_vel_unstamped',
+            'use_sim_time': True,
+        }],
+        output='log',
+    )
+
     # ── 8. AMCL pose seed (one-shot, fires alongside the orchestrator) ─
     # The orchestrator subscribes to /amcl_pose at startup, so the seed
     # message lands the moment it's published — no need to chain on
@@ -314,6 +330,7 @@ def generate_launch_description() -> LaunchDescription:
         rosbridge,
         web,
         seed,
+        cmd_vel_mux,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.
