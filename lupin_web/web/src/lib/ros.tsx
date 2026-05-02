@@ -18,6 +18,8 @@ import {
   mockLog,
   mockMap,
   mockMapPose,
+  mockMissionState,
+  mockObservation,
   mockOdometry,
   mockPlan,
   mockScan,
@@ -84,6 +86,12 @@ const MOCK_RATES_HZ: Record<string, number> = {
   'rcl_interfaces/msg/Log': 0.5,
   'nav_msgs/msg/OccupancyGrid': 0.2, // map updates rarely
   'nav_msgs/msg/Path': 5,
+  // Match the orchestrator: MissionState ticks at 5 Hz unconditionally.
+  // Observation polling at 5 Hz is safe — mockObservation() returns null
+  // on every tick except the rising edge of PUBLISHING, so the subscriber
+  // only sees one message per fake tag.
+  'lupin_msgs/msg/MissionState': 5,
+  'lupin_msgs/msg/Observation': 5,
 }
 
 function mockMessageFor(msgType: string): unknown {
@@ -104,6 +112,10 @@ function mockMessageFor(msgType: string): unknown {
       return mockMap()
     case 'nav_msgs/msg/Path':
       return mockPlan()
+    case 'lupin_msgs/msg/MissionState':
+      return mockMissionState()
+    case 'lupin_msgs/msg/Observation':
+      return mockObservation()
     default:
       return null
   }

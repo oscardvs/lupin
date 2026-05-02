@@ -1,5 +1,5 @@
 import { Bot, Camera, Gauge, Map as MapIcon, MessageSquare, Mic, Sliders } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { SettingsDrawer } from '@/components/SettingsDrawer'
 import { TopBar } from '@/components/TopBar'
@@ -13,6 +13,7 @@ import { TeleopView } from '@/components/views/TeleopView'
 import { TelemetryView } from '@/components/views/TelemetryView'
 import { VoiceView } from '@/components/views/VoiceView'
 import { EStopProvider } from '@/lib/estop'
+import { onGotoTab } from '@/lib/navigation'
 import { RosProvider } from '@/lib/ros'
 import { useApplyTheme } from '@/lib/settings'
 
@@ -23,7 +24,7 @@ const TABS = [
   { id: 'cameras', code: '04', label: 'Cameras', Icon: Camera, View: CamerasView },
   { id: 'telemetry', code: '05', label: 'Telemetry', Icon: Gauge, View: TelemetryView },
   { id: 'logs', code: '06', label: 'Logs', Icon: MessageSquare, View: LogsView },
-  { id: 'map', code: '07', label: 'Map', Icon: MapIcon, View: MapView },
+  { id: 'map', code: '07', label: 'Map / Nav', Icon: MapIcon, View: MapView },
 ] as const
 
 export default function App() {
@@ -50,6 +51,12 @@ function Shell() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(initialTab)
   const active = TABS.find((t) => t.id === tab) ?? TABS[0]
+
+  // Cross-cut navigation requests (e.g. Take Control on the topbar mission
+  // strip routes the operator to Teleop in a single click).
+  useEffect(() => onGotoTab((next) => {
+    if (TABS.some((t) => t.id === next)) setTab(next as typeof tab)
+  }), [])
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">

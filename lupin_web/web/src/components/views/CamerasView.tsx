@@ -36,20 +36,37 @@ function deriveLabel(topic: string): string {
  * `/stream?topic=<topic>` — the cheapest way to enumerate without adding a
  * second discovery channel. Returns an empty list on any error so the UI
  * collapses to a "no streams" state instead of throwing.
+ *
+ * Tries the Vite same-origin proxy at `/_video/` first (so we sidestep
+ * web_video_server's missing CORS headers). Falls back to a direct fetch on
+ * the configured baseUrl — useful when running the built bundle from a
+ * different host or when the proxy isn't wired in.
  */
 async function fetchAvailableStreams(baseUrl: string): Promise<string[]> {
+  const parse = (html: string): string[] => {
+    const matches = html.matchAll(/href="\/stream\?topic=([^"&]+)/g)
+    const out = new Set<string>()
+    for (const m of matches) {
+      try { out.add(decodeURIComponent(m[1])) } catch { out.add(m[1]) }
+    }
+    return Array.from(out).sort()
+  }
+
+  // 1. Same-origin proxy — bypasses CORS.
+  try {
+    const res = await fetch('/_video/', { cache: 'no-store' })
+    if (res.ok) {
+      const ct = res.headers.get('content-type') || ''
+      if (ct.includes('text/html')) return parse(await res.text())
+    }
+  } catch { /* fall through to direct fetch */ }
+
+  // 2. Direct fetch as a fallback.
   if (!baseUrl) return []
   const root = baseUrl.replace(/\/$/, '') + '/'
   const res = await fetch(root, { cache: 'no-store' })
   if (!res.ok) throw new Error(`web_video_server responded ${res.status}`)
-  const html = await res.text()
-  // <a href="/stream?topic=/camera/image_raw">…</a>
-  const matches = html.matchAll(/href="\/stream\?topic=([^"&]+)/g)
-  const out = new Set<string>()
-  for (const m of matches) {
-    try { out.add(decodeURIComponent(m[1])) } catch { out.add(m[1]) }
-  }
-  return Array.from(out).sort()
+  return parse(await res.text())
 }
 
 export function CamerasView() {
@@ -84,16 +101,23 @@ export function CamerasView() {
     return () => { cancelled = true }
   }, [webVideoServerUrl, refreshKey, mock])
 
+  const discoverySucceeded = !discoveryError && !discovering
+  const configuredTopicMissing =
+    !mock && discoverySucceeded && discovered.length > 0 &&
+    !!cameraTopic && !discovered.includes(cameraTopic)
+
   const cameras = useMemo<DiscoveredCamera[]>(() => {
     if (mock) {
       // Keep mock mode honest — show a single fake RGB tab.
       return [{ topic: cameraTopic || '/camera/image_raw', label: 'RGB' }]
     }
-    // The configured cameraTopic always shows up first so existing user setups
-    // are stable, even if web_video_server isn't reachable yet.
     const seen = new Set<string>()
     const out: DiscoveredCamera[] = []
-    if (cameraTopic) {
+    // Show the configured cameraTopic first IF discovery hasn't proven it
+    // wrong (either discovery hasn't succeeded yet, or the topic is in the
+    // discovered list). Otherwise fall through to discovered-only so a stale
+    // localStorage value doesn't permanently render a broken tab.
+    if (cameraTopic && !configuredTopicMissing) {
       out.push({ topic: cameraTopic, label: deriveLabel(cameraTopic) })
       seen.add(cameraTopic)
     }
@@ -103,7 +127,7 @@ export function CamerasView() {
       seen.add(topic)
     }
     return out
-  }, [cameraTopic, discovered, mock])
+  }, [cameraTopic, configuredTopicMissing, discovered, mock])
 
   const defaultValue = cameras[0]?.topic ?? ''
 
@@ -130,6 +154,13 @@ export function CamerasView() {
           <RefreshCcw className="mr-1.5 h-3 w-3" /> Rescan
         </Button>
       </div>
+
+      {configuredTopicMissing && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+          Configured camera topic <span className="font-mono">{cameraTopic}</span> isn't being
+          published — falling back to discovered streams. Update or clear it under Settings → Topics.
+        </div>
+      )}
 
       {cameras.length === 0 ? (
         <NoCameras hasError={!!discoveryError} />

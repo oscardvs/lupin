@@ -22,10 +22,28 @@ export default defineConfig({
     host: true,
     port: 8090,
     strictPort: true,
+    // web_video_server (8091) doesn't return CORS headers, so a cross-origin
+    // fetch from the UI to scrape its topic-list HTML is blocked by the
+    // browser. <img src=…> is fine cross-origin, but discovery isn't.
+    // Proxy it through the UI's own origin so the fetch is same-origin.
+    proxy: {
+      '/_video': {
+        target: 'http://localhost:8091',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/_video/, ''),
+      },
+    },
   },
   preview: {
     host: true,
     port: 8090,
     strictPort: true,
+    proxy: {
+      '/_video': {
+        target: 'http://localhost:8091',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/_video/, ''),
+      },
+    },
   },
 })

@@ -4,11 +4,15 @@ import {
   type JointState,
   type LaserScan,
   type Log,
+  type MissionState,
+  type Observation,
   type OccupancyGrid,
   type Odometry,
   type Path,
   type PoseStamped,
   type RosoutLevel,
+  OBSERVATION_KIND,
+  OBSERVATION_STATUS,
 } from '@/types/ros'
 
 /** Synthetic data generators for offline / demo development. */
@@ -244,6 +248,201 @@ export function mockMapPose(): { x: number; y: number; yaw: number } {
   const dy = Math.cos(t * 2) * 1.6
   const yaw = Math.atan2(dy, dx)
   return { x, y, yaw }
+}
+
+/* ----------------------------------------------------------------------- */
+/* Mission orchestrator mock — drives the HMI's mission-aware surfaces      */
+/* (topbar strip, Map/Nav controls, Observations panel) without a robot.    */
+/* ----------------------------------------------------------------------- */
+
+const MOCK_TAGS = ['tag-1', 'tag-2', 'tag-3', 'tag-4'] as const
+
+// Phase durations in seconds. Sum determines the full mission length.
+const MOCK_TIMING = {
+  ready: 4,
+  prepareLocalizing: 3,
+  navigating: 5,
+  scanning: 3,
+  publishing: 1,
+  returning: 4,
+  done: 3,
+}
+
+interface MockMissionPhase {
+  lifecycle: MissionState['lifecycle_state']
+  phase: string
+  targetIdx: number          // -1 means no target
+  /** Position within the phase, [0, 1). Useful for animated UI. */
+  progress: number
+  /** Offset (s) from cycle start at which this phase began. */
+  phaseStart: number
+}
+
+/**
+ * Compute the current mock mission phase from the elapsed clock. The cycle
+ * walks the full HSM once and loops:
+ *
+ *   READY → PREPARE/LOCALIZING → INSPECTING(NAV→SCAN→PUB)*N → RETURNING → DONE → READY
+ *
+ * Independent callers (state publisher + observation publisher) hit the
+ * same cycle and stay phase-aligned.
+ */
+function mockMissionPhase(): MockMissionPhase {
+  const T = MOCK_TIMING
+  const perTag = T.navigating + T.scanning + T.publishing
+  const total = T.ready + T.prepareLocalizing + perTag * MOCK_TAGS.length + T.returning + T.done
+  const t = elapsed() % total
+
+  let acc = 0
+  if (t < (acc += T.ready))
+    return { lifecycle: 'READY', phase: '', targetIdx: -1, progress: t / T.ready, phaseStart: 0 }
+  if (t < (acc += T.prepareLocalizing))
+    return {
+      lifecycle: 'PREPARE',
+      phase: 'LOCALIZING',
+      targetIdx: -1,
+      progress: (t - (acc - T.prepareLocalizing)) / T.prepareLocalizing,
+      phaseStart: acc - T.prepareLocalizing,
+    }
+  for (let i = 0; i < MOCK_TAGS.length; i++) {
+    const tagStart = acc
+    if (t < (acc += T.navigating))
+      return {
+        lifecycle: 'INSPECTING',
+        phase: 'NAVIGATING',
+        targetIdx: i,
+        progress: (t - tagStart) / T.navigating,
+        phaseStart: tagStart,
+      }
+    const navEnd = acc
+    if (t < (acc += T.scanning))
+      return {
+        lifecycle: 'INSPECTING',
+        phase: 'SCANNING',
+        targetIdx: i,
+        progress: (t - navEnd) / T.scanning,
+        phaseStart: navEnd,
+      }
+    const scanEnd = acc
+    if (t < (acc += T.publishing))
+      return {
+        lifecycle: 'INSPECTING',
+        phase: 'PUBLISHING',
+        targetIdx: i,
+        progress: (t - scanEnd) / T.publishing,
+        phaseStart: scanEnd,
+      }
+  }
+  if (t < (acc += T.returning))
+    return {
+      lifecycle: 'RETURNING',
+      phase: '',
+      targetIdx: -1,
+      progress: (t - (acc - T.returning)) / T.returning,
+      phaseStart: acc - T.returning,
+    }
+  return {
+    lifecycle: 'DONE',
+    phase: '',
+    targetIdx: -1,
+    progress: (t - (acc - T.done)) / T.done,
+    phaseStart: acc - T.done,
+  }
+}
+
+const MOCK_MISSION_ID = 'mock-' + Math.random().toString(16).slice(2, 10)
+const MOCK_STARTED_AT = makeStamp()
+
+/**
+ * Synthetic `MissionState` snapshot mirroring what the orchestrator publishes
+ * at 5 Hz. Counters advance as the cycle visits PUBLISHING for each tag so the
+ * "k of M" UX has something to render. E-stop and pause are always false in
+ * mock mode — testing those interactions belongs to integration tests, not
+ * the demo loop.
+ */
+export function mockMissionState(): MissionState {
+  const ph = mockMissionPhase()
+  const N = MOCK_TAGS.length
+  const completed = (() => {
+    if (ph.lifecycle === 'INSPECTING' && ph.targetIdx >= 0) {
+      // Tags fully published before this one are completed; the current tag
+      // counts only once we've left PUBLISHING.
+      return ph.targetIdx + (ph.phase === '' ? 0 : 0)
+    }
+    if (ph.lifecycle === 'RETURNING' || ph.lifecycle === 'DONE') return N
+    return 0
+  })()
+
+  return {
+    header: { stamp: makeStamp(), frame_id: '' },
+    mission_id: ph.lifecycle === 'READY' ? '' : MOCK_MISSION_ID,
+    mission_type: ph.lifecycle === 'READY' ? '' : 'InspectionMission',
+    lifecycle_state: ph.lifecycle,
+    mission_phase: ph.phase,
+    current_target: ph.targetIdx >= 0 ? MOCK_TAGS[ph.targetIdx] : '',
+    targets_total: ph.lifecycle === 'READY' ? 0 : N,
+    targets_completed: completed,
+    targets_failed: 0,
+    targets_unreachable: 0,
+    targets_skipped: 0,
+    last_error: '',
+    estop_engaged: false,
+    paused: false,
+    started_at: ph.lifecycle === 'READY'
+      ? { sec: 0, nanosec: 0 }
+      : MOCK_STARTED_AT,
+  }
+}
+
+// One-shot guard so we emit at most one Observation per (cycle, tag).
+const observedThisCycle = new Map<string, number>()
+let lastCycleStart = 0
+
+/**
+ * Emit a synthetic Observation when the cycle has just left PUBLISHING for
+ * a tag. Returns null on every other tick — the subscriber sees observations
+ * arrive in the same one-per-tag rhythm the orchestrator produces.
+ */
+export function mockObservation(): Observation | null {
+  const T = MOCK_TIMING
+  const perTag = T.navigating + T.scanning + T.publishing
+  const total = T.ready + T.prepareLocalizing + perTag * MOCK_TAGS.length + T.returning + T.done
+  const cycleStart = Math.floor(elapsed() / total) * total
+  if (cycleStart !== lastCycleStart) {
+    observedThisCycle.clear()
+    lastCycleStart = cycleStart
+  }
+  const ph = mockMissionPhase()
+  if (ph.lifecycle !== 'INSPECTING' || ph.phase !== 'PUBLISHING' || ph.targetIdx < 0) return null
+  const tagId = MOCK_TAGS[ph.targetIdx]
+  if (observedThisCycle.has(tagId)) return null
+  observedThisCycle.set(tagId, elapsed())
+
+  // Vary readings per tag and slowly across cycles so the table isn't static.
+  const t = elapsed()
+  const tempBase = 19 + ph.targetIdx * 0.8
+  const humBase = 55 + ph.targetIdx * 2
+  const co2Base = 410 + ph.targetIdx * 7
+  return {
+    header: { stamp: makeStamp(), frame_id: '' },
+    mission_id: MOCK_MISSION_ID,
+    source: 'InspectionMission',
+    kind: OBSERVATION_KIND.TAG_READING,
+    status: OBSERVATION_STATUS.OK,
+    status_detail: '',
+    tag_reading: {
+      tag_id: tagId,
+      stamp: makeStamp(),
+      sim_time_of_day_seconds: 36000 + (t % 86400),
+      readings: [
+        { name: 'temperature', value: tempBase + Math.sin(t * 0.05 + ph.targetIdx) * 0.6 },
+        { name: 'humidity', value: humBase + Math.cos(t * 0.03 + ph.targetIdx) * 1.5 },
+        { name: 'co2', value: co2Base + Math.sin(t * 0.02) * 12 },
+      ],
+    },
+    flower: null,
+    anomaly: null,
+  }
 }
 
 /** A synthetic Nav2 plan that moves with the robot — leading by ~2 s along the path. */
