@@ -88,6 +88,7 @@ def generate_launch_description() -> LaunchDescription:
     pkg_bridge = get_package_share_directory('lupin_greenhouse_bridge')
     pkg_nav = get_package_share_directory('lupin_navigation')
     pkg_mission = get_package_share_directory('lupin_mission')
+    pkg_twin = get_package_share_directory('lupin_twin')
     pkg_web = get_package_share_directory('lupin_web')
     pkg_hmi = get_package_share_directory('lupin_hmi')
     pkg_rosbridge = get_package_share_directory('rosbridge_server')
@@ -278,6 +279,15 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    # ── 5b. Digital twin — aggregates /floranova/observations into a live
+    # world snapshot for the HMI (and any FloraNova consumer that wires in
+    # later). Pure listener; no upstream dependency on Nav2 / Gazebo.
+    twin = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_twin, 'launch', 'twin.launch.py'),
+        ),
+    )
+
     # ── 6. rosbridge_websocket :9090 ────────────────────────────────────
     rosbridge = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
@@ -431,6 +441,7 @@ def generate_launch_description() -> LaunchDescription:
         greenhouse_sim,
         bridge,
         mission,
+        twin,
         rosbridge,
         web,
         seed,
