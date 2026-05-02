@@ -123,11 +123,11 @@ def generate_launch_description() -> LaunchDescription:
         # rviz
         DeclareLaunchArgument(
             'rviz', default_value='true',
-            description='Launch RViz alongside the sim. Loads the persistent '
-                        'config from rviz/sim_full.rviz in the source tree '
-                        'so Ctrl+S writes back to a durable, version-controlled '
-                        'location instead of being clobbered on the next '
-                        'colcon build.',
+            description='Launch RViz alongside the sim, loaded with the '
+                        'persistent config at rviz/full_bringup_viz.rviz '
+                        'in the source tree. Ctrl+S in RViz writes back to '
+                        'that exact path so the layout survives colcon '
+                        'build and can be committed to git.',
         ),
     ]
 
@@ -258,11 +258,11 @@ def generate_launch_description() -> LaunchDescription:
         condition=_when('enable_web'),
     )
 
-    # ── 9. RViz with persistent config ──────────────────────────────────
-    # Point RViz at the source-tree config so Ctrl+S writes back to a
-    # path that survives `colcon build` (the install/share copy gets
-    # overwritten on every rebuild). The file is created empty on first
-    # commit; configure your displays in RViz and save.
+    # ── 9. RViz with persistent source-tree config ──────────────────────
+    # Point RViz at the source-tree path (preferred) so Ctrl+S writes back
+    # to a location that survives `colcon build` and shows up in
+    # `git status` for committing. Falls back to the installed share copy
+    # when running on a deploy that doesn't have the workspace tree.
     rviz_config = _resolve_rviz_config()
     rviz = Node(
         package='rviz2',
@@ -332,6 +332,34 @@ def _when(arg_name: str):
     return IfCondition(LaunchConfiguration(arg_name))
 
 
+def _resolve_rviz_config() -> str:
+    """Resolve the RViz config path for sim_full.
+
+    Prefers the source-tree path so Ctrl+S in RViz writes to a location
+    that survives `colcon build` and shows up in `git status` for
+    committing. Falls back to the installed share copy if the workspace
+    tree isn't where we expect (e.g. running on a deployed system).
+    """
+    candidates = [
+        os.environ.get('LUPIN_RVIZ_CONFIG'),
+        os.path.expanduser(
+            '~/ros2_ws/src/lupin/lupin_bringup/rviz/full_bringup_viz.rviz',
+        ),
+        os.path.join(
+            get_package_share_directory('lupin_bringup'),
+            'rviz', 'full_bringup_viz.rviz',
+        ),
+    ]
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    # Nothing exists yet — return the source path so RViz creates it
+    # there on first save.
+    return os.path.expanduser(
+        '~/ros2_ws/src/lupin/lupin_bringup/rviz/full_bringup_viz.rviz',
+    )
+
+
 def _get_lan_ip() -> str:
     """Best-effort primary IPv4 address for the host.
 
@@ -351,26 +379,3 @@ def _get_lan_ip() -> str:
         s.close()
 
 
-def _resolve_rviz_config() -> str:
-    """Resolve the sim_full RViz config path at launch time.
-
-    Prefers the source-tree path so Ctrl+S in RViz writes to a location
-    that survives `colcon build` and shows up in `git status`. Falls back
-    to the installed share copy if the source tree isn't in the documented
-    place (e.g. when running on a deployed system without the workspace).
-    """
-    candidates = [
-        os.environ.get('LUPIN_RVIZ_CONFIG'),
-        os.path.expanduser('~/ros2_ws/src/lupin/lupin_bringup/rviz/sim_full.rviz'),
-        os.path.join(
-            get_package_share_directory('lupin_bringup'), 'rviz', 'sim_full.rviz',
-        ),
-    ]
-    for c in candidates:
-        if c and os.path.isfile(c):
-            return c
-    # File doesn't exist anywhere yet — return the source path so RViz
-    # creates it there on first save.
-    return os.path.expanduser(
-        '~/ros2_ws/src/lupin/lupin_bringup/rviz/sim_full.rviz',
-    )
