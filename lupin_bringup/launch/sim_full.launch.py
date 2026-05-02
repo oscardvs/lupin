@@ -119,6 +119,15 @@ def generate_launch_description() -> LaunchDescription:
                         'PREPARE.LOCALIZING gate. Slam mode has no AMCL, so '
                         'without this the orchestrator faults at PREPARE.',
         ),
+        # rviz
+        DeclareLaunchArgument(
+            'rviz', default_value='true',
+            description='Launch RViz alongside the sim. Loads the persistent '
+                        'config from rviz/sim_full.rviz in the source tree '
+                        'so Ctrl+S writes back to a durable, version-controlled '
+                        'location instead of being clobbered on the next '
+                        'colcon build.',
+        ),
     ]
 
     # ── 1. Gazebo + MIRTE + greenhouse world ────────────────────────────
@@ -248,6 +257,21 @@ def generate_launch_description() -> LaunchDescription:
         condition=_when('enable_web'),
     )
 
+    # ── 9. RViz with persistent config ──────────────────────────────────
+    # Point RViz at the source-tree config so Ctrl+S writes back to a
+    # path that survives `colcon build` (the install/share copy gets
+    # overwritten on every rebuild). The file is created empty on first
+    # commit; configure your displays in RViz and save.
+    rviz_config = _resolve_rviz_config()
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='lupin_rviz',
+        arguments=['-d', rviz_config],
+        output='log',
+        condition=_when('rviz'),
+    )
+
     # ── 8. AMCL pose seed (one-shot, fires alongside the orchestrator) ─
     # The orchestrator subscribes to /amcl_pose at startup, so the seed
     # message lands the moment it's published — no need to chain on
@@ -263,7 +287,7 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         *args,
         LogInfo(msg='[lupin_bringup] sim_full: starting full sim chain '
-                    '(Gazebo + bridge + orchestrator + web; '
+                    '(Gazebo + bridge + orchestrator + web + rviz; '
                     'slam_toolbox waits for /scan, Nav2 waits for /map)'),
         # Phase 1 — fire-and-forget at t=0:
         greenhouse_sim,
@@ -272,6 +296,7 @@ def generate_launch_description() -> LaunchDescription:
         rosbridge,
         web,
         seed,
+        rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.
         wait_for_scan,
@@ -287,3 +312,28 @@ def _when(arg_name: str):
     as a truthy/falsy condition for the include."""
     from launch.conditions import IfCondition
     return IfCondition(LaunchConfiguration(arg_name))
+
+
+def _resolve_rviz_config() -> str:
+    """Resolve the sim_full RViz config path at launch time.
+
+    Prefers the source-tree path so Ctrl+S in RViz writes to a location
+    that survives `colcon build` and shows up in `git status`. Falls back
+    to the installed share copy if the source tree isn't in the documented
+    place (e.g. when running on a deployed system without the workspace).
+    """
+    candidates = [
+        os.environ.get('LUPIN_RVIZ_CONFIG'),
+        os.path.expanduser('~/ros2_ws/src/lupin/lupin_bringup/rviz/sim_full.rviz'),
+        os.path.join(
+            get_package_share_directory('lupin_bringup'), 'rviz', 'sim_full.rviz',
+        ),
+    ]
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    # File doesn't exist anywhere yet — return the source path so RViz
+    # creates it there on first save.
+    return os.path.expanduser(
+        '~/ros2_ws/src/lupin/lupin_bringup/rviz/sim_full.rviz',
+    )
