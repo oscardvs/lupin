@@ -1,5 +1,7 @@
+import { GreenhouseStateCard } from '@/components/widgets/GreenhouseStateCard'
 import { MapCanvas } from '@/components/widgets/MapCanvas'
 import { MissionControls } from '@/components/widgets/MissionControls'
+import { pulseTag } from '@/lib/twin-events'
 
 export function MapView() {
   return (
@@ -8,6 +10,7 @@ export function MapView() {
       <div className="flex min-h-[24rem] flex-1">
         <MapCanvas />
       </div>
+      <GreenhouseStateCard onSelectTag={pulseTag} />
     </div>
   )
 }

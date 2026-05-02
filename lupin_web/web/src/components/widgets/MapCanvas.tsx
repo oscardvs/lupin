@@ -1,12 +1,30 @@
-import { Check, Crosshair, Target } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Check, Crosshair, Eye, EyeOff, Target,
+} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { useTagSightings, type TagSighting } from '@/lib/mission'
+import {
+  paintFieldToCanvas,
+  rampGradientCss,
+  rampCssColor,
+  SENSOR_RAMPS,
+} from '@/lib/heatmap'
 import { useMapPose, useTopic, usePublisher } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useAnimationLoop, useThrottledRender } from '@/lib/throttle'
-import { ROS_TYPE, type OccupancyGrid, type Path, type PoseStamped } from '@/types/ros'
+import { tagHasPose, useTwinField, useTwinState } from '@/lib/twin'
+import { onPulseTag } from '@/lib/twin-events'
+import { cn } from '@/lib/utils'
+import {
+  ROS_TYPE,
+  TWIN_SENSORS,
+  type OccupancyGrid,
+  type Path,
+  type PoseStamped,
+  type TwinSensor,
+  type TwinTagState,
+} from '@/types/ros'
 
 /**
  * Renders the SLAM occupancy grid, the live robot pose (via TF), and the
@@ -19,13 +37,85 @@ export function MapCanvas() {
   const planRef = useTopic<Path>(planTopic, ROS_TYPE.Path)
   const pose = useMapPose(mapFrame, baseFrame)
   const publishGoal = usePublisher<PoseStamped>(goalPoseTopic, ROS_TYPE.PoseStamped)
-  // Held in a ref so the sightings hook can read the latest robot pose at the
-  // moment a tag observation arrives without re-subscribing on every TF tick.
-  const poseRef = useRef(pose)
-  poseRef.current = pose
-  const sightings = useTagSightings(useCallback(() => poseRef.current, []))
-  const sightingsRef = useRef(sightings)
-  sightingsRef.current = sightings
+
+  // Active sensor + per-layer toggles. Local-state, no settings persistence
+  // — these are operator preferences for the current page session.
+  const [sensor, setSensor] = useState<TwinSensor>('temperature')
+  const [layers, setLayers] = useState({
+    heatmap: true,
+    trajectory: true,
+    pins: true,
+  })
+
+  // Twin live snapshot — pin positions + readings + staleness.
+  const twin = useTwinState()
+  const tagsRef = useRef<TwinTagState[]>([])
+  tagsRef.current = twin?.tags ?? []
+
+  // Heat-map field, derived lazily from /twin/get_field. We pass the
+  // current map's bbox so the field paints the same area the SLAM map
+  // covers; resolution is coarser than the SLAM grid (5–10× cells) since
+  // the field is smooth and we want sub-100 ms render. Computed inline
+  // each render — cheap, and the useTwinField sig check dedupes calls.
+  const fieldBbox = useMemo(() => {
+    const map = mapRef.current
+    if (!map) return null
+    const ox = map.info.origin.position.x
+    const oy = map.info.origin.position.y
+    const mw = map.info.width * map.info.resolution
+    const mh = map.info.height * map.info.resolution
+    return { minX: ox, minY: oy, maxX: ox + mw, maxY: oy + mh }
+    // mapRef.current changes via the imperative subscribe path, but the
+    // useThrottledRender ticker forces re-renders so this useMemo
+    // re-evaluates on each tick — we depend on the live ref, not on a
+    // stable React value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapRef.current?.info.width, mapRef.current?.info.height])
+  const { field } = useTwinField({
+    sensor,
+    bbox: fieldBbox,
+    resolution: 0.25,
+    enabled: layers.heatmap && fieldBbox != null,
+    refreshIntervalMs: 5000,
+  })
+  // Keep the painted offscreen canvas around so the render loop only
+  // rebuilds it when the field response actually changes.
+  const fieldBitmapRef = useRef<{
+    key: string
+    bitmap: HTMLCanvasElement | null
+  } | null>(null)
+
+  // 60 s pose tail. Buffered as (x, y, t) tuples in a ref so the render
+  // loop reads the latest without needing a re-render.
+  const trajectoryRef = useRef<Array<{ x: number; y: number; t: number }>>([])
+  useEffect(() => {
+    if (!pose) return
+    const now = performance.now() / 1000
+    trajectoryRef.current.push({ x: pose.x, y: pose.y, t: now })
+    // Prune older than 60 s. Keep at most ~600 samples to bound memory.
+    while (
+      trajectoryRef.current.length > 0 &&
+      (now - trajectoryRef.current[0].t > 60 || trajectoryRef.current.length > 600)
+    ) {
+      trajectoryRef.current.shift()
+    }
+  }, [pose?.x, pose?.y])
+
+  // Hover tooltip — set from canvas pointermove hit-testing against pins.
+  const [hoveredTag, setHoveredTag] = useState<{
+    tagId: string
+    canvasX: number
+    canvasY: number
+  } | null>(null)
+
+  // Pulse ring fired from the Greenhouse State table's row-click. Held in
+  // a ref so the render loop reads it imperatively without retriggering
+  // React renders during the animation.
+  const pulseRef = useRef<{ tagId: string; startedAt: number } | null>(null)
+  useEffect(() => onPulseTag((tagId) => {
+    pulseRef.current = { tagId, startedAt: performance.now() }
+  }), [])
+
   // Map and plan are read via refs (imperatively mutated). Tick the React tree
   // a couple of times per second so the header status string + pose readout
   // pick up new data without having to re-render every frame.
@@ -200,14 +290,52 @@ export function MapCanvas() {
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dragRef.current) return
-    const proj = projection()
-    if (!proj) return
     const rect = e.currentTarget.getBoundingClientRect()
     const px = e.clientX - rect.left
     const py = e.clientY - rect.top
-    const w = proj.canvasToWorld(px, py)
-    setDrag({ from: dragRef.current.from, to: w })
+
+    // Drag-for-yaw takes priority while a drag is active.
+    if (dragRef.current) {
+      const proj = projection()
+      if (!proj) return
+      const w = proj.canvasToWorld(px, py)
+      setDrag({ from: dragRef.current.from, to: w })
+      return
+    }
+
+    // Hit-test against tag pins (12 px radius around each pin centre,
+    // generous so the tooltip is easy to land on). First hit wins.
+    const proj = projection()
+    if (!proj) {
+      if (hoveredTag) setHoveredTag(null)
+      return
+    }
+    const HIT_RADIUS_PX = 12
+    let best: { tagId: string; cx: number; cy: number } | null = null
+    let bestDsq = HIT_RADIUS_PX * HIT_RADIUS_PX + 1
+    for (const t of tagsRef.current) {
+      if (!tagHasPose(t)) continue
+      const c = proj.worldToCanvas(t.pose.position.x, t.pose.position.y)
+      const dx = px - c.x
+      const dy = py - c.y
+      const dsq = dx * dx + dy * dy
+      if (dsq < bestDsq) {
+        bestDsq = dsq
+        best = { tagId: t.tag_id, cx: c.x, cy: c.y }
+      }
+    }
+    if (best) {
+      if (hoveredTag?.tagId !== best.tagId ||
+          hoveredTag.canvasX !== best.cx ||
+          hoveredTag.canvasY !== best.cy) {
+        setHoveredTag({ tagId: best.tagId, canvasX: best.cx, canvasY: best.cy })
+      }
+    } else if (hoveredTag) {
+      setHoveredTag(null)
+    }
+  }
+  const onPointerLeave = () => {
+    if (hoveredTag) setHoveredTag(null)
   }
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const cur = dragRef.current
@@ -297,8 +425,65 @@ export function MapCanvas() {
       ctx.restore()
     }
 
+    // Heat-map layer (twin field). Painted over the SLAM bitmap but
+    // *under* the 1 m grid so the map's structure stays legible. Updates
+    // only when the field response or its dimensions change — render
+    // loop is at 60 Hz, paintFieldToCanvas would be wasteful per frame.
+    if (layers.heatmap && field && field.width > 0 && field.height > 0) {
+      const fieldKey =
+        `${field.width}x${field.height}|${field.value_min}|${field.value_max}|${sensor}|${field.sample_count}`
+      const ramp = SENSOR_RAMPS[sensor]
+      if (fieldBitmapRef.current?.key !== fieldKey) {
+        fieldBitmapRef.current = {
+          key: fieldKey,
+          bitmap: paintFieldToCanvas(field, ramp),
+        }
+      }
+      const fbmp = fieldBitmapRef.current?.bitmap
+      if (fbmp) {
+        const fw = field.width * field.resolution_used
+        const fh = field.height * field.resolution_used
+        const center = proj.worldToCanvas(
+          field.origin_x + fw / 2,
+          field.origin_y + fh / 2,
+        )
+        ctx.save()
+        ctx.translate(center.x, center.y)
+        ctx.rotate(-proj.rot)
+        // Smoothing on so the cell-grid blurs into a continuous gradient.
+        ctx.imageSmoothingEnabled = true
+        ctx.drawImage(fbmp, (-fw * proj.s) / 2, (-fh * proj.s) / 2, fw * proj.s, fh * proj.s)
+        ctx.restore()
+      }
+    }
+
     // 1m grid overlay
     drawMapGrid(ctx, proj, map)
+
+    // Trajectory polyline — last 60 s of robot pose. Faint chartreuse
+    // tail with the most recent points fully opaque, fading to ~20%
+    // toward the oldest. Visually light so it doesn't compete with the
+    // Nav2 plan polyline below.
+    if (layers.trajectory && trajectoryRef.current.length > 1) {
+      const traj = trajectoryRef.current
+      const newest = traj[traj.length - 1].t
+      ctx.save()
+      ctx.lineWidth = 1.5
+      for (let i = 1; i < traj.length; i++) {
+        const a = traj[i - 1]
+        const b = traj[i]
+        const age = newest - b.t
+        const alpha = Math.max(0.1, 0.6 - age / 60 * 0.5)
+        const pa = proj.worldToCanvas(a.x, a.y)
+        const pb = proj.worldToCanvas(b.x, b.y)
+        ctx.beginPath()
+        ctx.moveTo(pa.x, pa.y)
+        ctx.lineTo(pb.x, pb.y)
+        ctx.strokeStyle = `hsla(78, 70%, 60%, ${alpha.toFixed(2)})`
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
 
     // Plan polyline
     const plan = planRef.current
@@ -342,10 +527,75 @@ export function MapCanvas() {
       drawGoal(ctx, proj, { x: drag.from.x, y: drag.from.y, yaw }, 'hsl(38 95% 60%)')
     }
 
-    // Tag sightings — drawn under the robot chevron so the chevron is on top
-    // when the robot is sitting on top of the most recent tag.
-    for (const s of sightingsRef.current) {
-      drawTagMarker(ctx, proj, s)
+    // Tag pins — twin-driven. Drawn under the robot chevron so the
+    // chevron is on top when the robot is sitting on top of the most
+    // recent tag. Pins fade as their stale_seconds climbs past 0; older
+    // tags desaturate but stay visible.
+    if (layers.pins) {
+      const ramp = SENSOR_RAMPS[sensor]
+      for (const t of tagsRef.current) {
+        if (!tagHasPose(t)) continue  // never been seen with a pose
+        const reading = t.readings.find((r) => r.name === sensor)?.value
+        const span = field ? Math.max(1e-9, field.value_max - field.value_min) : 1
+        const tNorm = field && reading != null
+          ? Math.min(1, Math.max(0, (reading - field.value_min) / span))
+          : 0.5
+        const sat = 1 - Math.min(0.7, t.stale_seconds / 600)
+        // Inner fill at the active-sensor ramp value; ring stays neutral
+        // so colour-blind operators still see the marker.
+        const c = proj.worldToCanvas(t.pose.position.x, t.pose.position.y)
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(c.x, c.y, 5, 0, Math.PI * 2)
+        ctx.fillStyle = rampCssColor(ramp, tNorm, sat)
+        ctx.fill()
+        ctx.beginPath()
+        ctx.arc(c.x, c.y, 5, 0, Math.PI * 2)
+        ctx.lineWidth = 1
+        ctx.strokeStyle = 'hsl(120 25% 8%)'
+        ctx.stroke()
+        // Tag id label, dark backdrop pill — same style we used for
+        // sightings, so the visual language is consistent.
+        ctx.font = "10px 'JetBrains Mono', ui-monospace, monospace"
+        const m = ctx.measureText(t.tag_id)
+        const lx = c.x + 8
+        const ly = c.y - 12
+        ctx.fillStyle = 'hsla(120, 25%, 6%, 0.78)'
+        ctx.fillRect(lx - 3, ly - 9.5, m.width + 6, 13)
+        ctx.fillStyle = `hsla(${ramp.hue}, 70%, 80%, ${sat.toFixed(2)})`
+        ctx.textBaseline = 'alphabetic'
+        ctx.fillText(t.tag_id, lx, ly)
+        ctx.restore()
+      }
+    }
+
+    // Pulse ring — drawn over pins so the highlight sits on top, but
+    // under the chevron so the robot itself is never obscured. Fades over
+    // ~1.5 s and clears the ref when done.
+    const pulse = pulseRef.current
+    if (pulse) {
+      const age = (performance.now() - pulse.startedAt) / 1000
+      if (age > 1.5) {
+        pulseRef.current = null
+      } else {
+        const target = tagsRef.current.find((t) => t.tag_id === pulse.tagId)
+        if (target && tagHasPose(target)) {
+          const c = proj.worldToCanvas(target.pose.position.x, target.pose.position.y)
+          // Two concentric rings, each pulsing on a different phase, so
+          // the highlight reads even on a busy heat map.
+          for (let k = 0; k < 2; k++) {
+            const phase = (age + k * 0.4) % 1.5
+            const t = phase / 1.5
+            const radius = 6 + t * 22
+            const alpha = (1 - t) * 0.85
+            ctx.beginPath()
+            ctx.arc(c.x, c.y, radius, 0, Math.PI * 2)
+            ctx.lineWidth = 2
+            ctx.strokeStyle = `hsla(78, 90%, 65%, ${alpha.toFixed(2)})`
+            ctx.stroke()
+          }
+        }
+      }
     }
 
     // Robot chevron
@@ -364,6 +614,14 @@ export function MapCanvas() {
     ? 'awaiting TF'
     : `pose · ${pose.x.toFixed(2)} m, ${pose.y.toFixed(2)} m, ${((pose.yaw * 180) / Math.PI).toFixed(0)}°`
 
+  // Tags visible in the live twin snapshot — derived state for the
+  // header status line + hover tooltip lookup.
+  const visibleTags = (twin?.tags ?? []).filter(tagHasPose)
+  const visibleTagCount = visibleTags.length
+  const hoveredTagState = hoveredTag
+    ? visibleTags.find((t) => t.tag_id === hoveredTag.tagId) ?? null
+    : null
+
   /* ----- Popup screen position — anchored at the arrow tip of the pending
      goal, then nudged so it sits clear of the chevron. */
   const popupPos = (() => {
@@ -380,18 +638,23 @@ export function MapCanvas() {
   return (
     <Card className="flex flex-1 flex-col">
       <CardHeader>
-        <CardTitle>
-          Map · navigation
-          <span className="tag tag-accent ml-auto">PNL-NAV-01</span>
+        <CardTitle className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>Map · navigation</span>
+          <span className="tag tag-accent">PNL-NAV-01</span>
+          <div className="ml-auto flex items-center gap-2">
+            <SensorPills value={sensor} onChange={setSensor} />
+            <span className="h-3 w-px bg-hairline" aria-hidden />
+            <LayerToggles value={layers} onChange={setLayers} />
+          </div>
         </CardTitle>
         <CardDescription className="flex items-center gap-2">
           <span className="font-mono">{mapTopic}</span>
           <span>·</span>
           <span>{statusText}</span>
-          {sightings.length > 0 && (
+          {visibleTagCount > 0 && (
             <>
               <span>·</span>
-              <span className="font-mono">tags · {sightings.length}</span>
+              <span className="font-mono">tags · {visibleTagCount}</span>
             </>
           )}
         </CardDescription>
@@ -404,6 +667,7 @@ export function MapCanvas() {
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
+            onPointerLeave={onPointerLeave}
             className="h-full w-full cursor-crosshair touch-none"
           />
           <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-2">
@@ -436,10 +700,202 @@ export function MapCanvas() {
               navigate there?
             </button>
           )}
+
+          {/* Bottom-left legend — single-hue ramp + min/max labels + unit. */}
+          {layers.heatmap && field && field.sample_count > 0 && (
+            <FieldLegend sensor={sensor} field={field} />
+          )}
+
+          {/* Hover tooltip. Positioned near the pin in canvas coords. */}
+          {hoveredTagState && hoveredTag && (
+            <TagTooltip
+              tag={hoveredTagState}
+              canvasX={hoveredTag.canvasX}
+              canvasY={hoveredTag.canvasY}
+              canvasWidth={canvasRef.current?.clientWidth ?? 0}
+            />
+          )}
         </div>
       </CardContent>
     </Card>
   )
+}
+
+/* ---------- header controls ---------- */
+
+const SENSOR_LABELS: Record<TwinSensor, string> = {
+  temperature: 'TEMP',
+  humidity: 'HUM',
+  co2: 'CO₂',
+  light: 'LIGHT',
+  soil_moisture: 'SOIL',
+}
+
+function SensorPills({
+  value, onChange,
+}: { value: TwinSensor; onChange: (v: TwinSensor) => void }) {
+  return (
+    <div className="flex items-center rounded-sm border border-hairline bg-card/40 p-0.5">
+      {TWIN_SENSORS.map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => onChange(s)}
+          aria-pressed={value === s}
+          className={cn(
+            'tag rounded-sm px-1.5 py-0.5 transition-colors',
+            value === s
+              ? 'bg-primary/15 text-primary'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {SENSOR_LABELS[s]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+interface LayerState {
+  heatmap: boolean
+  trajectory: boolean
+  pins: boolean
+}
+
+function LayerToggles({
+  value, onChange,
+}: { value: LayerState; onChange: (v: LayerState) => void }) {
+  const items: Array<{ key: keyof LayerState; label: string }> = [
+    { key: 'heatmap',    label: 'heat' },
+    { key: 'trajectory', label: 'tail' },
+    { key: 'pins',       label: 'pins' },
+  ]
+  return (
+    <div className="flex items-center gap-1">
+      {items.map(({ key, label }) => {
+        const on = value[key]
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange({ ...value, [key]: !on })}
+            aria-pressed={on}
+            title={`Toggle ${label}`}
+            className={cn(
+              'tag flex items-center gap-1 rounded-sm border px-1.5 py-0.5 transition-colors',
+              on
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : 'border-hairline bg-background/40 text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {on ? <Eye className="h-2.5 w-2.5" /> : <EyeOff className="h-2.5 w-2.5" />}
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ---------- legend + tooltip ---------- */
+
+function FieldLegend({
+  sensor, field,
+}: { sensor: TwinSensor; field: NonNullable<ReturnType<typeof useTwinField>['field']> }) {
+  const ramp = SENSOR_RAMPS[sensor]
+  return (
+    <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col gap-1 rounded-sm border border-hairline bg-card/70 px-2 py-1 backdrop-blur">
+      <div className="flex items-baseline gap-2">
+        <span className="tag tag-strong">{SENSOR_LABELS[sensor]}</span>
+        <span className="font-mono text-[10px] text-muted-foreground">{ramp.unit}</span>
+      </div>
+      <div
+        className="h-2 w-[120px] rounded-sm border border-hairline"
+        style={{ backgroundImage: rampGradientCss(ramp) }}
+      />
+      <div className="flex items-baseline justify-between font-mono text-[10px] text-muted-foreground">
+        <span>{formatLegendNumber(field.value_min)}</span>
+        <span>{formatLegendNumber(field.value_max)}</span>
+      </div>
+    </div>
+  )
+}
+
+function formatLegendNumber(v: number): string {
+  if (!Number.isFinite(v)) return '—'
+  if (Math.abs(v) >= 100) return v.toFixed(0)
+  if (Math.abs(v) >= 10) return v.toFixed(1)
+  return v.toFixed(2)
+}
+
+const TOOLTIP_OFFSET = 14
+const TOOLTIP_W_EST = 200
+
+function TagTooltip({
+  tag, canvasX, canvasY, canvasWidth,
+}: { tag: TwinTagState; canvasX: number; canvasY: number; canvasWidth: number }) {
+  // Anchor up-and-right of the pin by default; flip left only when
+  // there isn't room on the right. Comparing against canvas width
+  // (rather than canvasX > 0, which is always true) ensures the
+  // tooltip never escapes the right edge.
+  const flipX = canvasX > canvasWidth - TOOLTIP_W_EST
+  const left = flipX
+    ? canvasX - TOOLTIP_W_EST + TOOLTIP_OFFSET
+    : canvasX + TOOLTIP_OFFSET
+  const top = canvasY - 8 - 80
+  return (
+    <div
+      className="pointer-events-none absolute z-10 max-w-[220px] rounded-sm border border-hairline bg-card/90 px-2 py-1.5 text-[11px] shadow-[0_2px_12px_rgba(0,0,0,0.4)] backdrop-blur"
+      style={{ left, top }}
+    >
+      <div className="flex items-baseline gap-2">
+        <span className="tag tag-accent">tag</span>
+        <span className="font-mono text-foreground">{tag.tag_id}</span>
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+          {formatStaleness(tag.stale_seconds)}
+        </span>
+      </div>
+      <div className="mt-1 space-y-0.5">
+        {tag.readings.length === 0 ? (
+          <div className="text-muted-foreground">no readings yet</div>
+        ) : (
+          tag.readings.map((r) => (
+            <div key={r.name} className="flex items-baseline justify-between gap-2 font-mono">
+              <span className="text-muted-foreground">{r.name}</span>
+              <span className="text-foreground">
+                {formatReadingValue(r.value)}
+                <span className="ml-0.5 text-muted-foreground">{readingUnit(r.name)}</span>
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+const READING_UNITS: Record<string, string> = {
+  temperature: '°C',
+  humidity: '%',
+  co2: 'ppm',
+  light: 'lux',
+  soil_moisture: '%',
+}
+function readingUnit(name: string): string {
+  return READING_UNITS[name] ?? ''
+}
+function formatReadingValue(v: number): string {
+  if (!Number.isFinite(v)) return '—'
+  if (Math.abs(v) >= 100) return v.toFixed(0)
+  if (Math.abs(v) >= 10) return v.toFixed(1)
+  return v.toFixed(2)
+}
+function formatStaleness(s: number): string {
+  if (!Number.isFinite(s) || s < 0) return '—'
+  if (s < 1) return 'now'
+  if (s < 60) return `${Math.round(s)} s ago`
+  if (s < 3600) return `${Math.round(s / 60)} min ago`
+  return `${Math.round(s / 3600)} h ago`
 }
 
 /* ---------- canvas helpers ---------- */
@@ -472,46 +928,6 @@ function drawMapGrid(
     ctx.lineTo(b.x, b.y)
     ctx.stroke()
   }
-  ctx.restore()
-}
-
-function drawTagMarker(
-  ctx: CanvasRenderingContext2D,
-  proj: { worldToCanvas: (x: number, y: number) => { x: number; y: number } },
-  sighting: TagSighting,
-) {
-  const c = proj.worldToCanvas(sighting.x, sighting.y)
-  // Outer glow ring (so the marker reads against busy SLAM costmaps)
-  ctx.beginPath()
-  ctx.arc(c.x, c.y, 8, 0, Math.PI * 2)
-  ctx.fillStyle = 'hsla(78, 90%, 58%, 0.18)'
-  ctx.fill()
-  // Crosshair-style square in chartreuse — visually distinct from the round
-  // goal pip and the robot chevron.
-  ctx.save()
-  ctx.translate(c.x, c.y)
-  ctx.rotate(Math.PI / 4)
-  ctx.fillStyle = 'hsl(78 95% 62%)'
-  ctx.strokeStyle = 'hsl(120 25% 6%)'
-  ctx.lineWidth = 1
-  ctx.fillRect(-4, -4, 8, 8)
-  ctx.strokeRect(-4, -4, 8, 8)
-  ctx.restore()
-  // Inline tag id label, offset up-right so it doesn't overlap the marker
-  // (canvas Y grows downward, so −10 is "above").
-  ctx.save()
-  ctx.font = "10px 'JetBrains Mono', ui-monospace, monospace"
-  const text = sighting.tagId
-  const m = ctx.measureText(text)
-  const padX = 3
-  const padY = 1.5
-  const lx = c.x + 8
-  const ly = c.y - 12
-  ctx.fillStyle = 'hsla(120, 25%, 6%, 0.78)'
-  ctx.fillRect(lx - padX, ly - 8 - padY, m.width + 2 * padX, 10 + 2 * padY)
-  ctx.fillStyle = 'hsl(78 95% 70%)'
-  ctx.textBaseline = 'alphabetic'
-  ctx.fillText(text, lx, ly)
   ctx.restore()
 }
 
