@@ -5,6 +5,7 @@ import { BatteryPill } from '@/components/BatteryPill'
 import { ClockPill } from '@/components/ClockPill'
 import { ConnectionPill } from '@/components/ConnectionPill'
 import { EStopButton } from '@/components/EStopButton'
+import { MissionStrip } from '@/components/MissionStrip'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -24,6 +25,7 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
       <div className="flex flex-1 min-w-0 items-stretch gap-3 px-3 sm:gap-4 sm:px-4">
         <Logo />
         <Callsign />
+        <MissionStrip />
 
         <div className="ml-auto flex flex-nowrap items-center gap-1.5 self-center overflow-x-auto sm:gap-2">
           <ConnectionPill />
