@@ -27,6 +27,7 @@ set(srv_files
   "srv/StartMission.srv"
   "srv/SetArmPreset.srv"
   "srv/GetField.srv"
+  "srv/ConfirmTag.srv"
 )
 set(action_files
 )

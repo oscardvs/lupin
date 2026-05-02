@@ -150,7 +150,12 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      # Tightened from 0.25 → 0.12 rad (~7°) so the camera frames the
+      # AprilTag head-on at the goal pose. MPPI Omni handles the tolerance
+      # comfortably on the mecanum base; if it bites on hardware (MPPI
+      # iterating near the goal blowing the nav timeout), loosen back to
+      # ~0.18 rad.
+      yaw_goal_tolerance: 0.12
 
     # MPPI from day one — see project_nav2_controller_choice memory. motion_model
     # MUST be Omni for the mecanum base; otherwise vy samples are zeroed and the
