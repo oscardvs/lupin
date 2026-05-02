@@ -1,0 +1,116 @@
+"""Unit tests for :mod:`lupin_twin.state` — pure-Python store of per-tag
+observations behind the twin node."""
+
+from __future__ import annotations
+
+import pytest
+
+from lupin_twin.state import (
+    TagSensorEntry,
+    TwinObservation,
+    TwinStateStore,
+)
+
+
+def _obs(tag_id, t, *, pose=None, readings=()):
+    return TwinObservation(
+        tag_id=tag_id,
+        monotonic_at=t,
+        pose_x=pose[0] if pose else None,
+        pose_y=pose[1] if pose else None,
+        pose_qz=pose[2] if pose and len(pose) >= 3 else None,
+        pose_qw=pose[3] if pose and len(pose) >= 4 else None,
+        readings=[TagSensorEntry(name=n, value=v) for n, v in readings],
+    )
+
+
+def test_record_returns_true_for_first_observation():
+    store = TwinStateStore()
+    ok = store.record(_obs('1', 0.0, pose=(1.0, 2.0), readings=[('temperature', 22.5)]))
+    assert ok is True
+    assert store.observation_count == 1
+    buf = store.tag('1')
+    assert buf is not None
+    assert buf.has_pose()
+    assert buf.pose_x == 1.0 and buf.pose_y == 2.0
+    assert buf.latest_readings == {'temperature': 22.5}
+
+
+def test_pose_caches_from_first_observation_does_not_update():
+    # Tag's first OK observation pins its pose; later observations update
+    # readings but NOT pose, so the HMI marker doesn't jitter on AMCL drift.
+    store = TwinStateStore()
+    store.record(_obs('1', 0.0, pose=(1.0, 2.0), readings=[('temperature', 22.0)]))
+    store.record(_obs('1', 1.0, pose=(1.05, 2.05), readings=[('temperature', 22.5)]))
+    buf = store.tag('1')
+    assert buf.pose_x == 1.0
+    assert buf.pose_y == 2.0
+    assert buf.latest_readings == {'temperature': 22.5}  # value updated
+
+
+def test_observation_count_increments_per_record():
+    store = TwinStateStore()
+    for i in range(5):
+        store.record(_obs('1', float(i), pose=(0, 0), readings=[('co2', 400.0 + i)]))
+    assert store.observation_count == 5
+
+
+def test_record_rejects_empty_tag_id():
+    store = TwinStateStore()
+    ok = store.record(_obs('', 0.0, pose=(0, 0)))
+    assert ok is False
+    assert store.observation_count == 0
+
+
+def test_history_is_capped_at_buffer_len():
+    store = TwinStateStore(buffer_len=4)
+    for i in range(10):
+        store.record(_obs('1', float(i), pose=(0, 0), readings=[('co2', float(i))]))
+    buf = store.tag('1')
+    assert len(buf.history) == 4
+    # Newest preserved.
+    assert buf.history[-1].readings[0].value == 9.0
+
+
+def test_pose_only_set_when_first_pose_supplied():
+    # First observation has no pose (e.g. SCAN_FAILED before AMCL gates) —
+    # tag is still recorded but has no pose. A later observation WITH a
+    # pose then pins it.
+    store = TwinStateStore()
+    store.record(_obs('1', 0.0, pose=None, readings=[('temperature', 22.0)]))
+    assert store.tag('1').has_pose() is False
+    store.record(_obs('1', 1.0, pose=(3.0, 4.0), readings=[('temperature', 23.0)]))
+    assert store.tag('1').has_pose() is True
+    assert store.tag('1').pose_x == 3.0
+
+
+def test_samples_for_sensor_skips_pose_less_and_missing_sensor():
+    store = TwinStateStore()
+    # Tag with pose + temperature
+    store.record(_obs('1', 0.0, pose=(1, 1), readings=[('temperature', 20.0)]))
+    # Tag with pose but only humidity
+    store.record(_obs('2', 0.0, pose=(2, 2), readings=[('humidity', 55.0)]))
+    # Tag with no pose, has temperature
+    store.record(_obs('3', 0.0, pose=None, readings=[('temperature', 19.0)]))
+
+    samples = store.samples_for_sensor('temperature')
+    assert samples == [(1, 1, 20.0)]
+
+
+def test_samples_for_sensor_skips_nan_and_inf_readings():
+    # Bridge stub returning NaN/inf must not poison the IDW field — the
+    # store filters non-finite values before the IDW math sees them.
+    store = TwinStateStore()
+    store.record(_obs('1', 0.0, pose=(1, 1), readings=[('temperature', 20.0)]))
+    store.record(_obs('2', 0.0, pose=(2, 2), readings=[('temperature', float('nan'))]))
+    store.record(_obs('3', 0.0, pose=(3, 3), readings=[('temperature', float('inf'))]))
+    store.record(_obs('4', 0.0, pose=(4, 4), readings=[('temperature', float('-inf'))]))
+    samples = store.samples_for_sensor('temperature')
+    assert samples == [(1, 1, 20.0)]
+
+
+def test_tag_ids_preserve_insertion_order():
+    store = TwinStateStore()
+    for tid in ['a', 'b', 'c']:
+        store.record(_obs(tid, 0.0, pose=(0, 0), readings=[('temperature', 1.0)]))
+    assert store.tag_ids() == ['a', 'b', 'c']

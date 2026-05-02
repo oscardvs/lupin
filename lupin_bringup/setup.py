@@ -14,8 +14,10 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch',
             glob('launch/*.launch.py') + glob('launch/*.launch.xml')),
-        ('share/' + package_name + '/config', glob('config/*.yaml')),
+        ('share/' + package_name + '/config',
+            glob('config/*.yaml') + glob('config/*.json')),
         ('share/' + package_name + '/worlds', glob('worlds/*.world')),
+        ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -26,6 +28,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            # Sim helper: publishes a synthetic /amcl_pose so the v2 mission
+            # orchestrator's PREPARE.LOCALIZING gate clears in slam_toolbox
+            # mode (no real AMCL in the chain). Hardware doesn't need it.
+            'seed_amcl_pose = lupin_bringup.seed_amcl_pose:main',
         ],
     },
 )

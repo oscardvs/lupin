@@ -1,0 +1,35 @@
+# teleop_twist_joy parameters for the Xbox Wireless Controller (XInput
+# layout under SDL2 / ros2 joy).
+#
+# Mapping — chassis is mecanum (omnidirectional), so both sticks are used:
+#   axes[1]  Left stick  Y → linear.x   (forward / back)
+#   axes[0]  Left stick  X → linear.y   (strafe ; ROS body-frame +Y is left,
+#                                        joy +X is left → positive scale lines up)
+#   axes[3]  Right stick X → angular.yaw (twist in place)
+#   axes[2]  LT trigger    → enable_button  (dead-man, must be held)
+#   axes[5]  RT trigger    → enable_turbo_button (boost)
+#
+# Without a dead-man, joy_node's continuous "all zeros" stream would pin
+# the highest priority on twist_mux and starve Nav2 / the web HMI.
+teleop_twist_joy_node:
+  ros__parameters:
+    require_enable_button: true
+    enable_button: 2          # LT — dead-man, must be held to drive
+    enable_turbo_button: 5    # RT — boost while held
+
+    axis_linear:
+      x: 1                    # left stick vertical  → forward/back
+      y: 0                    # left stick horizontal → strafe
+    scale_linear:
+      x: 0.4
+      y: 0.4
+    scale_linear_turbo:
+      x: 0.8
+      y: 0.8
+
+    axis_angular:
+      yaw: 3                  # right stick horizontal → yaw
+    scale_angular:
+      yaw: 1.0
+    scale_angular_turbo:
+      yaw: 1.5

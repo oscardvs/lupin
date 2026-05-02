@@ -26,3 +26,12 @@ string status_detail             # free-text reason on non-OK; empty on OK
 TagReading tag_reading
 FlowerObservation flower
 AnomalyReport anomaly
+
+# Map-frame pose at observation time. Populated by the orchestrator from the
+# latest AMCL snapshot at PUBLISHING — meaningful only when the orchestrator
+# had a localized pose (the start-of-mission gate guarantees this for live
+# observations; transient_local replay may carry the seed pose). Consumers
+# that don't need pose can ignore this field; consumers that do (the digital
+# twin in particular) check the orientation.w field — when it's 0 the pose
+# was never populated and the value should be treated as missing.
+geometry_msgs/Pose tag_pose_in_map

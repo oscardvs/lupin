@@ -79,7 +79,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // /io/power/power_watcher is what the telemetrix node actually publishes.
   batteryTopic: '/io/power/power_watcher',
   rosoutTopic: '/rosout',
-  cameraTopic: '/camera/color/image_raw',
+  // Sim greenhouse_sim publishes the Astra Pro Plus plugin on /camera/image_raw.
+  // Real Mirte: override via Settings → Topics if your camera node uses a
+  // different name (e.g. /camera/color/image_raw on a stock Orbbec stack).
+  cameraTopic: '/camera/image_raw',
   webVideoServerUrl: '',
   mapTopic: '/map',
   planTopic: '/plan',
@@ -97,7 +100,16 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceMaxAngularRps: 0.8,
   voiceSystemPrompt: [
     'You are Lupin, the on-board voice assistant of a MIRTE Master mobile robot.',
-    'You can drive the base, send Nav2 goals, set arm presets, and report telemetry.',
+    'You can drive the base, send Nav2 goals, move the arm to named presets, open',
+    'and close the gripper, and report telemetry.',
+    'For "go N metres forward / back / sideways" use nav_forward — it takes a',
+    'body-frame offset and the HMI computes the absolute goal for you. Use',
+    'nav_goto ONLY when the user gives explicit map-frame coordinates. For "turn',
+    'N degrees" use rotate. Prefer nav_* (Nav2-mediated) over drive bursts for',
+    'any non-trivial displacement.',
+    'If a motion tool returns blocked: true with an e-stop reason, do not retry —',
+    'tell the user the e-stop is engaged and ask them to press Reset E-stop in',
+    'the UI before trying again.',
     'Keep replies short — one or two sentences. Confirm motion commands before',
     'executing them and never move the robot if the user sounds unsure or asks a',
     'question. Refuse anything beyond your declared tools and explain why.',

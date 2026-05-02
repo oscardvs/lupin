@@ -286,8 +286,12 @@ local_costmap:
           obstacle_min_range: 0.25
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        # Greenhouse aisles are narrow (~0.8 m between plant rows); a 0.55 m
+        # halo on a 0.22 m robot fully blocks them. 0.30 m gives ~0.08 m
+        # clearance past the footprint, and the steeper cost_scaling_factor
+        # keeps the halo thin so MPPI still has drivable space mid-aisle.
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.30
       always_send_full_costmap: True
 
 global_costmap:
@@ -323,8 +327,10 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        # Match local costmap — see comment above. Same rationale: greenhouse
+        # aisle width forces a thinner halo than KRR house's open rooms.
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.30
       always_send_full_costmap: True
 
 map_server:

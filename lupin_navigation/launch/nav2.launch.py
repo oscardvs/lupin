@@ -10,11 +10,11 @@ configured for the MIRTE Master mecanum base in the Gazebo sim:
   velocity_smoother + lifecycle_manager_navigation
 
 Wiring detail that matters: velocity_smoother's smoothed output is remapped
-to /cmd_vel_auto so it feeds the existing lupin_hmi cmd_vel_mux on its
-autonomous-mode input. We do NOT publish to /cmd_vel (which in sim is the
-twist_mux output to the gazebo_planar_move teleport plugin) — Nav2 hits
-the same chain manual teleop hits, and the mux's takeover logic stays in
-charge of arbitration.
+to /cmd_vel_auto so it feeds the lupin twist_mux as the lowest-priority
+(autonomy) input. We do NOT publish to /cmd_vel (which in sim is the
+vendor twist_mux output to the gazebo_planar_move teleport plugin) — Nav2
+hits the same arbitration chain the Xbox dead-man and web HMI hit, and
+twist_mux's priority+timeout logic stays in charge.
 
 slam:=true mode: drops the localization half (map_server + AMCL +
 lifecycle_manager_localization) so an external slam_toolbox node can own
@@ -171,9 +171,9 @@ def generate_launch_description():
             parameters=[configured_params],
             remappings=[
                 ('cmd_vel', 'cmd_vel_nav'),
-                # Hook into lupin_hmi/cmd_vel_mux's autonomous input. Do NOT publish
-                # to /cmd_vel here — that goes to gazebo_planar_move and would
-                # bypass the mux + the mecanum drive controller.
+                # Hook into the lupin twist_mux's autonomous input (priority 10).
+                # Do NOT publish to /cmd_vel here — that goes to gazebo_planar_move
+                # and would bypass both the mux and the mecanum drive controller.
                 ('cmd_vel_smoothed', '/cmd_vel_auto'),
             ],
         ),

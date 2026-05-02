@@ -165,6 +165,22 @@ export class GeminiLiveClient {
         this.opts.onUserText(this.userTextBuf, !!sc.inputTranscription.finished)
         if (sc.inputTranscription.finished) this.userTextBuf = ''
       }
+      // Model started responding — that's an implicit signal the user
+      // turn is over. Gemini Live doesn't always set
+      // inputTranscription.finished=true between turns, so without this
+      // the userTextBuf bleeds into the next turn and the transcript
+      // appends every prior user utterance. Fire a synthetic
+      // onUserText(..., final=true) so the UI pins the previous turn,
+      // then reset the buffer.
+      const modelStartedResponding =
+        !!sc.outputTranscription?.text
+        || !!(sc.modelTurn?.parts && sc.modelTurn.parts.some(
+          (p) => p.text || p.inlineData?.data,
+        ))
+      if (modelStartedResponding && this.userTextBuf.length > 0) {
+        this.opts.onUserText(this.userTextBuf, true)
+        this.userTextBuf = ''
+      }
       if (sc.outputTranscription?.text) {
         this.modelTextBuf += sc.outputTranscription.text
         this.opts.onModelText(this.modelTextBuf, !!sc.outputTranscription.finished)
@@ -186,10 +202,25 @@ export class GeminiLiveClient {
       if (sc.turnComplete) {
         if (this.modelTextBuf) this.opts.onModelText(this.modelTextBuf, true)
         this.modelTextBuf = ''
+        // Belt-and-braces: also flush any lingering user buffer at
+        // turn-complete (e.g. interrupted / tool-only turns where the
+        // model never spoke). Won't double-emit because we cleared
+        // above when the model started.
+        if (this.userTextBuf.length > 0) {
+          this.opts.onUserText(this.userTextBuf, true)
+          this.userTextBuf = ''
+        }
         this.opts.onTurnComplete()
       }
     }
     if (msg.toolCall) {
+      // A tool call without prior model text is also an implicit
+      // user-turn boundary — finalize the user buffer so the next
+      // user utterance starts in a fresh transcript entry.
+      if (this.userTextBuf.length > 0) {
+        this.opts.onUserText(this.userTextBuf, true)
+        this.userTextBuf = ''
+      }
       void this.handleToolCalls(msg.toolCall.functionCalls)
     }
   }

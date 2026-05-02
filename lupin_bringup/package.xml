@@ -10,7 +10,17 @@
   <depend>rclpy</depend>
   <depend>launch</depend>
   <depend>launch_ros</depend>
+  <depend>geometry_msgs</depend>
   <exec_depend>mirte_gazebo</exec_depend>
+  <!-- sim_full.launch.py composes these. Listed as exec_depends so rosdep
+       installs them, but this isn't a hard fail if a teammate runs only a
+       subset of the chain. -->
+  <exec_depend>lupin_navigation</exec_depend>
+  <exec_depend>lupin_greenhouse_bridge</exec_depend>
+  <exec_depend>lupin_mission</exec_depend>
+  <exec_depend>lupin_web</exec_depend>
+  <exec_depend>rosbridge_server</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

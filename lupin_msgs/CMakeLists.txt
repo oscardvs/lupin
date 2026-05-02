@@ -19,10 +19,14 @@ set(msg_files
   "msg/AnomalyReport.msg"
   "msg/Observation.msg"
   "msg/MissionState.msg"
+  "msg/TwinTagState.msg"
+  "msg/TwinState.msg"
 )
 set(srv_files
   "srv/GetTagReading.srv"
   "srv/StartMission.srv"
+  "srv/SetArmPreset.srv"
+  "srv/GetField.srv"
 )
 set(action_files
 )

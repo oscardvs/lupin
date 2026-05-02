@@ -31,6 +31,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'localization_covariance_threshold', default_value='0.25',
         ),
+        DeclareLaunchArgument('tag_locations_file', default_value=''),
         # Inspection
         DeclareLaunchArgument('approach_yaw', default_value='0.0'),
         DeclareLaunchArgument('nav_timeout_s', default_value='60.0'),
@@ -65,6 +66,7 @@ def generate_launch_description():
             'localization_covariance_threshold': LaunchConfiguration(
                 'localization_covariance_threshold',
             ),
+            'tag_locations_file': LaunchConfiguration('tag_locations_file'),
             'approach_yaw': LaunchConfiguration('approach_yaw'),
             'nav_timeout_s': LaunchConfiguration('nav_timeout_s'),
             'nav_max_attempts': LaunchConfiguration('nav_max_attempts'),
