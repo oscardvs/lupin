@@ -79,7 +79,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // /io/power/power_watcher is what the telemetrix node actually publishes.
   batteryTopic: '/io/power/power_watcher',
   rosoutTopic: '/rosout',
-  cameraTopic: '/camera/color/image_raw',
+  // Sim greenhouse_sim publishes the Astra Pro Plus plugin on /camera/image_raw.
+  // Real Mirte: override via Settings → Topics if your camera node uses a
+  // different name (e.g. /camera/color/image_raw on a stock Orbbec stack).
+  cameraTopic: '/camera/image_raw',
   webVideoServerUrl: '',
   mapTopic: '/map',
   planTopic: '/plan',

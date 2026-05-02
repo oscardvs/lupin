@@ -34,7 +34,14 @@ export function CameraStream({ topic, baseUrl, className, label }: CameraStreamP
     return () => clearInterval(id)
   }, [mock])
 
-  const url = `${baseUrl.replace(/\/$/, '')}/stream?topic=${encodeURIComponent(topic)}&type=mjpeg`
+  // web_video_server takes the topic as a literal query-string value and
+  // (on the version we ship in Humble) does NOT URL-decode it before
+  // looking it up. encodeURIComponent escapes the leading `/` to `%2F`,
+  // which then gets rejected as "Invalid topic name". Slashes are
+  // permitted in the query component per RFC 3986 §3.4, so just send the
+  // raw topic. Whitespace shouldn't appear in valid ROS topic names but
+  // we still escape spaces defensively.
+  const url = `${baseUrl.replace(/\/$/, '')}/stream?topic=${topic.replace(/ /g, '%20')}&type=mjpeg`
 
   const onLoad = () => {
     const now = performance.now()
