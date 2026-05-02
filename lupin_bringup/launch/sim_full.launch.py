@@ -1,22 +1,31 @@
 """sim_full.launch.py — bring up the WHOLE simulation stack in one shot.
 
-Composes:
-    1. greenhouse_sim.launch.py        — Gazebo + MIRTE + greenhouse world
-    2. slam_toolbox/online_async_launch — online SLAM (greenhouse has no map)
-    3. lupin_navigation/nav2.launch.py  — Nav2 in slam mode (no AMCL/map_server)
-    4. greenhouse_bridge.launch.py      — sensor service for tag readings
-    5. mission_orchestrator             — v2 lifecycle node (idles in READY)
-    6. rosbridge_websocket              — :9090 for the web HMI
-    7. lupin_web.launch.py              — Vite preview on :8090 + web_video :8091
-    8. seed_amcl_pose                   — one-shot synthetic /amcl_pose so the
-                                          orchestrator's PREPARE.LOCALIZING gate
-                                          clears (no real AMCL in slam mode)
+Composes, with an event-driven cascade between the upstream-dependent
+stages:
 
-This is *the* "I want to test everything" entry point. Heavy and slow on
-first start: Gazebo loading the greenhouse world is ~30-60 s, slam_toolbox
-needs scan context before Nav2 will plan anywhere, and the orchestrator
-will sit in BOOT for ~30 s while it waits for the Nav2 action server to
-finish lifecycle activation.
+    Phase 1 (t=0 — fire and forget):
+        - greenhouse_sim.launch.py    — Gazebo + MIRTE + greenhouse world
+        - greenhouse_bridge           — sensor service for tag readings
+        - mission_orchestrator        — v2 lifecycle node (idles in READY)
+        - rosbridge_websocket         — :9090 for the web HMI
+        - lupin_web.launch.py         — Vite preview on :8090 + web_video :8091
+        - seed_amcl_pose              — one-shot synthetic /amcl_pose
+
+    Phase 2 (when /scan first publishes):
+        - slam_toolbox online_async   — online SLAM, owns /map + map→odom
+
+    Phase 3 (when /map first publishes):
+        - lupin_navigation nav2.launch.py — Nav2 in slam mode (no AMCL)
+
+The chain uses tiny `ros2 topic echo --once` sentinels and
+RegisterEventHandler(OnProcessExit) — no fixed delays. If Gazebo never
+publishes /scan (crash, missing plugin), slam_toolbox simply doesn't
+fire and you can see exactly which stage stalled instead of drowning
+in retry warnings.
+
+The orchestrator subscribes to /amcl_pose at t=0 and caches whatever
+the seed publishes — no race with the cascade. PREPARE.LOCALIZING
+clears immediately whenever a mission is started.
 
 After bringup:
     1. Open http://localhost:8090
@@ -48,8 +57,10 @@ from launch.actions import (
     ExecuteProcess,
     IncludeLaunchDescription,
     LogInfo,
+    RegisterEventHandler,
     TimerAction,
 )
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
     PythonLaunchDescriptionSource,
@@ -68,18 +79,21 @@ def generate_launch_description() -> LaunchDescription:
     pkg_slam = get_package_share_directory('slam_toolbox')
 
     args = [
-        # forwarded to greenhouse_sim
+        # forwarded to greenhouse_sim — defaults match greenhouse_sim's own
+        # defaults (south aisle facing the tables). The (1.0, 0.5) corner
+        # spawn was wrong: it lands the robot against the south wall.
         DeclareLaunchArgument(
-            'spawn_x', default_value='1.0',
+            'spawn_x', default_value='2.0',
             description='Mirte spawn X in the greenhouse world (m).',
         ),
         DeclareLaunchArgument(
-            'spawn_y', default_value='0.5',
+            'spawn_y', default_value='1.5',
             description='Mirte spawn Y in the greenhouse world (m).',
         ),
         DeclareLaunchArgument(
-            'spawn_yaw', default_value='0.0',
-            description='Mirte spawn yaw in the greenhouse world (rad).',
+            'spawn_yaw', default_value='1.5708',
+            description='Mirte spawn yaw in the greenhouse world (rad). '
+                        '1.5708 (90°) faces the tables along +X.',
         ),
         # web HMI
         DeclareLaunchArgument(
@@ -119,8 +133,32 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
-    # ── 2. slam_toolbox (online async) ──────────────────────────────────
-    slam = IncludeLaunchDescription(
+    # Event-driven cascade: each downstream component starts only after
+    # the upstream readiness signal it depends on actually appears,
+    # instead of relying on fixed delays.
+    #
+    #   greenhouse_sim → /scan publishes  ──► slam_toolbox starts
+    #                                          ↓
+    #                         slam publishes /map  ──► Nav2 starts
+    #
+    # Sentinels are tiny `ros2 topic echo --once` processes that exit on
+    # first message receipt. Their exit fires a RegisterEventHandler
+    # that kicks the next stage. If a sentinel never sees a message
+    # (Gazebo crashed, slam_toolbox never started), nothing further runs
+    # — visible as "next stage didn't fire" rather than a flood of
+    # "waiting for transform" warnings the operator has to learn to
+    # ignore.
+
+    # ── 2a. Sentinel: wait for /scan from the Gazebo lidar plugin ──────
+    wait_for_scan = ExecuteProcess(
+        name='wait_for_scan',
+        cmd=['ros2', 'topic', 'echo', '--once', '/scan',
+             'sensor_msgs/msg/LaserScan'],
+        output='log',
+    )
+
+    # ── 2b. slam_toolbox starts after /scan is up ──────────────────────
+    slam_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_slam, 'launch', 'online_async_launch.py'),
         ),
@@ -131,27 +169,50 @@ def generate_launch_description() -> LaunchDescription:
             )),
         ],
     )
+    on_scan_ready = RegisterEventHandler(OnProcessExit(
+        target_action=wait_for_scan,
+        on_exit=[
+            LogInfo(msg='[lupin_bringup] /scan online — starting slam_toolbox'),
+            slam_include,
+        ],
+    ))
 
-    # ── 3. Nav2 (slam mode) ─────────────────────────────────────────────
-    # Pass params_file and map explicitly: when this include is wrapped
-    # in a TimerAction, the inner launch's DeclareLaunchArgument defaults
-    # don't always reach RewrittenYaml in time and you get
-    # "[Errno 2] No such file or directory: ''" mid-bringup. Avoid by
-    # forwarding the values from this launch's own resolved paths.
-    nav2 = IncludeLaunchDescription(
+    # ── 3a. Sentinel: wait for /map from slam_toolbox ──────────────────
+    # /map is RELIABLE+TRANSIENT_LOCAL; tell echo to match so the QoS
+    # negotiation actually connects.
+    wait_for_map = ExecuteProcess(
+        name='wait_for_map',
+        cmd=['ros2', 'topic', 'echo', '--once',
+             '--qos-reliability', 'reliable',
+             '--qos-durability', 'transient_local',
+             '/map', 'nav_msgs/msg/OccupancyGrid'],
+        output='log',
+    )
+
+    # ── 3b. Nav2 (slam mode) starts after /map is up ───────────────────
+    # `map:=krr_house.yaml` is forwarded even though slam:=true means
+    # map_server isn't instantiated — RewrittenYaml still substitutes
+    # the path into the params blob and a literal '' makes it explode.
+    nav2_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_nav, 'launch', 'nav2.launch.py'),
         ),
         launch_arguments=[
             ('slam', 'true'),
             ('params_file', os.path.join(pkg_nav, 'config', 'nav2_params.yaml')),
-            # `map` is unused under slam:=true but RewrittenYaml still
-            # substitutes it into the params blob, so it must be a real
-            # path on disk.
             ('map', os.path.join(pkg_nav, 'maps', 'krr_house.yaml')),
             ('use_sim_time', 'true'),
+            ('autostart', 'true'),
         ],
     )
+    on_map_ready = RegisterEventHandler(OnProcessExit(
+        target_action=wait_for_map,
+        on_exit=[
+            LogInfo(msg='[lupin_bringup] /map online — starting Nav2 lifecycle '
+                        '(autostart=true; expect ~15-30 s to ACTIVE)'),
+            nav2_include,
+        ],
+    ))
 
     # ── 4. Greenhouse bridge ────────────────────────────────────────────
     bridge = IncludeLaunchDescription(
@@ -187,28 +248,37 @@ def generate_launch_description() -> LaunchDescription:
         condition=_when('enable_web'),
     )
 
-    # ── 8. AMCL pose seed (one-shot, after the orchestrator subscribes) ─
-    seed = TimerAction(
-        period=10.0,
-        actions=[ExecuteProcess(
-            cmd=['ros2', 'run', 'lupin_bringup', 'seed_amcl_pose'],
-            output='log',
-            condition=_when('seed_amcl'),
-        )],
+    # ── 8. AMCL pose seed (one-shot, fires alongside the orchestrator) ─
+    # The orchestrator subscribes to /amcl_pose at startup, so the seed
+    # message lands the moment it's published — no need to chain on
+    # downstream readiness. The orchestrator caches the latest pose and
+    # uses it whenever PREPARE.LOCALIZING is entered, including for
+    # multi-mission re-runs.
+    seed = ExecuteProcess(
+        cmd=['ros2', 'run', 'lupin_bringup', 'seed_amcl_pose'],
+        output='log',
+        condition=_when('seed_amcl'),
     )
 
     return LaunchDescription([
         *args,
         LogInfo(msg='[lupin_bringup] sim_full: starting full sim chain '
-                    '(Gazebo + slam + Nav2 + bridge + orchestrator + web)'),
+                    '(Gazebo + bridge + orchestrator + web; '
+                    'slam_toolbox waits for /scan, Nav2 waits for /map)'),
+        # Phase 1 — fire-and-forget at t=0:
         greenhouse_sim,
-        slam,
-        nav2,
         bridge,
         mission,
         rosbridge,
         web,
         seed,
+        # Sentinels: tiny "wait for topic" processes that exit on first
+        # message receipt. Their exit fires the next stage.
+        wait_for_scan,
+        wait_for_map,
+        # Event handlers: chain the cascade.
+        on_scan_ready,
+        on_map_ready,
     ])
 
 
