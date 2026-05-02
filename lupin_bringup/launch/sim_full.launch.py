@@ -355,6 +355,20 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── 8c2. arm_preset_server — named arm-pose service ────────────────
+    # Backs the voice agent's `arm_preset` tool and the lupin_msgs
+    # SetArmPreset service. Holds a static dict of named poses (home /
+    # tuck / pick / place) and emits a JointTrajectory on
+    # /mirte_master_arm_controller/joint_trajectory — same topic the
+    # arm_sim_shim publishes to in sim and the real Mirte controller
+    # listens on, so this node ships unchanged across both targets.
+    arm_preset_server = Node(
+        package='lupin_hmi', executable='arm_preset_server',
+        name='arm_preset_server',
+        parameters=[{'use_sim_time': True}],
+        output='log',
+    )
+
     # ── 8d. Xbox controller teleop ─────────────────────────────────────
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
     # Arm joints driven directly from /joy by lupin_hmi.arm_teleop.
@@ -423,6 +437,7 @@ def generate_launch_description() -> LaunchDescription:
         twist_mux,
         xbox_teleop,
         arm_sim_shim,
+        arm_preset_server,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.

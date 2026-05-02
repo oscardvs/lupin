@@ -1,0 +1,8 @@
+# Move the 4-DOF arm to a named preset pose. Presets are defined on the
+# server; the request only carries the name. The gripper jaw is NOT driven
+# by this service — use /io/servo/hiwonder/gripper/set_angle_with_speed for
+# that.
+string name
+---
+bool success
+string message
