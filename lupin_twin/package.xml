@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>lupin_twin</name>
+  <version>0.0.1</version>
+  <description>Digital-twin node for Team Lupin's MIRTE Master. Aggregates per-tag
+    observations from the orchestrator and exposes the live world state
+    over /twin/state plus an on-demand IDW-interpolated sensor field
+    over /twin/get_field. The HMI is a pure consumer of these contracts.</description>
+  <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>lupin_msgs</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

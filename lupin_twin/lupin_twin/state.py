@@ -1,0 +1,163 @@
+"""Per-tag observation buffer + materialise as TwinTagState.
+
+Pure Python — separated from the node so the buffer logic is unit-testable
+without rclpy. The node owns one :class:`TwinStateStore` instance and
+dispatches incoming Observation messages into it.
+"""
+
+from __future__ import annotations
+
+import math
+from collections import OrderedDict, deque
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+# Ring-buffer size per tag. 32 is plenty for the brief's "last few readings"
+# without growing memory unboundedly on a long patrol; the heat-map only
+# uses the most recent reading per tag anyway.
+DEFAULT_BUFFER_LEN = 32
+
+
+@dataclass
+class TagSensorEntry:
+    """One sensor's most recent reading at a tag."""
+    name: str
+    value: float
+
+
+@dataclass
+class TagBuffer:
+    """Per-tag ring buffer of recent observations.
+
+    Stores enough to populate :class:`TwinTagState` and to support a future
+    "history" feature. The cached pose comes from the *first* OK observation
+    (orchestrator stamps it from AMCL); we don't update on subsequent visits
+    because tags don't move and re-stamping would jitter the HMI marker.
+    """
+    tag_id: str
+    pose_x: Optional[float] = None
+    pose_y: Optional[float] = None
+    pose_qz: Optional[float] = None
+    pose_qw: Optional[float] = None
+    # ROS time (seconds) when this tag was most recently observed. Drives
+    # the durable `last_observed` Time on TwinTagState so consumers that
+    # persist the snapshot (FloraNova export, anomaly detection over
+    # historical data) get an absolute timestamp, not a publish-time-relative
+    # delta. Set in TwinObservation.monotonic_at by the node — name kept
+    # historic for source-stability.
+    last_seen_monotonic: float = 0.0
+    # Latest reading per sensor name. Order preserved for stable HMI render.
+    latest_readings: OrderedDict[str, float] = field(
+        default_factory=OrderedDict,
+    )
+    history: deque = field(default_factory=lambda: deque(maxlen=DEFAULT_BUFFER_LEN))
+
+    def has_pose(self) -> bool:
+        return self.pose_x is not None and self.pose_y is not None
+
+
+@dataclass
+class TwinObservation:
+    """The minimum the store needs to record one observation.
+
+    Decoupled from the ROS Observation message so unit tests don't need
+    rclpy to drive the store.
+    """
+    tag_id: str
+    monotonic_at: float
+    pose_x: Optional[float]
+    pose_y: Optional[float]
+    pose_qz: Optional[float]
+    pose_qw: Optional[float]
+    readings: list[TagSensorEntry]
+
+
+class TwinStateStore:
+    """Aggregates observations across tags. Thread-unsafe by design — the
+    node uses a MutuallyExclusiveCallbackGroup so only one callback ever
+    mutates the store at a time."""
+
+    def __init__(self, buffer_len: int = DEFAULT_BUFFER_LEN):
+        self._buffer_len = buffer_len
+        self._tags: dict[str, TagBuffer] = {}
+        # Monotonically-increasing counter that bumps on every accepted
+        # observation. Used as a cache key for IDW field results so a
+        # single integer comparison invalidates downstream caches.
+        self._observation_count: int = 0
+
+    # ── ingestion ──────────────────────────────────────────────────────
+
+    def record(self, obs: TwinObservation) -> bool:
+        """Insert an observation. Returns True if the store mutated.
+
+        Returns False for malformed observations (empty tag_id) — the
+        caller can then skip increment of the cache key. Pose absence is
+        OK (the tag just stays unpinned in TwinState until a later OK
+        observation supplies one).
+        """
+        if not obs.tag_id:
+            return False
+        buf = self._tags.get(obs.tag_id)
+        if buf is None:
+            buf = TagBuffer(tag_id=obs.tag_id)
+            buf.history = deque(maxlen=self._buffer_len)
+            self._tags[obs.tag_id] = buf
+
+        buf.last_seen_monotonic = obs.monotonic_at
+        buf.history.append(obs)
+
+        # Cache pose from the FIRST observation that supplies one — tags
+        # don't move, so re-stamping on each visit would just inject AMCL
+        # jitter into the HMI's tag pin. Subsequent visits update readings
+        # but leave the pose as we first saw it.
+        if not buf.has_pose() and obs.pose_x is not None and obs.pose_y is not None:
+            buf.pose_x = obs.pose_x
+            buf.pose_y = obs.pose_y
+            buf.pose_qz = obs.pose_qz if obs.pose_qz is not None else 0.0
+            buf.pose_qw = obs.pose_qw if obs.pose_qw is not None else 1.0
+
+        for r in obs.readings:
+            buf.latest_readings[r.name] = r.value
+
+        self._observation_count += 1
+        return True
+
+    # ── inspection ─────────────────────────────────────────────────────
+
+    @property
+    def observation_count(self) -> int:
+        return self._observation_count
+
+    def tag_ids(self) -> list[str]:
+        """Return tag ids in insertion order — stable for the HMI table."""
+        return list(self._tags.keys())
+
+    def tag(self, tag_id: str) -> Optional[TagBuffer]:
+        return self._tags.get(tag_id)
+
+    def all_tags(self) -> list[TagBuffer]:
+        return list(self._tags.values())
+
+    def samples_for_sensor(self, sensor_name: str) -> list[tuple[float, float, float]]:
+        """Return (x, y, value) tuples for every tag with both a pose AND
+        a finite reading for ``sensor_name``. Used to feed the IDW field
+        builder.
+
+        Tags with no pose (no OK observation yet) or no/non-finite reading
+        for that sensor are silently skipped — the field builder treats
+        their location as "no data" and renders NaN there. The finite
+        check matters: a NaN/inf sneaking through (sensor stub returning
+        ``float('nan')``, divide-by-zero in a future bridge implementation)
+        would poison every IDW cell within ``falloff_radius`` because the
+        weighted-sum numerator picks up NaN and never recovers.
+        """
+        out: list[tuple[float, float, float]] = []
+        for buf in self._tags.values():
+            if not buf.has_pose():
+                continue
+            v = buf.latest_readings.get(sensor_name)
+            if v is None or not math.isfinite(v):
+                continue
+            out.append((buf.pose_x, buf.pose_y, float(v)))  # type: ignore[arg-type]
+        return out
