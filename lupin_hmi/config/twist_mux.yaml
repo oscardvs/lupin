@@ -1,0 +1,40 @@
+# Lupin twist_mux — priority arbitration on the chassis command bus.
+#
+# Replaces the old custom cmd_vel_mux.py. Three sources, single output:
+#
+#   /cmd_vel_joy    (Xbox dead-man teleop)        priority 100  ── operator override
+#   /cmd_vel_manual (web HMI joystick widget)     priority  50  ── remote operator
+#   /cmd_vel_auto   (Nav2 velocity_smoother)      priority  10  ── autonomy
+#       │
+#       ▼ (cmd_vel_out remap, set in the launch file)
+#   /mirte_base_controller/cmd_vel_unstamped (sim) │ /mirte_base_controller/cmd_vel (real)
+#
+# Timeout semantics: when the highest-priority active source stops
+# publishing for `timeout` seconds, the next-highest source is allowed
+# through. The Xbox launch uses enable_button=2 so /cmd_vel_joy goes
+# completely silent the moment LT is released — the 0.3 s timeout then
+# elapses and Nav2 (or the web) regains the bus. If we ever drop the
+# dead-man, joy_node would publish all-zero Twists continuously and this
+# arbitration breaks.
+#
+# Why timeouts differ:
+#   joy 0.3 s    — humans expect snappy release; covers a single dropped
+#                  joy frame at 50 Hz without dropping out mid-drive.
+#   manual 0.5 s — web sends ~10 Hz from rosbridge; needs a wider window.
+#   auto 0.5 s   — Nav2's velocity_smoother runs at 20 Hz; matches the
+#                  vendor downstream twist_mux timeout.
+twist_mux:
+  ros__parameters:
+    topics:
+      joy:
+        topic: /cmd_vel_joy
+        timeout: 0.3
+        priority: 100
+      manual:
+        topic: /cmd_vel_manual
+        timeout: 0.5
+        priority: 50
+      auto:
+        topic: /cmd_vel_auto
+        timeout: 0.5
+        priority: 10

@@ -27,12 +27,25 @@ The orchestrator subscribes to /amcl_pose at t=0 and caches whatever
 the seed publishes — no race with the cascade. PREPARE.LOCALIZING
 clears immediately whenever a mission is started.
 
+Chassis command bus (twist_mux owns priority arbitration):
+
+    Xbox dead-man (LT held)  → /cmd_vel_joy     (prio 100)  ┐
+    Web HMI joystick widget  → /cmd_vel_manual  (prio  50)  ├─► twist_mux
+    Nav2 velocity_smoother   → /cmd_vel_auto    (prio  10)  ┘    │
+                                                                 ▼
+                                            /mirte_base_controller/cmd_vel_unstamped
+                                                                 │
+                                                  vendor twist_mux (prio 200)
+                                                                 ▼
+                                                         /cmd_vel → Gazebo
+
 After bringup:
     1. Open http://localhost:8090
     2. (one-time) In Settings → Drive, set cmd_vel topic to ``/cmd_vel_manual``
-       so the web joystick goes through the sim's twist_mux instead of
-       racing Nav2 on the controller topic.
-    3. Drive a small loop in the Teleop tab so slam_toolbox has scan context.
+       so the web joystick feeds twist_mux instead of racing Nav2 on the
+       controller topic.
+    3. Drive a small loop with the Xbox controller (hold LT, push left
+       stick) or the web Teleop tab so slam_toolbox has scan context.
     4. ``ros2 service call /mission/start lupin_msgs/srv/StartMission \\
          "{mission_type: 'InspectionMission', tag_sequence: ['1','2']}"``
 
@@ -76,6 +89,7 @@ def generate_launch_description() -> LaunchDescription:
     pkg_nav = get_package_share_directory('lupin_navigation')
     pkg_mission = get_package_share_directory('lupin_mission')
     pkg_web = get_package_share_directory('lupin_web')
+    pkg_hmi = get_package_share_directory('lupin_hmi')
     pkg_rosbridge = get_package_share_directory('rosbridge_server')
     pkg_slam = get_package_share_directory('slam_toolbox')
 
@@ -128,6 +142,15 @@ def generate_launch_description() -> LaunchDescription:
                         'in the source tree. Ctrl+S in RViz writes back to '
                         'that exact path so the layout survives colcon '
                         'build and can be committed to git.',
+        ),
+        # joystick
+        DeclareLaunchArgument(
+            'joystick', default_value='true',
+            description='Bring up Xbox controller teleop (joy_node + '
+                        'teleop_twist_joy + arm_teleop). Drive with the left '
+                        'stick while holding LT (dead-man); right stick + '
+                        'D-pad drives the arm. Set false on hosts without a '
+                        'controller — joy_node logs noisily otherwise.',
         ),
     ]
 
@@ -225,10 +248,23 @@ def generate_launch_description() -> LaunchDescription:
     ))
 
     # ── 4. Greenhouse bridge ────────────────────────────────────────────
+    # The world generator is run with --aisle-expand-y 1.5 so that Nav2
+    # can thread the E-W aisles between table rows. The bridge and the
+    # orchestrator must therefore consume the widened tag_locations JSON
+    # (not the upstream one inside mdp-greenhouse) or their tag coords
+    # disagree with the SDF. The widened file is committed under
+    # lupin_bringup/config/ and installed into share/.
+    widened_tag_locations = os.path.join(
+        get_package_share_directory('lupin_bringup'),
+        'config',
+        'tag_locations_widened.json',
+    )
+
     bridge = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_bridge, 'launch', 'greenhouse_bridge.launch.py'),
         ),
+        launch_arguments=[('tag_file', widened_tag_locations)],
     )
 
     # ── 5. Mission orchestrator ─────────────────────────────────────────
@@ -238,6 +274,7 @@ def generate_launch_description() -> LaunchDescription:
         ),
         launch_arguments=[
             ('dependency_timeout_s', LaunchConfiguration('dependency_timeout_s')),
+            ('tag_locations_file', widened_tag_locations),
         ],
     )
 
@@ -273,20 +310,73 @@ def generate_launch_description() -> LaunchDescription:
         condition=_when('rviz'),
     )
 
-    # ── 8b. cmd_vel_mux (Nav2 + manual → /mirte_base_controller/cmd_vel_unstamped) ─
-    # Nav2's velocity_smoother outputs to /cmd_vel_auto on purpose — see
-    # lupin_navigation/launch/nav2.launch.py. Without this mux, nothing
-    # subscribes to /cmd_vel_auto and Nav2 commands fall on the floor;
-    # symptom is controller_server logging "Failed to make progress" after
-    # ~10 s. The mux's output topic is the sim's twist_mux input (priority
-    # 200), which then forwards to /cmd_vel → gazebo_planar_move.
-    cmd_vel_mux = Node(
-        package='lupin_hmi', executable='cmd_vel_mux', name='cmd_vel_mux',
-        parameters=[{
-            'cmd_vel_topic': '/mirte_base_controller/cmd_vel_unstamped',
-            'use_sim_time': True,
-        }],
+    # ── 8b. twist_mux — priority arbitration on the chassis bus ─────────
+    # Three Twist sources are arbitrated by priority + timeout:
+    #
+    #   /cmd_vel_joy    Xbox dead-man teleop      (prio 100) ── operator
+    #   /cmd_vel_manual web HMI joystick widget   (prio  50) ── remote operator
+    #   /cmd_vel_auto   Nav2 velocity_smoother    (prio  10) ── autonomy
+    #
+    # Output goes to /mirte_base_controller/cmd_vel_unstamped, which is
+    # the input of the *vendor* twist_mux (priority 200), which then
+    # publishes /cmd_vel → gazebo_planar_move. We sit upstream of the
+    # vendor mux on purpose: it only de-conflicts the controller bus
+    # against /zero_cmd_vel; our mux is where Lupin's own arbitration
+    # lives.
+    #
+    # Replaces the old custom cmd_vel_mux node. Behaviour difference:
+    # twist_mux uses pure priority+timeout (no "manual takeover" window),
+    # so when LT is released or the web stops sending, the next priority
+    # gets the bus immediately after timeout.
+    twist_mux = Node(
+        package='twist_mux', executable='twist_mux', name='twist_mux',
+        parameters=[
+            os.path.join(pkg_hmi, 'config', 'twist_mux.yaml'),
+            {'use_sim_time': True},
+        ],
+        remappings=[
+            ('cmd_vel_out', '/mirte_base_controller/cmd_vel_unstamped'),
+        ],
         output='log',
+    )
+
+    # ── 8c. arm_sim_shim (HMI Hiwonder services → ros2_control) ────────
+    # The web HMI calls /io/servo/hiwonder/<joint>/set_angle_with_speed and
+    # /io/servo/hiwonder/enable_all_servos — Hiwonder serial-bus services
+    # that only exist on the real Mirte. In sim the arm and gripper are
+    # exposed via ros2_control instead (mirte_master_arm_controller and
+    # mirte_master_gripper_controller). This shim translates the HMI's
+    # calls onto the controllers and republishes /joint_states as
+    # ServoPosition feedback so the slider read-outs work. Sim-only — the
+    # real robot serves these names natively via mirte_telemetrix_cpp.
+    arm_sim_shim = Node(
+        package='lupin_hmi', executable='arm_sim_shim', name='arm_sim_shim',
+        parameters=[{'use_sim_time': True}],
+        output='log',
+    )
+
+    # ── 8d. Xbox controller teleop ─────────────────────────────────────
+    # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
+    # Arm joints driven directly from /joy by lupin_hmi.arm_teleop.
+    #
+    # Button layout (mecanum / omni base — both sticks used for drive):
+    #   Drive — hold LT (dead-man):
+    #     Left stick        → translation (fwd/back + strafe)
+    #     Right stick X     → rotation
+    #     RT                → turbo (~2× scale)
+    #   Arm:
+    #     LB + Right stick  → shoulder pan / lift
+    #     D-pad ←/→         → elbow ±
+    #     D-pad ↑/↓         → wrist ±
+    #
+    # When LT is released, /cmd_vel_joy goes silent and twist_mux times
+    # it out (0.3 s), handing the bus back to the web HMI or Nav2.
+    xbox_teleop = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_hmi, 'launch', 'xbox_teleop.launch.py'),
+        ),
+        launch_arguments=[('use_sim_time', 'true')],
+        condition=_when('joystick'),
     )
 
     # ── 8. AMCL pose seed (one-shot, fires alongside the orchestrator) ─
@@ -330,7 +420,9 @@ def generate_launch_description() -> LaunchDescription:
         rosbridge,
         web,
         seed,
-        cmd_vel_mux,
+        twist_mux,
+        xbox_teleop,
+        arm_sim_shim,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.
