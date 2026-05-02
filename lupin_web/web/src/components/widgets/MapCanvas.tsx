@@ -2,6 +2,7 @@ import { Check, Crosshair, Target } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useTagSightings, type TagSighting } from '@/lib/mission'
 import { useMapPose, useTopic, usePublisher } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useAnimationLoop, useThrottledRender } from '@/lib/throttle'
@@ -18,6 +19,13 @@ export function MapCanvas() {
   const planRef = useTopic<Path>(planTopic, ROS_TYPE.Path)
   const pose = useMapPose(mapFrame, baseFrame)
   const publishGoal = usePublisher<PoseStamped>(goalPoseTopic, ROS_TYPE.PoseStamped)
+  // Held in a ref so the sightings hook can read the latest robot pose at the
+  // moment a tag observation arrives without re-subscribing on every TF tick.
+  const poseRef = useRef(pose)
+  poseRef.current = pose
+  const sightings = useTagSightings(useCallback(() => poseRef.current, []))
+  const sightingsRef = useRef(sightings)
+  sightingsRef.current = sightings
   // Map and plan are read via refs (imperatively mutated). Tick the React tree
   // a couple of times per second so the header status string + pose readout
   // pick up new data without having to re-render every frame.
@@ -334,6 +342,12 @@ export function MapCanvas() {
       drawGoal(ctx, proj, { x: drag.from.x, y: drag.from.y, yaw }, 'hsl(38 95% 60%)')
     }
 
+    // Tag sightings — drawn under the robot chevron so the chevron is on top
+    // when the robot is sitting on top of the most recent tag.
+    for (const s of sightingsRef.current) {
+      drawTagMarker(ctx, proj, s)
+    }
+
     // Robot chevron
     if (pose) {
       drawRobot(ctx, proj, pose)
@@ -374,6 +388,12 @@ export function MapCanvas() {
           <span className="font-mono">{mapTopic}</span>
           <span>·</span>
           <span>{statusText}</span>
+          {sightings.length > 0 && (
+            <>
+              <span>·</span>
+              <span className="font-mono">tags · {sightings.length}</span>
+            </>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 min-h-[28rem] flex-col">
@@ -452,6 +472,46 @@ function drawMapGrid(
     ctx.lineTo(b.x, b.y)
     ctx.stroke()
   }
+  ctx.restore()
+}
+
+function drawTagMarker(
+  ctx: CanvasRenderingContext2D,
+  proj: { worldToCanvas: (x: number, y: number) => { x: number; y: number } },
+  sighting: TagSighting,
+) {
+  const c = proj.worldToCanvas(sighting.x, sighting.y)
+  // Outer glow ring (so the marker reads against busy SLAM costmaps)
+  ctx.beginPath()
+  ctx.arc(c.x, c.y, 8, 0, Math.PI * 2)
+  ctx.fillStyle = 'hsla(78, 90%, 58%, 0.18)'
+  ctx.fill()
+  // Crosshair-style square in chartreuse — visually distinct from the round
+  // goal pip and the robot chevron.
+  ctx.save()
+  ctx.translate(c.x, c.y)
+  ctx.rotate(Math.PI / 4)
+  ctx.fillStyle = 'hsl(78 95% 62%)'
+  ctx.strokeStyle = 'hsl(120 25% 6%)'
+  ctx.lineWidth = 1
+  ctx.fillRect(-4, -4, 8, 8)
+  ctx.strokeRect(-4, -4, 8, 8)
+  ctx.restore()
+  // Inline tag id label, offset up-right so it doesn't overlap the marker
+  // (canvas Y grows downward, so −10 is "above").
+  ctx.save()
+  ctx.font = "10px 'JetBrains Mono', ui-monospace, monospace"
+  const text = sighting.tagId
+  const m = ctx.measureText(text)
+  const padX = 3
+  const padY = 1.5
+  const lx = c.x + 8
+  const ly = c.y - 12
+  ctx.fillStyle = 'hsla(120, 25%, 6%, 0.78)'
+  ctx.fillRect(lx - padX, ly - 8 - padY, m.width + 2 * padX, 10 + 2 * padY)
+  ctx.fillStyle = 'hsl(78 95% 70%)'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText(text, lx, ly)
   ctx.restore()
 }
 
