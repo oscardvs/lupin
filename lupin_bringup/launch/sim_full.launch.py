@@ -93,6 +93,7 @@ def generate_launch_description() -> LaunchDescription:
     pkg_hmi = get_package_share_directory('lupin_hmi')
     pkg_rosbridge = get_package_share_directory('rosbridge_server')
     pkg_slam = get_package_share_directory('slam_toolbox')
+    pkg_perception = get_package_share_directory('lupin_perception')
 
     args = [
         # forwarded to greenhouse_sim — defaults match greenhouse_sim's own
@@ -275,6 +276,15 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments=[('tag_file', widened_tag_locations)],
     )
 
+    # ── 4b. Perception Pipeline ─────────────────────────────────────────
+    # Starts the AprilTag detector and annotator for bounding boxes.
+    # Relies purely on the Gazebo camera stream which starts at t=0.
+    perception = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_perception, 'launch', 'perception.launch.py'),
+        )
+    )
+
     # ── 5. Mission orchestrator ─────────────────────────────────────────
     mission = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -448,6 +458,7 @@ def generate_launch_description() -> LaunchDescription:
         # Phase 1 — fire-and-forget at t=0:
         greenhouse_sim,
         bridge,
+        perception,
         mission,
         twin,
         rosbridge,

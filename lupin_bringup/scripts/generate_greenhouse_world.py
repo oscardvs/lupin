@@ -40,7 +40,7 @@ from typing import Any
 
 DEFAULT_TAG_SIZE_M = 0.16          # square apriltag edge length
 DEFAULT_TAG_THICKNESS_M = 0.005    # plane thickness (so depth camera sees it)
-DEFAULT_TAG_HEIGHT_M = 0.40        # mid-height on the table side, below table top
+DEFAULT_TAG_HEIGHT_M = 0.20        # mid-height on the table side, below table top
 DEFAULT_TABLE_HEIGHT_M = 0.70      # typical greenhouse bench top height
 DEFAULT_WALL_HEIGHT_M = 2.0
 DEFAULT_WALL_THICKNESS_M = 0.10
