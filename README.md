@@ -225,6 +225,18 @@ The world's tag and table positions are derived from the
 so the Gazebo origin is the same as the bridge's coordinate frame —
 nav2, the bridge, and AprilTag detection all agree about positions.
 
+`lupin_perception` provides a lightweight AprilTag overlay helper for
+debugging camera perception. Launch it with:
+
+```bash
+ros2 launch lupin_perception perception.launch.py
+```
+
+This starts `apriltag_ros` plus the `tag_annotator` node, which subscribes
+to `/camera/image_raw` and `/detections` and publishes `/camera/image_raw_boxed`
+with drawn tag bounding boxes. It is useful when you want to verify AprilTag
+readings before wiring the bridge or mission stack.
+
 For autonomous navigation in this world, the greenhouse has no
 pre-built map — pair it with slam_toolbox + Nav2 in SLAM mode, see
 [Sim — Nav2 + slam_toolbox in a world without a saved map](#sim--nav2--slam_toolbox-in-a-world-without-a-saved-map)
@@ -556,7 +568,7 @@ expand once the chain is proven.
 | `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator. Single `~/get_tag_reading` service. Open-sourced separately at `lupin_greenhouse_ros/`. |
 | `lupin_hmi` | PS4 + keyboard teleop, `cmd_vel_mux` for arbitration between manual override / Nav2 / web. |
 | `lupin_web` | Browser HMI on `:8090` — Vite + React + shadcn/ui. Tabs: Teleop, Arm, Voice, Cameras, Telemetry, Logs, Map. Talks to rosbridge on `:9090`. The Voice tab is a Gemini Live agent with a 14-tool surface (`drive`, `nav_goto`, `nav_forward`, `rotate`, `arm_preset`, `query_state`, `engage_estop`, …) that drives the robot in natural language. |
-| `lupin_perception` | Flower detection, vision pipelines (in progress). |
+| `lupin_perception` | Vision package: AprilTag overlay and future flower detection pipelines. Includes `perception.launch.py`, `tag_annotator`, and `config/tags.yaml`. |
 | `docs/` | Architecture diagrams, design notes. |
 
 ## Contributing

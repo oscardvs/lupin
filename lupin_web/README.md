@@ -38,7 +38,7 @@ gear · permanent E-STOP) wraps seven tabs:
 - **Map** — live SLAM occupancy grid (subscribes `/map`), robot pose via
   `ROSLIB.TFClient` against the `map → base_link` transform, latest Nav2
   plan (`/plan`) as a chartreuse polyline, and click-and-drag to publish a
-  `geometry_msgs/PoseStamped` to `/goal_pose`. AprilTag overlay still TODO.
+  `geometry_msgs/PoseStamped` to `/goal_pose`. AprilTag overlay on the map view still TODO.
 
 ## Engineering notes
 
@@ -249,7 +249,7 @@ already has a code seam to swap in the token-fetching client.
 
 ## What's not in here yet
 
-- AprilTag overlay on the camera stream
+- AprilTag overlay on the in-app Map view
 - Voice agent: ephemeral-token broker, persona / wake-word, multi-turn memory
 - Voice tool gaps awaiting backend: `scan_apriltags`, `detect_flowers`,
   `get_camera_frame`, `record_observation` — deliberately not stubbed; see
