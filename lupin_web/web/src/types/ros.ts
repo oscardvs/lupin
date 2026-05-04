@@ -357,3 +357,15 @@ export function quatToEuler(q: Quaternion): { roll: number; pitch: number; yaw: 
 
   return { roll, pitch, yaw }
 }
+
+// --- Added for AprilTag Overlays ---
+export interface StdMsgsString {
+  data: string;
+}
+
+export interface TagDetection {
+  id: number;
+  corners: [[number, number], [number, number], [number, number], [number, number]];
+  dist: number;
+}
+

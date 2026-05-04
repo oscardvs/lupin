@@ -21,9 +21,9 @@ slam_toolbox:
     throttle_scans: 1
     transform_publish_period: 0.02
     map_update_interval: 5.0
-    resolution: 0.10
+    resolution: 0.05
     min_laser_range: 0.25        # Sim lidar reports 0 m hits inside the robot body; filter them
-    max_laser_range: 8.0        # RPLidar A1 effective max
+    max_laser_range: 12.0        # RPLidar A1 effective max
     minimum_time_interval: 0.5
     transform_timeout: 0.2
     tf_buffer_duration: 30.

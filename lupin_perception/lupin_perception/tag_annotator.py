@@ -47,6 +47,8 @@ from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from scipy.spatial.transform import Rotation as R
+import json
+from std_msgs.msg import String
 
 class FinalTagSystem(Node):
     """
@@ -109,8 +111,12 @@ class FinalTagSystem(Node):
             image_qos
         )
         
+        # DEPRECATED: We will publish annotated frames directly to the web interface via JSON metadata.
         # Publish annotated frames (with bounding boxes and labels)
-        self.image_pub = self.create_publisher(Image, '/camera/image_raw_boxed', 2)
+        # self.image_pub = self.create_publisher(Image, '/camera/image_raw_boxed', 2)
+
+        # main publishing for the bounding boxes in video stream
+        self.metadata_pub = self.create_publisher(String, '/camera/tag_detections_json', 2)
         
         self.get_logger().info("Tag annotator online: AprilTag detection active")
 
@@ -145,6 +151,8 @@ class FinalTagSystem(Node):
             text_font = cv2.FONT_HERSHEY_DUPLEX 
             text_scale = 0.4                 # Font size
             label_offset = 15                # Pixels above tag for text label
+
+            detection_data = [] # List to hold metadata for all detected tags in this frame
             
             # Process each detected tag
             if ids is not None:
@@ -187,28 +195,40 @@ class FinalTagSystem(Node):
                         
                         # Extract distance (Z-component of translation)
                         distance = tvec[2][0]
+                        
+                        # pack detection data into dictionary for JSON stuff
+                        detection_data.append({
+                            "id": int(tag_id),
+                            "corners": c.tolist(),  # Convert numpy array to list for JSON serialization
+                            "dist": float(distance)
+                        })
 
-                        # Create label with tag ID and distance
-                        label_text = f"Tag: {tag_id} | Dist: {distance:.2f}m"
+                        # DEPRECATED: We will publish annotated frames directly to the web interface via JSON metadata.
+                        # # Create label with tag ID and distance
+                        # label_text = f"Tag: {tag_id} | Dist: {distance:.2f}m"
                         
-                        # Calculate text position (above the top-left corner of tag)
-                        top_left = tuple(c[0])
-                        text_pos = (top_left[0], top_left[1] - label_offset)
+                        # # Calculate text position (above the top-left corner of tag)
+                        # top_left = tuple(c[0])
+                        # text_pos = (top_left[0], top_left[1] - label_offset)
                         
-                        # Draw semi-opaque background for text readability
-                        # Black drop shadow (offset)
-                        cv2.putText(cv_image, label_text, (text_pos[0]+2, text_pos[1]+2), 
-                                    text_font, text_scale, (0, 0, 0), 2)
-                        # Main text
-                        cv2.putText(cv_image, label_text, text_pos, 
-                                    text_font, text_scale, text_color, 1)
+                        # # Draw semi-opaque background for text readability
+                        # # Black drop shadow (offset)
+                        # cv2.putText(cv_image, label_text, (text_pos[0]+2, text_pos[1]+2), 
+                        #             text_font, text_scale, (0, 0, 0), 2)
+                        # # Main text
+                        # cv2.putText(cv_image, label_text, text_pos, 
+                        #             text_font, text_scale, text_color, 1)
                 
-
+            # DEPRECATED: We will publish annotated frames directly to the web interface via JSON metadata.
             # Publish annotated frame
-            out_msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
-            out_msg.header = image_msg.header
-            self.image_pub.publish(out_msg)
+            # out_msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
+            # out_msg.header = image_msg.header
+            # self.image_pub.publish(out_msg)
             
+            json_msg = String()
+            json_msg.data = json.dumps(detection_data)
+            self.metadata_pub.publish(json_msg)
+
         except Exception as e:
             self.get_logger().error(f"Processing error: {e}")
 
