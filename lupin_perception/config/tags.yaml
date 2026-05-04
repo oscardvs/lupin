@@ -3,15 +3,25 @@ apriltag_node:
     image_transport: "raw"
     family: "36h11"
     
-    # Whitelist IDs 0 through 21 (Total of 22 tags)
+    # FIX 1: Enable sim time so the timestamps match Gazebo's clock
+    use_sim_time: True 
+    
+    qos_overrides:
+      image_rect:
+        subscription:
+          reliability: "reliable" 
+      camera_info:
+        subscription:
+          reliability: "reliable"
+          
+    # Whitelist IDs 0 through 21
     tag:
       ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
       sizes: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     
     detector:
       threads: 1
-      decimate: 1.0
+      decimate: 1.5 
       blur: 0.0
       refine: true
       debug: true
-

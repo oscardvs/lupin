@@ -13,23 +13,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         Node(
-            package='apriltag_ros',
-            executable='apriltag_node',
-            name='apriltag_node',
-            parameters=[config],
-            remappings=[
-                # Map standard detector topics to MIRTE's camera
-                ('image_rect', '/camera/image_raw'),
-                ('camera_info', '/camera/camera_info'),
-                ('tag_detections_image', '/camera/image_raw_boxed')
-            ],
-            output='screen'
-        ),
-
-        Node(
             package='lupin_perception',
             executable='tag_annotator',
             name='tag_annotator',
+            parameters=[{'use_sim_time': True}],
             output='screen'
         )
     ])
