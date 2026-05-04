@@ -1,3 +1,12 @@
+# DEPRECATED: Legacy configuration for apriltag_ros (no longer used)
+#
+# This file was previously used to configure the external apriltag_ros package.
+# The perception system now uses a custom tag_annotator node with OpenCV's native
+# ArUco detector. Camera calibration and detector parameters are hard-coded in
+# tag_annotator.py for direct control and better maintainability.
+#
+# File kept for reference/historical purposes only.
+
 apriltag_node:
   ros__parameters:
     image_transport: "raw"
