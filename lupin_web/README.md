@@ -29,7 +29,8 @@ gear · permanent E-STOP) wraps seven tabs:
   named-location memory, telemetry reads, and software E-stop. Mock session
   runs without an API key. See **Voice assistant** below.
 - **Cameras** — MJPEG stream from `web_video_server` with FPS counter,
-  reload, fullscreen, friendly placeholder when no stream.
+  reload, fullscreen, friendly placeholder when no stream. The view can also
+  overlay AprilTag detections using JSON metadata from `/camera/tag_detections_json`.
 - **Telemetry** — Lidar canvas (top-down), IMU (roll/pitch/yaw + ω bars),
   Odometry pose+twist, Battery + voltage sparkline, Arm joints, System
   placeholder.

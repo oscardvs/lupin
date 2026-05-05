@@ -11,7 +11,7 @@ The perception system has been updated to use **OpenCV's native ArUco detector**
 - **`tag_annotator` node**: Custom AprilTag detection, 3D pose estimation, and visualization
   - Subscribes to: `/camera/image_raw`
   - Publishes:
-    - `/camera/image_raw_boxed`: Annotated video stream with tag overlays
+    - `/camera/tag_detections_json`: JSON metadata for AprilTag overlays in the web UI
     - TF transforms for each detected tag (frame: `tag_<id>`)
   - Broadcasts 3D poses using TF2 with perspective-n-point (PnP) solver
 
@@ -22,9 +22,9 @@ The perception system has been updated to use **OpenCV's native ArUco detector**
    - Calculates rotation vector and translation vector
    - Broadcasts TF transforms with proper orientation
 3. **Visualizes Results**:
-   - Draws bounding boxes around detected tags
-   - Displays tag ID and distance on annotated video
-   - Publishes annotated frames for debugging and visualization
+- Draws bounding boxes around detected tags locally
+- Publishes tag ID, corner coordinates, and distance as JSON for the web overlay
+- Uses the live camera MJPEG stream plus JSON metadata instead of a separate boxed image stream
 4. **Provides Real-time TF Data** for downstream tasks (navigation, manipulation, etc.)
 
 ## Launching
@@ -99,7 +99,7 @@ Visualization & Publication
 1. **Check published topics**:
    ```bash
    ros2 topic list | grep -E "(camera|tag)"
-   ros2 topic echo /camera/image_raw_boxed
+   ros2 topic echo /camera/tag_detections_json
    ```
 
 2. **Verify TF transforms**:

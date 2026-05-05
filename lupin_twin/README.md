@@ -64,7 +64,7 @@ expose the QoS wrinkle, so this only bites CLI debugging.
 1. Orchestrator scans tag *N*, calls bridge, builds an `Observation`
    with `STATUS_OK` plus `tag_pose_in_map` populated from the latest
    AMCL snapshot. v1 = robot's standoff pose; v2 hardware =
-   AprilTag's pose from `apriltag_ros`.
+   AprilTag's pose from the perception pipeline.
 2. Twin's subscriber thread records the observation in
    `TwinStateStore` — pose cached from the *first* OK observation per
    tag (tags don't move; re-stamping would jitter the HMI marker).

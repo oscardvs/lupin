@@ -232,10 +232,10 @@ debugging camera perception. Launch it with:
 ros2 launch lupin_perception perception.launch.py
 ```
 
-This starts `apriltag_ros` plus the `tag_annotator` node, which subscribes
-to `/camera/image_raw` and `/detections` and publishes `/camera/image_raw_boxed`
-with drawn tag bounding boxes. It is useful when you want to verify AprilTag
-readings before wiring the bridge or mission stack.
+This starts the `tag_annotator` node, which subscribes to `/camera/image_raw`
+and publishes `/camera/tag_detections_json` with AprilTag corner and distance
+metadata. The web HMI overlays AprilTag boxes on the live MJPEG camera stream
+instead of relying on a separate boxed-image topic.
 
 For autonomous navigation in this world, the greenhouse has no
 pre-built map — pair it with slam_toolbox + Nav2 in SLAM mode, see

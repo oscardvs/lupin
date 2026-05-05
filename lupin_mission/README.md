@@ -171,9 +171,9 @@ package — see `lupin_msgs/srv/ConfirmTag.srv` for the contract a future
 detector implementation must satisfy.
 
 This repository already includes `lupin_perception`, a small vision package
-that launches `apriltag_ros` plus the `tag_annotator` node to publish
-`/camera/image_raw_boxed` with AprilTag detections drawn for debugging.
-The `/perception/confirm_tag` gate is still a future integration point.
+that launches the `tag_annotator` node. It publishes `/camera/tag_detections_json`
+with AprilTag metadata for debugging overlays, rather than relying on a
+separate boxed-image topic. The `/perception/confirm_tag` gate is still a future integration point.
 
 Sim leaves the gate off (`false`) and the bridge oracle path is used directly.
 
