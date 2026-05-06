@@ -89,8 +89,14 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   rosUrl: '',
-  // real Mirte's controller listens on the stamped Twist topic
-  cmdVelTopic: '/mirte_base_controller/cmd_vel',
+  // HMI publishes to twist_mux's "manual" input (priority 50). twist_mux on
+  // the robot (lupin-onboard.service) arbitrates against /cmd_vel_joy
+  // (Xbox, prio 100) and /cmd_vel_auto (Nav2, prio 10), then writes the
+  // winner to /mirte_base_controller/cmd_vel. Bypassing twist_mux by
+  // publishing directly to the controller topic creates a multi-publisher
+  // race against the laptop-side Nav2 — the joystick wins because it
+  // publishes faster, but only by accident.
+  cmdVelTopic: '/cmd_vel_manual',
   cmdVelType: 'geometry_msgs/msg/Twist',
   // The MIRTE telemetrix node publishes IMU on /io/imu/movement/data;
   // the canonical /imu/data has no publisher on the real robot.
