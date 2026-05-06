@@ -14,6 +14,11 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
         # Add this line to copy your YAML file!
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        # systemd unit + install script for the robot-side gripper bridge.
+        # Operator runs `sudo lupin_hmi/scripts/install-systemd.sh` from the
+        # source tree on the robot — mirrors the lupin_web pattern.
+        (os.path.join('share', package_name, 'systemd'), glob('systemd/*.service')),
+        (os.path.join('share', package_name, 'scripts'), glob('scripts/*.sh')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
