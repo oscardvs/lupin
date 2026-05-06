@@ -62,6 +62,15 @@ export interface Settings {
    * way — those are real safety events, not focus changes.
    */
   estopAutoOnFocusLoss: boolean
+  /**
+   * Mirte-247264 wheel polarity calibration. When true, joystick / voice
+   * cmd_vel and map-click goal coordinates are flipped 180° about Z before
+   * publishing, and the rendered map view is rotated 180° to match physical
+   * orientation. The internal Nav2 / SLAM frame is left untouched (it's
+   * already self-consistent — see project_hardware_axis_inversion). Default
+   * true on hardware; sim sets false.
+   */
+  polarityInvertHmi: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -120,6 +129,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   debugPublish: false,
   estopAutoOnFocusLoss: true,
+  polarityInvertHmi: true,
 }
 
 function defaultRosUrl(): string {

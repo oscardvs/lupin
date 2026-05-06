@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { invertTwist } from '@/lib/polarity'
 import { useRos, usePublisher } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import type { Twist } from '@/types/ros'
@@ -46,7 +47,7 @@ const EStopContext = createContext<EStopValue>({
 const ESTOP_HEARTBEAT_HZ = 10
 
 export function EStopProvider({ children }: { children: ReactNode }) {
-  const [{ cmdVelTopic, cmdVelType, estopAutoOnFocusLoss }] = useSettings()
+  const [{ cmdVelTopic, cmdVelType, estopAutoOnFocusLoss, polarityInvertHmi }] = useSettings()
   const { status } = useRos()
   const publishTwist = usePublisher<Twist>(cmdVelTopic, cmdVelType)
 
@@ -108,9 +109,9 @@ export function EStopProvider({ children }: { children: ReactNode }) {
   const publishCmdVel = useCallback(
     (t: Twist) => {
       if (active) return // gate everything: nothing else publishes while e-stop is on
-      publishTwist(t)
+      publishTwist(invertTwist(t, polarityInvertHmi))
     },
-    [active, publishTwist],
+    [active, publishTwist, polarityInvertHmi],
   )
 
   const value = useMemo<EStopValue>(
