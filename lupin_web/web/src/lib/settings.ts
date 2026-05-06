@@ -102,10 +102,14 @@ export const DEFAULT_SETTINGS: Settings = {
   // /io/power/power_watcher is what the telemetrix node actually publishes.
   batteryTopic: '/io/power/power_watcher',
   rosoutTopic: '/rosout',
-  // Sim greenhouse_sim publishes the Astra Pro Plus plugin on /camera/image_raw.
-  // Real Mirte: override via Settings → Topics if your camera node uses a
-  // different name (e.g. /camera/color/image_raw on a stock Orbbec stack).
-  cameraTopic: '/camera/image_raw',
+  // Real Mirte: hit the Lupin-throttled republish (typically 1 Hz) instead of
+  // the full-rate vendor topic /camera/color/image_raw, so web_video_server
+  // only encodes the slow stream and the Pi keeps headroom for rosbridge
+  // during Nav2 sessions. The republisher is the lupin-cameras-throttle
+  // systemd service on the robot — see lupin_bringup/config/cameras.yaml to
+  // tune rates or enable depth. Sim branch overrides this default to the
+  // greenhouse plugin's /camera/image_raw.
+  cameraTopic: '/lupin/camera/color/image_raw',
   webVideoServerUrl: '',
   mapTopic: '/map',
   planTopic: '/plan',

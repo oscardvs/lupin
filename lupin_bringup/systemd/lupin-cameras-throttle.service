@@ -1,0 +1,34 @@
+[Unit]
+Description=Lupin camera throttle pipeline (republishes vendor cameras at low FPS to /lupin/...)
+Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
+After=mirte-ros.service network-online.target
+Wants=mirte-ros.service network-online.target
+# We subscribe to vendor /camera/* and /gripper_camera/* — those publishers
+# only exist while mirte-ros is up. If mirte-ros restarts we want to come up
+# with it.
+PartOf=mirte-ros.service
+
+[Service]
+Type=simple
+User=mirte
+Group=mirte
+# Source ROS + the workspace overlays so `ros2 launch` resolves the package
+# share and topic_tools is on PATH. mirte_ws is sourced for vendor message
+# types (rosbridge needs them too — same pattern as lupin-web.service).
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/mirte/mirte_ws/install/setup.bash && source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; exec ros2 launch lupin_bringup cameras_throttle.launch.py'
+# If the launch dies (vendor camera topic disappeared mid-run, etc.) bring it
+# back so we don't leave stale Lupin topics in DDS discovery.
+Restart=on-failure
+RestartSec=4
+# Tiny — topic_tools throttle nodes are featherweight.
+MemoryMax=128M
+# Hardening.
+ProtectSystem=strict
+PrivateTmp=true
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lupin-cameras-throttle
+
+[Install]
+WantedBy=multi-user.target

@@ -22,6 +22,11 @@ const PINNED_LABELS: Record<string, string> = {
   '/camera/depth/image_raw': 'Depth',
   '/camera/gripper/image_raw': 'Gripper',
   '/camera/ir/image_raw': 'IR',
+  // Lupin-throttled republishes (lupin_bringup/cameras_throttle.launch.py).
+  // Used as defaults on hardware to keep web_video_server load light.
+  '/lupin/camera/color/image_raw': 'RGB',
+  '/lupin/camera/depth/image_raw': 'Depth',
+  '/lupin/gripper_camera/image_raw': 'Gripper',
 }
 
 function deriveLabel(topic: string): string {

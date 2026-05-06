@@ -297,7 +297,12 @@ local_costmap:
         # keeps the halo thin so MPPI still has drivable space mid-aisle.
         cost_scaling_factor: 5.0
         inflation_radius: 0.30
-      always_send_full_costmap: True
+      # Was True — sent the full costmap grid every publish, even unchanged
+      # cells. Nav2 supports incremental updates and downstream consumers
+      # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on
+      # KRR-house-scale maps, which keeps the Pi-side rosbridge JSON encoder
+      # below the wedge threshold (project_rosbridge_wedge memory).
+      always_send_full_costmap: False
 
 global_costmap:
   global_costmap:
@@ -336,7 +341,12 @@ global_costmap:
         # aisle width forces a thinner halo than KRR house's open rooms.
         cost_scaling_factor: 5.0
         inflation_radius: 0.30
-      always_send_full_costmap: True
+      # Was True — sent the full costmap grid every publish, even unchanged
+      # cells. Nav2 supports incremental updates and downstream consumers
+      # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on
+      # KRR-house-scale maps, which keeps the Pi-side rosbridge JSON encoder
+      # below the wedge threshold (project_rosbridge_wedge memory).
+      always_send_full_costmap: False
 
 map_server:
   ros__parameters:
