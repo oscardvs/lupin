@@ -107,8 +107,17 @@ export class MicCapture {
   private analyser: AnalyserNode | null = null
   private scratch = new Float32Array(1024)
 
-  /** Request mic, set up the worklet, and start delivering base64 PCM-16 frames at 16 kHz. */
-  async start(onFrame: (b64Pcm16: string) => void): Promise<void> {
+  /**
+   * Request mic, set up the worklet, and start delivering base64 PCM-16 frames at 16 kHz.
+   *
+   * `onLevel` is optional and called once per audio frame (~every FRAME_MS) with
+   * the frame's RMS in [0, 1] and the frame duration in ms. The voice session
+   * uses it to drive the speech endpointer so the mic auto-closes on silence.
+   */
+  async start(
+    onFrame: (b64Pcm16: string) => void,
+    onLevel?: (rms: number, frameMs: number) => void,
+  ): Promise<void> {
     if (this.workletNode) return // already running
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
@@ -143,6 +152,13 @@ export class MicCapture {
           ? float
           : downsample(float, ctx.sampleRate, INPUT_SAMPLE_RATE)
       onFrame(int16ToBase64(float32ToPcm16(at16k)))
+      if (onLevel) {
+        let sum = 0
+        for (let i = 0; i < at16k.length; i++) sum += at16k[i] * at16k[i]
+        const rms = Math.sqrt(sum / at16k.length)
+        const frameMs = (at16k.length / INPUT_SAMPLE_RATE) * 1000
+        onLevel(rms, frameMs)
+      }
     }
     source.connect(node)
     // Tap the same source into an analyser for the UI orb. The analyser is a
