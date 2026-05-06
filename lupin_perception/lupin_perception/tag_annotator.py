@@ -25,7 +25,7 @@ Topics:
     Subscriptions:
         - /camera/image_raw (sensor_msgs/Image): Input camera stream
     Publications:
-        - /camera/image_raw_boxed (sensor_msgs/Image): Annotated video with tag overlays
+        - /camera/tag_detections_json (std_msgs/String): JSON metadata for AprilTag overlays
         - /tf (tf2_msgs/TFMessage): TF transforms for each detected tag
 
 Transforms:

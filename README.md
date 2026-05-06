@@ -269,6 +269,15 @@ detector find anything" — it's the textures. See the TODO inside
 `_render_tag` in `scripts/generate_greenhouse_world.py` for the
 swap-in path.
 
+To make the AprilTag models available to Gazebo, run the setup script once:
+
+```bash
+cd ~/ros2_ws/src/lupin
+./lupin_bringup/setup_apriltag_models.sh
+```
+
+This links the `lupin_bringup/models/apriltags` directory into Gazebo's model search path.
+
 ### Greenhouse sensor bridge (`lupin_greenhouse_bridge`)
 
 Environmental sensing in this project is **not** simulated in Gazebo —

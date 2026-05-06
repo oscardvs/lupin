@@ -1,0 +1,390 @@
+material AprilTag/Tag36h11_0
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00000.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_1
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00001.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_2
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00002.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_3
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00003.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_4
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00004.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_5
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00005.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_6
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00006.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_7
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00007.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_8
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00008.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_9
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00009.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_10
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00010.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_11
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00011.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_12
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00012.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_13
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00013.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_14
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00014.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_15
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00015.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_16
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00016.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_17
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00017.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_18
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00018.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_19
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00019.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_20
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00020.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_21
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00021.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_22
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00022.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_23
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00023.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_24
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00024.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_25
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00025.png
+        filtering none
+      }
+    }
+  }
+}
