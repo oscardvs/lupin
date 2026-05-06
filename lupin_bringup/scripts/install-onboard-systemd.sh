@@ -49,17 +49,23 @@ if systemctl list-unit-files "${LEGACY}.service" 2>/dev/null | grep -q "$LEGACY"
 fi
 
 # Pre-flight: confirm the lupin_hmi executables exist; otherwise the service
-# will boot-loop with cryptic 'package not found' messages.
-if ! command -v ros2 >/dev/null; then
-  echo "error: ros2 not on PATH for root. Try sourcing /opt/ros/humble/setup.bash." >&2
-  exit 1
+# will boot-loop with cryptic 'package not found' messages. Best-effort —
+# sudo strips the user's environment so we have to source ROS ourselves to
+# even reach `ros2`. If sourcing fails we just skip the check.
+if [[ -f /opt/ros/humble/setup.bash ]]; then
+  set +u
+  source /opt/ros/humble/setup.bash 2>/dev/null || true
+  source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null || true
+  set -u
 fi
-for exe in arm_preset_server gripper_action_bridge; do
-  if ! ros2 pkg executables lupin_hmi 2>/dev/null | grep -q "lupin_hmi $exe"; then
-    echo "warning: lupin_hmi $exe not found on this image." >&2
-    echo "         Did you 'colcon build --packages-up-to lupin_hmi' on the robot?" >&2
-  fi
-done
+if command -v ros2 >/dev/null; then
+  for exe in arm_preset_server gripper_action_bridge; do
+    if ! ros2 pkg executables lupin_hmi 2>/dev/null | grep -q "lupin_hmi $exe"; then
+      echo "warning: lupin_hmi $exe not found on this image." >&2
+      echo "         Did you 'colcon build --packages-up-to lupin_hmi' on the robot?" >&2
+    fi
+  done
+fi
 
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 systemctl daemon-reload
