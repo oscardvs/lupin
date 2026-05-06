@@ -43,8 +43,22 @@ export interface Settings {
   geminiModel: string
   /** BCP-47 language code hint sent to the model (e.g. 'en-US', 'nl-NL'). */
   voiceLanguage: string
-  /** When true, mic only opens while the user holds the button. False = open mic toggle. */
+  /** When true, mic only opens while the user engages the button. False = open mic toggle. */
   voicePushToTalk: boolean
+  /**
+   * When true, the speech endpointer auto-closes the mic on a sustained pause —
+   * so the agent stops listening once the user finishes their sentence. Applies
+   * in both push-to-talk and hands-free modes.
+   */
+  voiceVadEnabled: boolean
+  /** Continuous silence (ms) below voiceVadEndThreshold that ends an utterance. */
+  voiceVadEndHoldMs: number
+  /** RMS in [0, 1] that must be sustained to count as speech-start. */
+  voiceVadStartThreshold: number
+  /** RMS in [0, 1] below which silence accumulates toward speech-end. */
+  voiceVadEndThreshold: number
+  /** Hard cap on a single utterance — closes the mic even if speech is still detected. */
+  voiceVadMaxUtteranceMs: number
   /** Hard cap on |linear.x| / |linear.y| the voice agent can request, m/s. */
   voiceMaxLinearMps: number
   /** Hard cap on |angular.z| the voice agent can request, rad/s. */
@@ -105,6 +119,11 @@ export const DEFAULT_SETTINGS: Settings = {
   geminiModel: 'models/gemini-3.1-flash-live-preview',
   voiceLanguage: 'en-US',
   voicePushToTalk: true,
+  voiceVadEnabled: true,
+  voiceVadEndHoldMs: 800,
+  voiceVadStartThreshold: 0.02,
+  voiceVadEndThreshold: 0.012,
+  voiceVadMaxUtteranceMs: 15000,
   voiceMaxLinearMps: 0.3,
   voiceMaxAngularRps: 0.8,
   voiceSystemPrompt: [

@@ -18,6 +18,7 @@ import { GeminiLiveClient } from './gemini-live'
 import { runMockSession, type MockHandle } from './mock'
 import { ROBOT_TOOL_DECLARATIONS, clampNumber, type ToolName } from './tools'
 import type { ToolInvocation, TranscriptTurn, VoiceStatus } from './types'
+import { SpeechEndpointer } from './vad'
 
 import { useEStop } from '@/lib/estop'
 import { invertTwist } from '@/lib/polarity'
@@ -48,8 +49,9 @@ export interface VoiceSession {
   start: () => Promise<void>
   /** Tear everything down. */
   stop: () => Promise<void>
-  /** Push-to-talk: while held, mic streams. */
+  /** Open the mic for an utterance. The speech endpointer auto-ends it on silence. */
   beginUtterance: () => Promise<void>
+  /** Close the mic. Called by the user (tap again) or by the endpointer. */
   endUtterance: () => Promise<void>
   toggleSpeakerMuted: () => void
   /** Send a typed prompt (used by the text fallback and during dev). */
@@ -90,6 +92,21 @@ export function useVoiceSession(): VoiceSession {
   const micRef = useRef<MicCapture | null>(null)
   const playerRef = useRef<AudioPlayer | null>(null)
   const mockRef = useRef<MockHandle | null>(null)
+  const vadRef = useRef<SpeechEndpointer | null>(null)
+  // True between the moment beginUtterance starts opening the mic and the
+  // moment that promise settles. Dedupes double-taps and tells endUtterance to
+  // back off until the start completes.
+  const startingRef = useRef<boolean>(false)
+  // endUtterance is async + needs to read latest settings, so the VAD callback
+  // dispatches through this ref rather than capturing a stale closure.
+  const endUtteranceRef = useRef<(reason?: 'silence' | 'max-duration') => void>(() => {})
+  // Mirrors settings.voicePushToTalk so the VAD's onSpeechEnd callback reads
+  // the live value at fire time — toggling the mode mid-session shouldn't
+  // strand a stale `mode` baked into the endpointer's constructor.
+  const voicePushToTalkRef = useRef(settings.voicePushToTalk)
+  useEffect(() => {
+    voicePushToTalkRef.current = settings.voicePushToTalk
+  }, [settings.voicePushToTalk])
   const driveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Live multiplier on the voiceMax* speed caps. Adjusted by set_speed_cap, not
   // persisted — per-session by design so a "go slower" command doesn't bleed
@@ -453,6 +470,47 @@ export function useVoiceSession(): VoiceSession {
 
   /** ───────────────────── Live mode wiring ───────────────────── */
 
+  // True only during a VAD-detected speech burst. Gates frame forwarding so a
+  // hands-free session doesn't pump room tone to the server, and so the orb
+  // shows "listening" only while someone is actually talking.
+  const streamingRef = useRef<boolean>(false)
+
+  const sendFrame = useCallback((b64: string) => {
+    if (!streamingRef.current) return
+    liveRef.current?.sendAudio(b64)
+  }, [])
+
+  // Build a fresh endpointer for the current utterance. Mode is decided at
+  // fire time from voicePushToTalkRef, not at construction, so toggling the
+  // setting mid-session can't leave a stale closure misbehaving.
+  const buildEndpointer = useCallback((): SpeechEndpointer => {
+    return new SpeechEndpointer({
+      startThreshold: settings.voiceVadStartThreshold,
+      endThreshold: settings.voiceVadEndThreshold,
+      endHoldMs: settings.voiceVadEndHoldMs,
+      maxUtteranceMs: settings.voiceVadMaxUtteranceMs,
+      onSpeechStart: () => {
+        streamingRef.current = true
+        setStatus((s) => (s === 'ready' || s === 'speaking' ? 'listening' : s))
+      },
+      onSpeechEnd: () => {
+        streamingRef.current = false
+        if (voicePushToTalkRef.current) {
+          // Tear the mic down — the user has finished an utterance.
+          void endUtteranceRef.current('silence')
+        } else {
+          // Hands-free: keep the mic open but stop forwarding frames.
+          setStatus((s) => (s === 'listening' ? 'thinking' : s))
+        }
+      },
+    })
+  }, [
+    settings.voiceVadStartThreshold,
+    settings.voiceVadEndThreshold,
+    settings.voiceVadEndHoldMs,
+    settings.voiceVadMaxUtteranceMs,
+  ])
+
   const buildSystemInstruction = useCallback((): string => {
     const names = Object.keys(settings.voiceNamedLocations)
     const locLine = names.length
@@ -533,12 +591,26 @@ export function useVoiceSession(): VoiceSession {
     client.open()
 
     if (!settings.voicePushToTalk) {
-      // Hands-free: open mic immediately and keep it open.
-      micRef.current = new MicCapture()
+      // Hands-free: open mic immediately and keep it open. VAD gates streaming
+      // so we only forward audio while the user is actually speaking — the
+      // server stays quiet during silence and the UI status flips back to
+      // "thinking/ready" instead of perpetually "listening".
+      const mic = new MicCapture()
+      const vad = settings.voiceVadEnabled ? buildEndpointer() : null
+      streamingRef.current = settings.voiceVadEnabled ? false : true
       try {
-        await micRef.current.start((frame) => client.sendAudio(frame))
+        await mic.start(
+          (frame) => sendFrame(frame),
+          (rms, frameMs) => vadRef.current?.feed(rms, frameMs),
+        )
+        // Commit only after start succeeds, so a failure-during-getUserMedia
+        // can't leave a half-started mic stuck in micRef.
+        micRef.current = mic
+        vadRef.current = vad
         setMicActive(true)
       } catch (e) {
+        await mic.stop().catch(() => {})
+        streamingRef.current = false
         setStatus('error')
         setErrorDetail(`mic: ${e instanceof Error ? e.message : String(e)}`)
       }
@@ -550,9 +622,12 @@ export function useVoiceSession(): VoiceSession {
     settings.geminiModel,
     settings.voiceLanguage,
     settings.voicePushToTalk,
+    settings.voiceVadEnabled,
+    buildEndpointer,
     buildSystemInstruction,
     dispatchTool,
     pushTranscript,
+    sendFrame,
     speakerMuted,
   ])
 
@@ -577,6 +652,8 @@ export function useVoiceSession(): VoiceSession {
       liveRef.current.close()
       liveRef.current = null
     }
+    vadRef.current = null
+    streamingRef.current = false
     setMicActive(false)
     setStatus('idle')
   }, [])
@@ -584,25 +661,58 @@ export function useVoiceSession(): VoiceSession {
   const beginUtterance = useCallback(async () => {
     if (!liveRef.current && !mockRef.current) return
     if (!settings.voicePushToTalk) return
-    if (!micRef.current) micRef.current = new MicCapture()
+    if (micRef.current || startingRef.current) return // already capturing or mid-open
+    startingRef.current = true
+    const mic = new MicCapture()
+    const vad = settings.voiceVadEnabled ? buildEndpointer() : null
+    // Stream from the moment the user opens the mic — VAD will close it on
+    // sustained silence. We don't gate the leading audio on VAD's onSpeechStart
+    // because the user already gave consent by tapping the orb, and they may
+    // begin speaking before the start-threshold trips.
+    streamingRef.current = true
     try {
-      await micRef.current.start((frame) => liveRef.current?.sendAudio(frame))
+      await mic.start(
+        (frame) => sendFrame(frame),
+        (rms, frameMs) => vadRef.current?.feed(rms, frameMs),
+      )
+      // Commit refs only after start resolves so a concurrent endUtterance
+      // (or a thrown getUserMedia) can't see a half-initialized mic.
+      micRef.current = mic
+      vadRef.current = vad
       setMicActive(true)
       setStatus('listening')
     } catch (e) {
+      // Tear down whatever stage of start managed to run before the throw.
+      await mic.stop().catch(() => {})
+      streamingRef.current = false
       setErrorDetail(`mic: ${e instanceof Error ? e.message : String(e)}`)
       setStatus('error')
+    } finally {
+      startingRef.current = false
     }
-  }, [settings.voicePushToTalk])
+  }, [settings.voicePushToTalk, settings.voiceVadEnabled, buildEndpointer, sendFrame])
 
   const endUtterance = useCallback(async () => {
     if (!micRef.current) return
     if (!settings.voicePushToTalk) return
-    await micRef.current.stop()
+    // Claim the mic synchronously so a re-entrant tap (or a VAD onSpeechEnd
+    // firing during teardown) sees a null micRef and bails out.
+    const mic = micRef.current
     micRef.current = null
+    vadRef.current = null
+    streamingRef.current = false
     setMicActive(false)
     setStatus((s) => (s === 'listening' ? 'thinking' : s))
+    await mic.stop()
   }, [settings.voicePushToTalk])
+
+  // Keep the ref pointing at the latest endUtterance so VAD callbacks (built
+  // before this hook returns) dispatch through the current closure.
+  useEffect(() => {
+    endUtteranceRef.current = () => {
+      void endUtterance()
+    }
+  }, [endUtterance])
 
   const toggleSpeakerMuted = useCallback(() => {
     setSpeakerMuted((m) => {

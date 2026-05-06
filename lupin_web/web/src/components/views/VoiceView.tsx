@@ -56,8 +56,8 @@ const STATUS_DOT: Record<VoiceStatus, string> = {
 const STATUS_HINT: Record<VoiceStatus, string> = {
   idle: 'Press start to begin',
   connecting: 'Opening session…',
-  ready: 'Hold to talk',
-  listening: 'Listening…',
+  ready: 'Tap to talk',
+  listening: 'Listening — tap to stop',
   thinking: 'Thinking…',
   speaking: 'Speaking…',
   error: 'Session error',
@@ -175,17 +175,18 @@ export function VoiceView() {
                 isLive={session.isLive}
                 disabled={!sessionRunning}
                 micActive={session.micActive}
-                onPress={() => {
+                onTap={() => {
                   if (!settings.voicePushToTalk) return
-                  void session.beginUtterance()
-                }}
-                onRelease={() => {
-                  if (!settings.voicePushToTalk) return
-                  void session.endUtterance()
+                  if (session.micActive) void session.endUtterance()
+                  else void session.beginUtterance()
                 }}
                 size={240}
                 ariaLabel={
-                  settings.voicePushToTalk ? 'Hold to talk' : 'Open mic indicator'
+                  settings.voicePushToTalk
+                    ? session.micActive
+                      ? 'Listening — tap to stop'
+                      : 'Tap to talk'
+                    : 'Open mic indicator'
                 }
               />
               <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -268,7 +269,7 @@ export function VoiceView() {
                 {session.transcript.length === 0 ? (
                   <div className="rounded-sm border border-dashed border-hairline px-3 py-6 text-center text-xs text-muted-foreground">
                     {sessionRunning
-                      ? 'Hold the mic and ask Lupin to drive, navigate, or report state.'
+                      ? 'Tap the mic and ask Lupin to drive, navigate, or report state.'
                       : 'Press “Start session” to begin.'}
                   </div>
                 ) : (
@@ -282,7 +283,7 @@ export function VoiceView() {
               <Input
                 placeholder={
                   sessionRunning
-                    ? 'Type a prompt (or hold mic)…'
+                    ? 'Type a prompt (or tap mic)…'
                     : 'Start a session, then type or speak'
                 }
                 value={textDraft}
@@ -318,7 +319,8 @@ export function VoiceView() {
           {settings.voiceMaxLinearMps}m/s · {settings.voiceMaxAngularRps}rad/s
         </span>
         <span className="tag">·</span>
-        <span className="tag">{settings.voicePushToTalk ? 'push-to-talk' : 'open mic'}</span>
+        <span className="tag">{settings.voicePushToTalk ? 'tap-to-talk' : 'hands-free'}</span>
+        {settings.voiceVadEnabled ? <span className="tag">vad</span> : null}
       </div>
     </div>
   )
