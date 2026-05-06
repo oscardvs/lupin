@@ -389,11 +389,13 @@ export function useVoiceSession(): VoiceSession {
             }
             // Conservative ±30° window — matches ArmView's unverified gripper range.
             // Re-tune once the live mechanical limits are recorded; see the
-            // verification recipe in ArmView.tsx.
+            // verification recipe in ArmView.tsx. Service path is the
+            // gripper_action_bridge, NOT the raw Hiwonder service — see the
+            // ArmView gripper comment for why.
             const angle = action === 'open' ? 30 : -30
             try {
               const res = await ros.callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
-                `${settings.armServoNamespace}/gripper/set_angle_with_speed`,
+                '/lupin/gripper/set_angle_with_speed',
                 MIRTE_SRV.SetServoAngleWithSpeed,
                 { angle, rate: settings.armRateDegPerSec, degrees: true },
               )

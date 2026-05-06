@@ -184,6 +184,21 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── gripper_action_bridge — HMI gripper service → controller action ──
+    # The HMI gripper slider used to call /io/servo/hiwonder/gripper/
+    # set_angle_with_speed directly. On hardware that path fights the
+    # vendor mirte_master_arm_control HW interface: it re-asserts the
+    # GripperActionController's stale 0 setpoint at 10 Hz, snapping the
+    # gripper back. This bridge exposes /lupin/gripper/set_angle_with_speed
+    # and forwards goals to /mirte_master_gripper_controller/gripper_cmd
+    # so the controller's commanded state matches the HMI request.
+    gripper_action_bridge = Node(
+        package='lupin_hmi', executable='gripper_action_bridge',
+        name='gripper_action_bridge',
+        parameters=[{'use_sim_time': False}],
+        output='log',
+    )
+
     # ── Xbox controller teleop (optional) ──────────────────────────────
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
     xbox_teleop = IncludeLaunchDescription(
@@ -213,6 +228,7 @@ def generate_launch_description() -> LaunchDescription:
         # Phase 1 — fire-and-forget at t=0:
         twist_mux,
         arm_preset_server,
+        gripper_action_bridge,
         xbox_teleop,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first

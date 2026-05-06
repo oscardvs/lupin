@@ -38,18 +38,20 @@ interface ArmJointSpec {
   unverified?: boolean
 }
 
-// Gripper range is GUESSED. The URDF declares gripper_joint at -0.20..0.25,
-// but those numbers are URDF-joint coordinates (likely radians of linkage
-// rotation), not necessarily the Hiwonder servo command angle. Until we
-// confirm on a live robot, ship a conservative ±30° window with a loud
-// "RANGE UNVERIFIED" badge so nobody assumes it's been checked.
+// Gripper sends through /lupin/gripper/set_angle_with_speed (gripper_action_bridge),
+// NOT the raw Hiwonder service. On hardware the vendor mirte_master_arm_control
+// HW interface treats any external servo motion as "moved by hand / by gravity"
+// and re-asserts its own commanded position on every 100 ms tick — so a direct
+// Hiwonder call would visibly move the jaw and then snap it back to the stale
+// GripperActionController setpoint. The bridge forwards as a GripperCommand
+// action goal so the controller's commanded state matches the HMI request.
 //
-// To verify (next time the MIRTE is up — see project_mirte_access memory):
-//   ssh lupin
-//   source /opt/ros/humble/setup.bash
-//   source /home/mirte/mirte_ws/install/setup.bash
-//   ros2 service type /io/servo/hiwonder/gripper/set_angle_with_speed
-//   ros2 service call /io/servo/hiwonder/gripper/set_angle_with_speed \
+// HMI degrees are mapped linearly to the URDF gripper_joint range
+// [-0.20, 0.25] rad inside the bridge — the ±30° HMI window is the
+// "range unverified" guess pending a live tuning pass.
+//
+// To verify range on a live robot:
+//   ros2 service call /lupin/gripper/set_angle_with_speed \
 //     mirte_msgs/srv/SetServoAngleWithSpeed "{angle: 0, rate: 30, degrees: true}"
 // Then jog by ±5° at a time until the jaw hits its mechanical stops; record
 // those as the new minDeg / maxDeg here and drop the `unverified` flag.
@@ -276,7 +278,13 @@ interface ServoSliderProps {
 
 function ServoSlider({ spec, namespace, rateDegPerSec, homeTick, disabled }: ServoSliderProps) {
   const positionTopic = `${namespace}/${spec.id}/position`
-  const setAngleService = `${namespace}/${spec.id}/set_angle_with_speed`
+  // Gripper goes through gripper_action_bridge (sim + hardware) so the
+  // GripperActionController's commanded state stays aligned with the HMI;
+  // arm joints keep using the raw Hiwonder service.
+  const setAngleService =
+    spec.id === 'gripper'
+      ? '/lupin/gripper/set_angle_with_speed'
+      : `${namespace}/${spec.id}/set_angle_with_speed`
 
   const positionRef = useTopic<ServoPosition>(positionTopic, ROS_TYPE.ServoPosition)
   useThrottledRender(8)
