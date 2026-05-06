@@ -58,6 +58,9 @@ export interface BidiSetupConfig {
   tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>
   inputAudioTranscription?: Record<string, never>
   outputAudioTranscription?: Record<string, never>
+  realtimeInputConfig?: {
+    automaticActivityDetection?: { disabled?: boolean }
+  }
 }
 
 export interface FunctionDeclaration {
@@ -74,6 +77,10 @@ export interface BidiClientMessage {
   setup?: BidiSetupConfig
   realtimeInput?: {
     audio?: { data: string; mimeType: string }
+    /** Manual VAD: marks the start of a user activity (utterance). */
+    activityStart?: Record<string, never>
+    /** Manual VAD: marks the end of a user activity. Server processes immediately. */
+    activityEnd?: Record<string, never>
   }
   toolResponse?: {
     functionResponses: {

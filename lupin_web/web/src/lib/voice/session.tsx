@@ -493,15 +493,22 @@ export function useVoiceSession(): VoiceSession {
       maxUtteranceMs: settings.voiceVadMaxUtteranceMs,
       onSpeechStart: () => {
         streamingRef.current = true
+        // Hands-free: open the manual-VAD activity here. Push-to-talk already
+        // sent activityStart in beginUtterance — don't double-emit.
+        if (!voicePushToTalkRef.current) {
+          liveRef.current?.sendActivityStart()
+        }
         setStatus((s) => (s === 'ready' || s === 'speaking' ? 'listening' : s))
       },
       onSpeechEnd: () => {
         streamingRef.current = false
         if (voicePushToTalkRef.current) {
-          // Tear the mic down — the user has finished an utterance.
+          // Tear the mic down — endUtterance sends activityEnd.
           void endUtteranceRef.current('silence')
         } else {
-          // Hands-free: keep the mic open but stop forwarding frames.
+          // Hands-free: close the activity but keep the mic open for the
+          // next utterance.
+          liveRef.current?.sendActivityEnd()
           setStatus((s) => (s === 'listening' ? 'thinking' : s))
         }
       },
@@ -545,6 +552,12 @@ export function useVoiceSession(): VoiceSession {
     setStatus('connecting')
     playerRef.current = new AudioPlayer()
     playerRef.current.setMuted(speakerMuted)
+    // Eagerly create+resume the playback AudioContext while we're still inside
+    // the user gesture (the click/tap that called start()). Otherwise the
+    // model's first audio chunk lands on a suspended context and queues
+    // silently until the next gesture happens to resume it — which is what
+    // surfaces as "the answer is in but gated by the next button press".
+    await playerRef.current.prepare()
 
     const client = new GeminiLiveClient({
       apiKey: settings.geminiApiKey.trim(),
@@ -672,6 +685,9 @@ export function useVoiceSession(): VoiceSession {
     // because the user already gave consent by tapping the orb, and they may
     // begin speaking before the start-threshold trips.
     streamingRef.current = true
+    // Manual VAD: tell the server the activity is starting BEFORE the audio
+    // frames flow, so the first frame isn't dropped as pre-activity noise.
+    liveRef.current?.sendActivityStart()
     try {
       await mic.start(
         (frame) => sendFrame(frame),
@@ -687,6 +703,9 @@ export function useVoiceSession(): VoiceSession {
       // Tear down whatever stage of start managed to run before the throw.
       await mic.stop().catch(() => {})
       streamingRef.current = false
+      // Match the activityStart we already emitted so the server doesn't see
+      // an open activity that never closes.
+      liveRef.current?.sendActivityEnd()
       setErrorDetail(`mic: ${e instanceof Error ? e.message : String(e)}`)
       setStatus('error')
     } finally {
@@ -705,6 +724,11 @@ export function useVoiceSession(): VoiceSession {
     streamingRef.current = false
     setMicActive(false)
     setStatus((s) => (s === 'listening' ? 'thinking' : s))
+    // Manual VAD: signal end-of-activity so the server commits the turn now,
+    // instead of timing out its own (disabled) silence detector. This is the
+    // step that lets the response start streaming back without waiting for
+    // the next button press.
+    liveRef.current?.sendActivityEnd()
     await mic.stop()
   }, [settings.voicePushToTalk])
 
