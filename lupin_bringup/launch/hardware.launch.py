@@ -170,50 +170,12 @@ def generate_launch_description() -> LaunchDescription:
         ],
     ))
 
-    # ── twist_mux — same priority arbitration as sim, hardware sink ────
-    # Three Twist sources are arbitrated by priority + timeout:
-    #   /cmd_vel_joy    Xbox dead-man teleop      (prio 100) ── operator
-    #   /cmd_vel_manual web HMI joystick widget   (prio  50) ── remote operator
-    #   /cmd_vel_auto   Nav2 velocity_smoother    (prio  10) ── autonomy
-    # Output goes to /mirte_base_controller/cmd_vel (Twist, BEST_EFFORT) —
-    # the topic the real Mirte's mecanum controller listens on. (Sim uses
-    # _unstamped; see project_drive_topic memory.)
-    twist_mux = Node(
-        package='twist_mux', executable='twist_mux', name='twist_mux',
-        parameters=[
-            os.path.join(pkg_hmi, 'config', 'twist_mux.yaml'),
-            {'use_sim_time': False},
-        ],
-        remappings=[
-            ('cmd_vel_out', '/mirte_base_controller/cmd_vel'),
-        ],
-        output='log',
-    )
-
-    # ── arm_preset_server — named arm-pose service ─────────────────────
-    # Same node as sim — emits JointTrajectory on /mirte_master_arm_controller/
-    # joint_trajectory which the real Mirte's controller listens on natively.
-    arm_preset_server = Node(
-        package='lupin_hmi', executable='arm_preset_server',
-        name='arm_preset_server',
-        parameters=[{'use_sim_time': False}],
-        output='log',
-    )
-
-    # ── gripper_action_bridge — HMI gripper service → controller action ──
-    # The HMI gripper slider used to call /io/servo/hiwonder/gripper/
-    # set_angle_with_speed directly. On hardware that path fights the
-    # vendor mirte_master_arm_control HW interface: it re-asserts the
-    # GripperActionController's stale 0 setpoint at 10 Hz, snapping the
-    # gripper back. This bridge exposes /lupin/gripper/set_angle_with_speed
-    # and forwards goals to /mirte_master_gripper_controller/gripper_cmd
-    # so the controller's commanded state matches the HMI request.
-    gripper_action_bridge = Node(
-        package='lupin_hmi', executable='gripper_action_bridge',
-        name='gripper_action_bridge',
-        parameters=[{'use_sim_time': False}],
-        output='log',
-    )
+    # NOTE: twist_mux, arm_preset_server, and gripper_action_bridge used to
+    # live here; they moved to lupin-onboard.service on the robot so the
+    # operator can drive the chassis, move the arm, and operate the gripper
+    # the moment the robot finishes booting — no laptop launch required.
+    # See lupin_bringup/launch/onboard.launch.py and the project README's
+    # "Bring-up" section.
 
     # ── Xbox controller teleop (optional) ──────────────────────────────
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
@@ -240,11 +202,10 @@ def generate_launch_description() -> LaunchDescription:
         *args,
         LogInfo(msg='[lupin_bringup] hardware: Nav2 + online slam_toolbox '
                     '+ RViz against the real Mirte. /scan → slam_toolbox; '
-                    '/map → Nav2.'),
+                    '/map → Nav2. twist_mux + arm_preset_server + '
+                    'gripper_action_bridge run on the robot via '
+                    'lupin-onboard.service.'),
         # Phase 1 — fire-and-forget at t=0:
-        twist_mux,
-        arm_preset_server,
-        gripper_action_bridge,
         slam_reset_node,
         xbox_teleop,
         rviz,

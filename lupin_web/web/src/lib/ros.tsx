@@ -540,11 +540,24 @@ export function useMapPose(mapFrame: string, baseFrame: string): MapPose | null 
     // from the wheel base). /tf_static is also subscribed in case a future
     // refactor anchors mapFrame or baseFrame off a static link — skipping
     // it would silently break that case.
+    //
+    // throttle_rate + compression are the load-shedding levers on this
+    // subscription. /tf can hit 50+ Hz with Nav2 in the loop and the JSON
+    // payload is the single biggest driver of the rosbridge wedge on the
+    // Pi (project_rosbridge_wedge memory). throttle_rate caps to 10 Hz —
+    // plenty for a 100 ms-poll map render — and 'cbor' switches the wire
+    // format to binary so the Pi-side encoder doesn't have to round-trip
+    // floats through JSON.stringify.
     const tfTopic = new ROSLIB.Topic({
       ros, name: '/tf', messageType: 'tf2_msgs/msg/TFMessage',
+      throttle_rate: 100,
+      compression: 'cbor',
     })
+    // /tf_static is latched (transient_local) and rarely updates, so the
+    // throttle is mostly cosmetic — keep cbor for parity with /tf.
     const tfStaticTopic = new ROSLIB.Topic({
       ros, name: '/tf_static', messageType: 'tf2_msgs/msg/TFMessage',
+      compression: 'cbor',
     })
     tfTopic.subscribe(ingest)
     tfStaticTopic.subscribe(ingest)
