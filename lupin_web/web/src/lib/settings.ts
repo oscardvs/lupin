@@ -127,18 +127,41 @@ function defaultRosUrl(): string {
   const params = new URLSearchParams(window.location.search)
   const override = params.get('ros')
   if (override) return override
-  const host = window.location.hostname || 'localhost'
-  return `ws://${host}:9090`
+  // Vite preview proxies /_ros (with WS upgrade) to ws://localhost:9090. Using
+  // a same-origin path lets one TLS termination cover both the page and the
+  // rosbridge socket — no mixed-content blocks when the HMI is served over
+  // https on the robot, and no extra cert prompts for a separate :9090 origin.
+  const wsScheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host || 'localhost:8090'
+  return `${wsScheme}//${host}/_ros`
 }
 
 function defaultWebVideoUrl(): string {
   // The vendor MIRTE setup runs web_video_server on [::1]:8181 (localhost-only),
   // and :8080 conflicts with the wifi-connect AP captive portal. We launch a
   // second web_video_server bound to 0.0.0.0:8091 alongside our Vite UI so
-  // browsers on the LAN can reach the MJPEG stream.
+  // browsers on the LAN can reach the MJPEG stream — but go through the
+  // same-origin /_video proxy so https pages don't get mixed-content-blocked
+  // on the long-lived MJPEG stream.
   if (typeof window === 'undefined') return 'http://localhost:8091'
-  const host = window.location.hostname || 'localhost'
-  return `http://${host}:8091`
+  const { protocol, host } = window.location
+  return `${protocol}//${host || 'localhost:8090'}/_video`
+}
+
+/**
+ * If the page is loaded over https but the stored URL is plain ws:// or http://,
+ * the browser will block it as mixed content. Drop the stale stored value so
+ * the protocol-aware default kicks in instead. Users who explicitly want a
+ * remote rosbridge over wss:// keep their override.
+ */
+function dropMixedContentUrls(stored: Partial<Settings>): Partial<Settings> {
+  if (typeof window === 'undefined' || window.location.protocol !== 'https:') return stored
+  const out: Partial<Settings> = { ...stored }
+  if (typeof out.rosUrl === 'string' && out.rosUrl.startsWith('ws://')) delete out.rosUrl
+  if (typeof out.webVideoServerUrl === 'string' && out.webVideoServerUrl.startsWith('http://')) {
+    delete out.webVideoServerUrl
+  }
+  return out
 }
 
 function readStored(): Partial<Settings> {
@@ -156,7 +179,7 @@ function readStored(): Partial<Settings> {
 }
 
 let cached: Settings = (() => {
-  const stored = readStored()
+  const stored = dropMixedContentUrls(readStored())
   return {
     ...DEFAULT_SETTINGS,
     rosUrl: stored.rosUrl || defaultRosUrl(),

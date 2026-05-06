@@ -10,11 +10,20 @@ Why a second web_video_server: the vendor MIRTE setup already runs one on
 reach it. We launch our own on 0.0.0.0:8091 alongside the UI so the camera
 tab works from any device. The vendor instance is left untouched.
 
+TLS: with tls:=true, Vite serves https on the UI port using a self-signed
+cert (@vitejs/plugin-basic-ssl). Same-origin proxies /_ros and /_video then
+let rosbridge (:9090) and web_video_server (:8091) reach the browser over
+wss/https without each needing its own cert. Required on the robot for the
+voice tab — browsers gate getUserMedia (mic) to secure contexts and
+http://<robot-ip>:8090 is not one. Sim/dev usually leave tls:=false because
+they hit http://localhost (a secure context already).
+
 Usage:
     ros2 launch lupin_web lupin_web.launch.py                     # default
     ros2 launch lupin_web lupin_web.launch.py port:=8091          # override UI port
     ros2 launch lupin_web lupin_web.launch.py mode:=dev           # vite dev (HMR)
     ros2 launch lupin_web lupin_web.launch.py video:=false        # skip web_video_server
+    ros2 launch lupin_web lupin_web.launch.py tls:=true           # https + wss/_ros (mic)
 
 Requirements:
     - Node 20+ and npm available on PATH
@@ -61,6 +70,7 @@ def generate_launch_description():
     port = LaunchConfiguration('port')
     mode = LaunchConfiguration('mode')
     video = LaunchConfiguration('video')
+    tls = LaunchConfiguration('tls')
 
     # Resolve the npm script at launch time based on `mode`.
     npm_script = PythonExpression([
@@ -69,6 +79,11 @@ def generate_launch_description():
 
     spawn_video = PythonExpression([
         "'", video, "'.lower() in ('true', '1', 'yes')"
+    ])
+
+    # vite.config.ts reads LUPIN_TLS=1 to enable @vitejs/plugin-basic-ssl.
+    tls_env = PythonExpression([
+        "'1' if '", tls, "'.lower() in ('true', '1', 'yes') else '0'"
     ])
 
     return LaunchDescription([
@@ -91,13 +106,23 @@ def generate_launch_description():
             description='Spawn a LAN-reachable web_video_server (0.0.0.0:8091) '
                         'alongside the UI. Set false if you bring your own.',
         ),
+        DeclareLaunchArgument(
+            'tls',
+            default_value='false',
+            description='Serve the UI over https with a self-signed cert. Required '
+                        'on the robot for the voice tab (browsers gate the mic API '
+                        'to secure contexts). Sim/dev keep http on localhost.',
+        ),
 
         LogInfo(msg=['Lupin Web HMI · serving from ', _REPO_WEB_DIR, ' on :', port]),
 
-        # 1. Vite (preview by default, dev with HMR if requested).
+        # 1. Vite (preview by default, dev with HMR if requested). LUPIN_TLS=1
+        # tells vite.config.ts to enable @vitejs/plugin-basic-ssl so the same
+        # port serves https (with same-origin /_ros + /_video proxies).
         ExecuteProcess(
             cmd=['npm', 'run', npm_script, '--', '--port', port, '--host', '0.0.0.0'],
             cwd=_REPO_WEB_DIR,
+            additional_env={'LUPIN_TLS': tls_env},
             output='screen',
             shell=False,
             # When this launch goes down (Ctrl-C), kill the npm + child vite cleanly.

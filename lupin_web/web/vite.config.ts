@@ -1,9 +1,39 @@
 import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
+
+// LUPIN_TLS=1 turns on a self-signed cert (via @vitejs/plugin-basic-ssl) so the
+// HMI can be served over HTTPS. Required on the robot because browsers gate
+// navigator.mediaDevices.getUserMedia (mic for voice mode) to secure contexts —
+// localhost is exempt, but http://<robot-ip>:8090 is not. Sim/dev keep plain
+// HTTP because they're hit at http://localhost.
+const TLS_ENABLED = process.env.LUPIN_TLS === '1'
+
+// Same-origin reverse proxies. Both dev and preview share these so the in-app
+// defaults can point at /_ros and /_video regardless of which mode is running.
+//   /_ros   → rosbridge_websocket on :9090 (with WS upgrade)
+//   /_video → web_video_server on :8091 (HTTP + MJPEG long-lived streams)
+// When TLS is on, the browser sees wss://<host>:8090/_ros and
+// https://<host>:8090/_video; Vite terminates TLS and forwards plain ws/http
+// to localhost. Keeping rosbridge / web_video_server unencrypted on loopback
+// avoids touching vendor service configs.
+const proxy = {
+  '/_ros': {
+    target: 'ws://localhost:9090',
+    ws: true,
+    changeOrigin: true,
+    rewrite: (p: string) => p.replace(/^\/_ros/, ''),
+  },
+  '/_video': {
+    target: 'http://localhost:8091',
+    changeOrigin: true,
+    rewrite: (p: string) => p.replace(/^\/_video/, ''),
+  },
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), ...(TLS_ENABLED ? [basicSsl()] : [])],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -22,28 +52,12 @@ export default defineConfig({
     host: true,
     port: 8090,
     strictPort: true,
-    // web_video_server (8091) doesn't return CORS headers, so a cross-origin
-    // fetch from the UI to scrape its topic-list HTML is blocked by the
-    // browser. <img src=…> is fine cross-origin, but discovery isn't.
-    // Proxy it through the UI's own origin so the fetch is same-origin.
-    proxy: {
-      '/_video': {
-        target: 'http://localhost:8091',
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/_video/, ''),
-      },
-    },
+    proxy,
   },
   preview: {
     host: true,
     port: 8090,
     strictPort: true,
-    proxy: {
-      '/_video': {
-        target: 'http://localhost:8091',
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/_video/, ''),
-      },
-    },
+    proxy,
   },
 })
