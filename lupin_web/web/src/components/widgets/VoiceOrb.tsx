@@ -32,10 +32,11 @@ interface VoiceOrbProps {
   /** Whether button should ignore press. */
   disabled?: boolean
   micActive: boolean
-  /** Push-to-talk handlers — same contract as a button. */
-  onPress?: () => void
-  onRelease?: () => void
-  /** Optional click handler for mid-press tap (mock fires this for utterance-equivalent). */
+  /**
+   * Tap-to-talk handler. Fires once per click / touch-tap; the session toggles
+   * the utterance on/off. The speech endpointer closes the mic on silence so
+   * the user doesn't have to release a held button.
+   */
   onTap?: () => void
   size?: number
   className?: string
@@ -103,8 +104,6 @@ export function VoiceOrb({
   isLive,
   disabled,
   micActive,
-  onPress,
-  onRelease,
   onTap,
   size = 240,
   className,
@@ -286,22 +285,9 @@ export function VoiceOrb({
     <button
       type="button"
       disabled={disabled}
-      onMouseDown={() => onPress?.()}
-      onMouseUp={() => onRelease?.()}
-      onMouseLeave={(e) => {
-        if (e.buttons === 0) return
-        onRelease?.()
-      }}
-      onTouchStart={(e) => {
-        e.preventDefault()
-        onPress?.()
-      }}
-      onTouchEnd={(e) => {
-        e.preventDefault()
-        onRelease?.()
-      }}
       onClick={() => onTap?.()}
       aria-label={ariaLabel}
+      aria-pressed={micActive}
       className={cn(
         'relative inline-flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         disabled ? 'opacity-50' : 'active:scale-[0.98]',

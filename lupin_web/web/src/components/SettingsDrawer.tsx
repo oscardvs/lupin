@@ -189,9 +189,10 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
               </Field>
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="voicePushToTalk" className="text-sm">Push-to-talk</Label>
+                  <Label htmlFor="voicePushToTalk" className="text-sm">Tap-to-talk</Label>
                   <p className="text-[11px] text-muted-foreground">
-                    Off → mic stays open while session is live (hands-free).
+                    On → tap the orb to open the mic; the speech endpointer closes it on
+                    silence. Off → hands-free (mic stays open while the session is live).
                   </p>
                 </div>
                 <Switch
@@ -200,6 +201,84 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
                   onCheckedChange={(v) => update({ voicePushToTalk: v })}
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="voiceVadEnabled" className="text-sm">
+                    Auto-stop on silence
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Speech endpointer — closes the mic after a sustained pause so the agent
+                    stops listening when you finish your sentence.
+                  </p>
+                </div>
+                <Switch
+                  id="voiceVadEnabled"
+                  checked={settings.voiceVadEnabled}
+                  onCheckedChange={(v) => update({ voiceVadEnabled: v })}
+                />
+              </div>
+              <Field label="Silence hold (ms)">
+                <Input
+                  type="number"
+                  step="50"
+                  min="100"
+                  max="5000"
+                  value={settings.voiceVadEndHoldMs}
+                  onChange={(e) =>
+                    update({ voiceVadEndHoldMs: Math.max(100, Number(e.target.value) || 800) })
+                  }
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Continuous quiet duration that ends an utterance. Lower = snappier;
+                  higher = more tolerant of mid-sentence pauses.
+                </p>
+              </Field>
+              <Field label="Speech-start threshold (RMS)">
+                <Input
+                  type="number"
+                  step="0.005"
+                  min="0"
+                  max="0.5"
+                  value={settings.voiceVadStartThreshold}
+                  onChange={(e) =>
+                    update({
+                      voiceVadStartThreshold: Math.max(0, Number(e.target.value) || 0.02),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Speech-end threshold (RMS)">
+                <Input
+                  type="number"
+                  step="0.005"
+                  min="0"
+                  max="0.5"
+                  value={settings.voiceVadEndThreshold}
+                  onChange={(e) =>
+                    update({
+                      voiceVadEndThreshold: Math.max(0, Number(e.target.value) || 0.012),
+                    })
+                  }
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Set above your room noise floor. End threshold should sit a bit below
+                  start to give clean hysteresis (typical: 0.02 / 0.012).
+                </p>
+              </Field>
+              <Field label="Max utterance (ms)">
+                <Input
+                  type="number"
+                  step="500"
+                  min="1000"
+                  max="60000"
+                  value={settings.voiceVadMaxUtteranceMs}
+                  onChange={(e) =>
+                    update({
+                      voiceVadMaxUtteranceMs: Math.max(1000, Number(e.target.value) || 15000),
+                    })
+                  }
+                />
+              </Field>
               <Field label="Max linear speed (m/s)">
                 <Input
                   type="number"
