@@ -185,6 +185,13 @@ export function RosProvider({ children }: { children: ReactNode }) {
           ros,
           name: sub.topicName,
           messageType: sub.msgType,
+          // CBOR is binary, much smaller than rosbridge's default JSON
+          // (especially for arrays — LaserScan, Image headers, OccupancyGrid
+          // costmaps, JointState arrays). roslibjs decodes it transparently;
+          // the only requirement is rosbridge ≥0.11, which Humble ships.
+          // See project_rosbridge_wedge — JSON encode CPU on the Pi is the
+          // single biggest contributor to the wedge.
+          compression: 'cbor',
         })
         sub.topic.subscribe((msg) => {
           sub.callbacks.forEach((cb) => cb(msg))
@@ -289,6 +296,8 @@ export function RosProvider({ children }: { children: ReactNode }) {
             ros: rosRef.current,
             name: topicName,
             messageType: msgType,
+            // Match setupSubscriptionsFor's default — see comment there.
+            compression: 'cbor',
           })
           sub.topic.subscribe((msg) => {
             sub!.callbacks.forEach((c) => c(msg))
