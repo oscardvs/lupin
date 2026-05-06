@@ -8,6 +8,7 @@
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
+  <depend>std_srvs</depend>
   <exec_depend>nav2_amcl</exec_depend>
   <exec_depend>nav2_behaviors</exec_depend>
   <exec_depend>nav2_bt_navigator</exec_depend>

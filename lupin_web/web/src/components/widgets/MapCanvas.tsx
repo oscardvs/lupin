@@ -1,5 +1,5 @@
 import {
-  Check, Crosshair, Eye, EyeOff, Target,
+  Check, Crosshair, Eraser, Eye, EyeOff, Loader2, Target,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -10,13 +10,14 @@ import {
   rampCssColor,
   SENSOR_RAMPS,
 } from '@/lib/heatmap'
-import { useMapPose, useTopic, usePublisher } from '@/lib/ros'
+import { useMapPose, useTopic, usePublisher, useService } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useAnimationLoop, useThrottledRender } from '@/lib/throttle'
 import { tagHasPose, useTwinField, useTwinState } from '@/lib/twin'
 import { onPulseTag } from '@/lib/twin-events'
 import { cn } from '@/lib/utils'
 import {
+  LUPIN_SRV,
   ROS_TYPE,
   TWIN_SENSORS,
   type OccupancyGrid,
@@ -650,6 +651,8 @@ export function MapCanvas() {
             <SensorPills value={sensor} onChange={setSensor} />
             <span className="h-3 w-px bg-hairline" aria-hidden />
             <LayerToggles value={layers} onChange={setLayers} />
+            <span className="h-3 w-px bg-hairline" aria-hidden />
+            <EraseMapButton />
           </div>
         </CardTitle>
         <CardDescription className="flex items-center gap-2">
@@ -798,6 +801,97 @@ function LayerToggles({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/* ---------- erase-map button ---------- */
+
+/**
+ * Two-step destructive trigger for `/lupin/nav/clear_map`. First click
+ * arms the button (label flips to "confirm?", styling shifts to
+ * destructive). Second click within ARM_WINDOW_MS fires the service;
+ * any other interaction or the timeout disarms.
+ *
+ * The backend SIGTERMs slam_toolbox; respawn brings it back with an
+ * empty pose graph. /map drops out for ~5–10 s during the cycle —
+ * the existing "awaiting map" placeholder covers the gap.
+ */
+const ARM_WINDOW_MS = 4000
+
+function EraseMapButton() {
+  const clearMap = useService<Record<string, never>, { success: boolean; message: string }>(
+    '/lupin/nav/clear_map',
+    LUPIN_SRV.Trigger,
+  )
+  const [armed, setArmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const armTimerRef = useRef<number | null>(null)
+
+  const disarm = useCallback(() => {
+    setArmed(false)
+    if (armTimerRef.current != null) {
+      window.clearTimeout(armTimerRef.current)
+      armTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => () => {
+    if (armTimerRef.current != null) window.clearTimeout(armTimerRef.current)
+  }, [])
+
+  const onClick = async () => {
+    if (busy) return
+    if (!armed) {
+      setArmed(true)
+      setError(null)
+      armTimerRef.current = window.setTimeout(disarm, ARM_WINDOW_MS)
+      return
+    }
+    disarm()
+    setBusy(true)
+    try {
+      const res = await clearMap({})
+      if (!res.success) {
+        setError(res.message || 'erase rejected')
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="relative flex items-center">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        title={armed ? 'Click again to wipe the SLAM map' : 'Erase the SLAM map'}
+        aria-pressed={armed}
+        className={cn(
+          'tag flex items-center gap-1 rounded-sm border px-1.5 py-0.5 transition-colors',
+          armed
+            ? 'border-destructive/70 bg-destructive/20 text-destructive-foreground'
+            : 'border-hairline bg-background/40 text-muted-foreground hover:border-destructive/50 hover:text-destructive',
+          busy && 'opacity-60',
+        )}
+      >
+        {busy
+          ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+          : <Eraser className="h-2.5 w-2.5" />}
+        {busy ? 'erasing…' : armed ? 'confirm?' : 'erase'}
+      </button>
+      {error && (
+        <span
+          className="absolute right-0 top-full mt-1 max-w-[220px] rounded-sm border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 font-mono text-[10px] text-destructive"
+          role="alert"
+        >
+          {error}
+        </span>
+      )}
     </div>
   )
 }
