@@ -59,14 +59,14 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
                 <Input
                   value={settings.rosUrl}
                   onChange={(e) => update({ rosUrl: e.target.value })}
-                  placeholder="ws://host:9090"
+                  placeholder="ws(s)://host:8090/_ros or ws://host:9090"
                 />
               </Field>
               <Field label="web_video_server URL">
                 <Input
                   value={settings.webVideoServerUrl}
                   onChange={(e) => update({ webVideoServerUrl: e.target.value })}
-                  placeholder="http://host:8080"
+                  placeholder="http(s)://host:8090/_video or http://host:8091"
                 />
               </Field>
             </Section>
