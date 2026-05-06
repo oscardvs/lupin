@@ -20,6 +20,7 @@ import { ROBOT_TOOL_DECLARATIONS, clampNumber, type ToolName } from './tools'
 import type { ToolInvocation, TranscriptTurn, VoiceStatus } from './types'
 
 import { useEStop } from '@/lib/estop'
+import { invertTwist } from '@/lib/polarity'
 import { isMockMode, useSettings, type Settings, type VoiceNamedLocation } from '@/lib/settings'
 import { useMapPose, useRos, useTopic, type MapPose } from '@/lib/ros'
 import {
@@ -169,10 +170,13 @@ export function useVoiceSession(): VoiceSession {
             const ly = clampNumber(args.linear_y, -linMax, linMax)
             const az = clampNumber(args.angular_z, -angMax, angMax)
             const dur = clampNumber(args.duration_s, 0.1, MAX_DRIVE_SECONDS, 0.5)
-            const twist = {
-              linear: { x: lx, y: ly, z: 0 },
-              angular: { x: 0, y: 0, z: az },
-            }
+            const twist = invertTwist(
+              {
+                linear: { x: lx, y: ly, z: 0 },
+                angular: { x: 0, y: 0, z: az },
+              },
+              settings.polarityInvertHmi,
+            )
             ros.publish(settings.cmdVelTopic, settings.cmdVelType, twist)
             if (driveTimerRef.current) clearTimeout(driveTimerRef.current)
             driveTimerRef.current = setTimeout(() => {
@@ -213,9 +217,15 @@ export function useVoiceSession(): VoiceSession {
                 error: 'no map→base transform — cannot compute relative goal',
               })
             }
-            const fwd = clampNumber(args.forward_m, -50, 50, 0)
-            const lat = clampNumber(args.lateral_m, -50, 50, 0)
-            const rotDeg = clampNumber(args.rotate_deg, -3600, 3600, 0)
+            const fwdRaw = clampNumber(args.forward_m, -50, 50, 0)
+            const latRaw = clampNumber(args.lateral_m, -50, 50, 0)
+            const rotDegRaw = clampNumber(args.rotate_deg, -3600, 3600, 0)
+            // User talks in physical-chassis frame; controller frame is rotated
+            // 180° on this unit. Flip body-frame offsets when calibration is on.
+            const sign = settings.polarityInvertHmi ? -1 : 1
+            const fwd = fwdRaw * sign
+            const lat = latRaw * sign
+            const rotDeg = rotDegRaw * sign
             // Rotate body-frame offset (fwd, lat) by current yaw to get the
             // map-frame delta, then add to current pose.
             const c = Math.cos(pose.yaw)
@@ -252,7 +262,12 @@ export function useVoiceSession(): VoiceSession {
                 error: 'no map→base transform — cannot compute relative rotation goal',
               })
             }
-            const deltaRad = (clampNumber(args.angle_deg, -3600, 3600) * Math.PI) / 180
+            const angleDegRaw = clampNumber(args.angle_deg, -3600, 3600)
+            // User's "+90 deg = turn left" in physical chassis frame. Internal
+            // frame is yaw-flipped on this unit, so flip the delta when the
+            // calibration is on.
+            const angleDeg = settings.polarityInvertHmi ? -angleDegRaw : angleDegRaw
+            const deltaRad = (angleDeg * Math.PI) / 180
             // Wrap to [-π, π] so Nav2 takes the shortest direction.
             let yaw = pose.yaw + deltaRad
             yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw))
@@ -262,7 +277,7 @@ export function useVoiceSession(): VoiceSession {
               action: 'rotate_goal_sent',
               from_yaw: pose.yaw,
               to_yaw: yaw,
-              delta_deg: clampNumber(args.angle_deg, -3600, 3600),
+              delta_deg: angleDegRaw,
             })
           }
 

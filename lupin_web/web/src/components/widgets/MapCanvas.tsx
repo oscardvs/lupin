@@ -32,7 +32,7 @@ import {
  * goal heading; releasing publishes a PoseStamped on `/goal_pose`.
  */
 export function MapCanvas() {
-  const [{ mapTopic, planTopic, goalPoseTopic, mapFrame, baseFrame }] = useSettings()
+  const [{ mapTopic, planTopic, goalPoseTopic, mapFrame, baseFrame, polarityInvertHmi }] = useSettings()
   const mapRef = useTopic<OccupancyGrid>(mapTopic, ROS_TYPE.OccupancyGrid)
   const planRef = useTopic<Path>(planTopic, ROS_TYPE.Path)
   const pose = useMapPose(mapFrame, baseFrame)
@@ -185,7 +185,12 @@ export function MapCanvas() {
     const h = canvas.clientHeight
     const mw = map.info.width * map.info.resolution
     const mh = map.info.height * map.info.resolution
-    const rot = (w > h) !== (mw > mh) ? Math.PI / 2 : 0
+    // 180° polarity flip stacks on top of the landscape/portrait fit so the
+    // rendered map and click coords are in the operator's physical frame, not
+    // the controller's flipped internal frame. See `lib/polarity.ts`.
+    const rot =
+      ((w > h) !== (mw > mh) ? Math.PI / 2 : 0) +
+      (polarityInvertHmi ? Math.PI : 0)
     const cosR = Math.cos(rot)
     const sinR = Math.sin(rot)
     const rmw = Math.abs(cosR) * mw + Math.abs(sinR) * mh
@@ -212,7 +217,7 @@ export function MapCanvas() {
       return { x: ox + dx, y: oy + dy }
     }
     return { s, rot, worldToCanvas, canvasToWorld }
-  }, [mapRef])
+  }, [mapRef, polarityInvertHmi])
 
   /* ----- Pre-rasterise the OccupancyGrid into an offscreen canvas. ----- */
   const ensureMapBitmap = useCallback(() => {
