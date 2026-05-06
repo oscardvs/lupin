@@ -61,7 +61,6 @@ def generate_launch_description() -> LaunchDescription:
     pkg_bringup = get_package_share_directory('lupin_bringup')  # noqa: F841
     pkg_nav = get_package_share_directory('lupin_navigation')
     pkg_hmi = get_package_share_directory('lupin_hmi')
-    pkg_slam = get_package_share_directory('slam_toolbox')
 
     args = [
         DeclareLaunchArgument(
@@ -100,22 +99,39 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ── slam_toolbox starts after /scan is up ──────────────────────────
-    slam_include = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_slam, 'launch', 'online_async_launch.py'),
-        ),
-        launch_arguments=[
-            ('use_sim_time', 'false'),
-            ('slam_params_file', LaunchConfiguration('slam_params_file')),
+    # Spawned directly (not via online_async_launch.py) so we can pin
+    # `respawn=True`. The /lupin/nav/clear_map service exposed by
+    # `slam_reset_node` SIGTERMs this process to wipe the map; respawn
+    # then brings it back up with an empty pose graph.
+    slam_node = Node(
+        package='slam_toolbox',
+        executable='async_slam_toolbox_node',
+        name='slam_toolbox',
+        parameters=[
+            LaunchConfiguration('slam_params_file'),
+            {'use_sim_time': False},
         ],
+        respawn=True,
+        respawn_delay=1.0,
+        output='screen',
     )
     on_scan_ready = RegisterEventHandler(OnProcessExit(
         target_action=wait_for_scan,
         on_exit=[
             LogInfo(msg='[lupin_bringup] /scan online — starting slam_toolbox'),
-            slam_include,
+            slam_node,
         ],
     ))
+
+    # ── slam_reset — owns /lupin/nav/clear_map (Trigger). HMI hits this
+    # to wipe the SLAM map; node SIGTERMs slam_toolbox + clears costmaps.
+    slam_reset_node = Node(
+        package='lupin_navigation',
+        executable='slam_reset_node',
+        name='slam_reset_node',
+        parameters=[{'use_sim_time': False}],
+        output='log',
+    )
 
     # ── Sentinel: wait for /map from slam_toolbox ──────────────────────
     # /map is RELIABLE+TRANSIENT_LOCAL; tell echo to match so the QoS
@@ -229,6 +245,7 @@ def generate_launch_description() -> LaunchDescription:
         twist_mux,
         arm_preset_server,
         gripper_action_bridge,
+        slam_reset_node,
         xbox_teleop,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
