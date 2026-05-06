@@ -1,0 +1,43 @@
+# Lupin camera throttle config — runs on the robot via lupin-cameras-throttle.service.
+#
+# The vendor mirte-ros stack publishes RGB / depth / gripper camera streams at
+# their native rates (typically 15-30 fps). Through web_video_server's MJPEG
+# encoder and the wifi/DDS bridge to the laptop, those streams burn enough CPU
+# on the Pi to push it past the rosbridge wedge threshold during Nav2 sessions
+# (see project_rosbridge_wedge memory).
+#
+# This config drives a topic_tools throttle pipeline: vendor cameras stay
+# running at full rate (we don't fight the vendor stack — see
+# feedback_pragmatic_v1), Lupin republishes each one at a tame rate under
+# /lupin/<source>. The HMI defaults to the Lupin topics so web_video_server
+# only encodes the slow stream.
+#
+# Per-camera fields:
+#   enabled       — emit the throttled topic at all
+#   rate_hz       — max rate of the Lupin output topic
+#   source_topic  — vendor publisher (don't change unless vendor topology shifts)
+#   output_topic  — what the HMI subscribes to (must match HMI defaults)
+#
+# To change rates live without a redeploy: edit this file then
+# `sudo systemctl restart lupin-cameras-throttle`. To turn a stream off
+# entirely (e.g. for SLAM where we don't want any image flow), set enabled:false.
+
+cameras:
+  rgb:
+    enabled: true
+    rate_hz: 1.0
+    source_topic: /camera/color/image_raw
+    output_topic: /lupin/camera/color/image_raw
+
+  depth:
+    # Off by default — depth is heavy and only the perception/arm work needs it.
+    enabled: false
+    rate_hz: 1.0
+    source_topic: /camera/depth/image_raw
+    output_topic: /lupin/camera/depth/image_raw
+
+  gripper:
+    enabled: true
+    rate_hz: 1.0
+    source_topic: /gripper_camera/image_raw
+    output_topic: /lupin/gripper_camera/image_raw

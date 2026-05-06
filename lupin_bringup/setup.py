@@ -18,6 +18,8 @@ setup(
             glob('config/*.yaml') + glob('config/*.json')),
         ('share/' + package_name + '/worlds', glob('worlds/*.world')),
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
+        ('share/' + package_name + '/systemd', glob('systemd/*.service')),
+        ('share/' + package_name + '/scripts', glob('scripts/*.sh')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
