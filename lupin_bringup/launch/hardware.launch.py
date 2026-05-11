@@ -8,16 +8,17 @@ Topology after launch (defaults):
 
     Robot (already running via systemd):
         mirte-ros.service               telemetrix, controllers,
-                                        RPLidar → /scan,
-                                        cameras, rosbridge :9090,
+                                        RPLidar → /scan, cameras, vendor
+                                        rosbridge :9090 (idle — HMI
+                                        doesn't connect here), vendor
                                         web_video_server :8181
         lupin-onboard.service           twist_mux (cmd_vel arbitration),
                                         arm_preset_server,
                                         gripper_action_bridge
         lupin-cameras-throttle.service  /camera/* → /lupin/camera/* @ 1 Hz
-        lupin-web.service               HMI on :8090 (HTTPS)
 
     Laptop (this launch):
+        lupin_web (Vite + web_video + rosbridge)              (web:=true)
         slam_toolbox        → /map, map→odom TF              (slam:=true)
         slam_reset_node     → /lupin/nav/clear_map service   (slam:=true)
         nav2 (slam mode)    → /cmd_vel_auto via smoother     (nav2:=true)
@@ -30,6 +31,9 @@ Topology after launch (defaults):
 
 Flags (all booleans, default in parens):
 
+    web (true)        lupin_web — Vite preview (HTTPS :8090) +
+                      rosbridge_websocket :9090 + web_video_server :8091.
+                      Open https://<laptop-ip>:8090 to use the HMI.
     slam (true)       slam_toolbox + slam_reset_node. Owns /map.
     nav2 (true)       Nav2 stack. Waits for /map before activating.
     twin (true)       lupin_twin aggregator. Cheap; HMI consumes it.
@@ -40,26 +44,25 @@ Flags (all booleans, default in parens):
 
 Common invocations:
 
-    # Operator drive / SLAM with HMI — default mode.
+    # Default operator mode — HMI + SLAM + Nav2 + twin + RViz.
+    # Open https://<laptop-ip>:8090 once the Vite line "ready in NNN ms"
+    # shows. The rosbridge pill in the top bar goes green within a couple
+    # of seconds.
     ros2 launch lupin_bringup hardware.launch.py
 
-    # Headless smoke test (no RViz window).
-    ros2 launch lupin_bringup hardware.launch.py rviz:=false
+    # Headless smoke test — no HMI, no RViz window.
+    ros2 launch lupin_bringup hardware.launch.py web:=false rviz:=false
 
-    # Full mission run (bridge + orchestrator + twin + Nav2 + slam + RViz).
+    # Full mission run (bridge + orchestrator on top of the default HMI +
+    # Nav2 + slam + RViz).
     ros2 launch lupin_bringup hardware.launch.py mission:=true
 
-    # Just want the orchestrator on top of an already-mapped environment
-    # (skip slam, point Nav2 at a saved map manually).
-    ros2 launch lupin_bringup hardware.launch.py slam:=false nav2:=false mission:=true
-
-    # Robot teleop only — laptop adds nothing autonomous, just RViz for
-    # watching /scan + /tf.
+    # Skip the autonomy stack — just the HMI on top of a parked robot.
     ros2 launch lupin_bringup hardware.launch.py slam:=false nav2:=false
 
-The sentinel cascade (wait_for_scan → slam → wait_for_map → nav2) only
-fires when its target subsystem is enabled, so disabling one stage doesn't
-block the rest.
+The sentinel cascade (wait_for_scan → slam → wait_for_map → wait_for_tf →
+nav2) only fires when its target subsystem is enabled, so disabling one
+stage doesn't block the rest.
 """
 
 import os
@@ -87,6 +90,7 @@ def generate_launch_description() -> LaunchDescription:
     pkg_mission = get_package_share_directory('lupin_mission')
     pkg_twin = get_package_share_directory('lupin_twin')
     pkg_hmi = get_package_share_directory('lupin_hmi')
+    pkg_web = get_package_share_directory('lupin_web')
 
     args = [
         DeclareLaunchArgument(
@@ -112,6 +116,18 @@ def generate_launch_description() -> LaunchDescription:
                         'greenhouse_bridge (oracle), mission_orchestrator '
                         'lifecycle node, and a one-shot /amcl_pose seed. '
                         'Turn on for end-to-end mission runs.',
+        ),
+        DeclareLaunchArgument(
+            'web', default_value='true',
+            description='Bring up the Lupin Web HMI on the laptop: Vite '
+                        'preview (HTTPS :8090) + rosbridge_websocket :9090 '
+                        '+ web_video_server :8091. Open https://<laptop-ip>'
+                        ':8090 in a browser to use it. Default true so the '
+                        'one-shot bringup gives the operator a working HMI '
+                        'without a second command. The Pi is no longer in '
+                        'the JSON-encoding path — that load lives here. '
+                        'Vendor rosbridge :9090 on the robot stays running '
+                        'but sits idle.',
         ),
         DeclareLaunchArgument(
             'rviz', default_value='true',
@@ -313,6 +329,24 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('twin')),
     )
 
+    # ── Lupin Web HMI — Vite + rosbridge + web_video_server ───────────
+    # tls:=true + rosbridge:=true mirrors what the old laptop systemd unit
+    # ran. Co-located rosbridge so the JSON-encoding load lives on the
+    # laptop, not the Pi (Phase-2 split per project_offload_strategy).
+    # When you don't want the HMI (headless smoke tests, CI), pass
+    # web:=false.
+    web = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_web, 'launch', 'lupin_web.launch.py'),
+        ),
+        launch_arguments=[
+            ('mode', 'preview'),
+            ('tls', 'true'),
+            ('rosbridge', 'true'),
+        ],
+        condition=IfCondition(LaunchConfiguration('web')),
+    )
+
     # ── Xbox controller teleop (optional, joystick on the laptop) ──────
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
     xbox_teleop = IncludeLaunchDescription(
@@ -343,13 +377,15 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         *args,
         LogInfo(msg=['[lupin_bringup] hardware: laptop-side bring-up. ',
-                     'slam=', LaunchConfiguration('slam'),
+                     'web=', LaunchConfiguration('web'),
+                     ' slam=', LaunchConfiguration('slam'),
                      ' nav2=', LaunchConfiguration('nav2'),
                      ' twin=', LaunchConfiguration('twin'),
                      ' mission=', LaunchConfiguration('mission'),
                      ' rviz=', LaunchConfiguration('rviz'),
                      ' joystick=', LaunchConfiguration('joystick')]),
         # Phase 1 — fire-and-forget at t=0 (each gated by its own flag):
+        web,
         slam_reset_node,
         bridge,
         mission,
