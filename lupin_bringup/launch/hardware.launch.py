@@ -66,6 +66,7 @@ stage doesn't block the rest.
 """
 
 import os
+import socket
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -374,8 +375,31 @@ def generate_launch_description() -> LaunchDescription:
     # operate the gripper the moment the robot finishes booting — no
     # laptop launch required. See onboard.launch.py.
 
+    # HMI URL banner — printed before any process starts so the user can
+    # scroll up to find it later. Modern terminals (gnome-terminal, kitty,
+    # iTerm, VS Code) auto-detect https:// strings and make them
+    # ctrl/cmd-clickable. We compute the LAN IP at launch-time (single
+    # call) and substitute it; the port and scheme are hardcoded because
+    # the web include below pins mode:=preview tls:=true rosbridge:=true,
+    # so the HMI always lands at https://<lan>:8090. Only shown when
+    # web:=true since otherwise the URL would 404.
+    lan_ip = _get_lan_ip()
+    hmi_banner = LogInfo(
+        msg=[
+            '\n',
+            '╔══════════════════════════════════════════════════════════════╗\n',
+            '║  Lupin HMI                                                   ║\n',
+            '║    local:     https://localhost:8090\n',
+            '║    LAN:       https://', lan_ip, ':8090\n',
+            '║    rosbridge: wss://', lan_ip, ':8090/_ros (same-origin proxy)\n',
+            '╚══════════════════════════════════════════════════════════════╝',
+        ],
+        condition=IfCondition(LaunchConfiguration('web')),
+    )
+
     return LaunchDescription([
         *args,
+        hmi_banner,
         LogInfo(msg=['[lupin_bringup] hardware: laptop-side bring-up. ',
                      'web=', LaunchConfiguration('web'),
                      ' slam=', LaunchConfiguration('slam'),
@@ -424,3 +448,22 @@ def _resolve_rviz_config() -> str:
     return os.path.expanduser(
         '~/ros2_ws/src/lupin/lupin_bringup/rviz/full_bringup_viz.rviz',
     )
+
+
+def _get_lan_ip() -> str:
+    """Best-effort primary IPv4 address for the host.
+
+    Opens a UDP socket toward 8.8.8.8 (no traffic is actually sent —
+    connect() on UDP just picks the route's source address) and reads
+    getsockname(). Falls back to 127.0.0.1 if there's no route. Used
+    purely to print a LAN-reachable Lupin HMI URL in the bringup banner —
+    modern terminals auto-link https:// strings.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 1))
+        return s.getsockname()[0]
+    except Exception:
+        return '127.0.0.1'
+    finally:
+        s.close()
