@@ -135,75 +135,50 @@ Settings → Diagnostics → "Log outgoing publishes" (or set
 JSON to the console with the topic name. Use this when debugging
 rosbridge-side wire-format issues end to end.
 
-## Deploying on the robot (hardware branch)
+## Bringing the HMI up
 
-Two ways to bring the UI up; pick whichever fits the moment.
+The HMI is part of `lupin_bringup`'s `hardware.launch.py` — one command
+on the laptop brings up Nav2, SLAM, RViz, **and** the HMI. The HMI is on
+by default; pass `web:=false` if you don't want it.
 
-### Manual via ros2 launch
+```bash
+ros2 launch lupin_bringup hardware.launch.py            # HMI + Nav2 + SLAM + RViz
+ros2 launch lupin_bringup hardware.launch.py web:=false # no HMI
+```
+
+Open `https://<laptop-ip>:8090` once Vite logs "ready in NNN ms".
+Browsers warn about the self-signed cert — accept it once per device.
+See `lupin_bringup/README.md` for the full flag matrix.
+
+### Standalone (HMI only, no Nav2)
+
+If you just want the HMI without the autonomy stack:
 
 ```bash
 ros2 launch lupin_web lupin_web.launch.py             # serves dist/ on :8090
 ros2 launch lupin_web lupin_web.launch.py mode:=dev   # vite dev server (HMR)
-ros2 launch lupin_web lupin_web.launch.py port:=8091  # alternative port
+ros2 launch lupin_web lupin_web.launch.py rosbridge:=false  # use external rosbridge
 ```
 
 The `preview` mode (default) requires `npm run build` to have produced a
-`dist/` artefact. The launch file just wraps `npm run preview` / `npm run dev`
-with the flags pinned, so you still need `npm install` to have been run once.
+`dist/` artefact. The launch file wraps `npm run preview` / `npm run dev`
+with the flags pinned, so `npm install` must have been run once.
 
-### Auto-start at boot via systemd
+### Robot-side legacy unit (rarely useful)
 
-The HMI is now hosted on **the operator's laptop**, not the robot — the Pi
-was running out of CPU under the combined load of mirte-ros + rosbridge
-JSON encoding + Nav2 /tf flood. See `project_offload_strategy` for the
-rationale. Two installer scripts, pick the one matching your host:
-
-| Host | Unit file | Installer |
-| --- | --- | --- |
-| **Laptop** (recommended) | `systemd/lupin-web-laptop.service` (user-mode) | `scripts/install-systemd-laptop.sh` |
-| Robot (legacy / standalone) | `systemd/lupin-web.service` (system-wide) | `scripts/install-systemd.sh` |
-
-**Laptop install (no sudo needed for the unit itself):**
+`systemd/lupin-web.service` + `scripts/install-systemd.sh` are kept for
+offline / standalone teleop where there's no laptop in the loop. Running
+both robot- and laptop-side HMIs at once means two rosbridges fighting
+for the same topics — pick one.
 
 ```bash
-# from anywhere on the repo
-~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd-laptop.sh
-# or, to also start at boot before any GUI login:
-~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd-laptop.sh --linger
-```
-
-The laptop unit runs `ros2 launch lupin_web lupin_web.launch.py mode:=preview
-tls:=true rosbridge:=true` — bringing up Vite preview (HTTPS :8090),
-web_video_server (:8091), AND a co-located rosbridge_websocket (:9090). The
-HMI talks to localhost rosbridge via the same-origin `/_ros` proxy; the Pi
-isn't in the JSON path. After each `git pull` rebuild + restart:
-
-```bash
-cd ~/ros2_ws/src/lupin/lupin_web/web
-npm install      # only if package-lock.json changed
-npm run build
-systemctl --user restart lupin-web
-```
-
-Inspect with `journalctl --user -u lupin-web -f`. Uninstall with
-`scripts/install-systemd-laptop.sh --uninstall`.
-
-**Robot install** (kept for offline / standalone teleop only — adds load
-back to the Pi):
-
-```bash
+# on the robot, if you really want the HMI on the Pi
 sudo ~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd.sh
 ```
 
-The unit binds `:8090` only — never `:80` (course UI), `:8080` (wifi-connect
-AP captive portal), or `:9090` (rosbridge — the robot version defers to the
-vendor instance in mirte-ros). Failure of the course web stack does not
-bring this down and vice versa.
-
-> **Don't run both at once.** Browser will pick whichever URL you type but
-> the two HMIs each connect to their own rosbridge and will fight for the
-> same robot's topics — and the robot side loads the Pi unnecessarily.
-> Uninstall on the robot before installing on the laptop.
+Adds the rosbridge JSON-encoding load back to the Pi (the whole point of
+the laptop offload was to remove it), so don't reach for this unless
+you're working without a laptop.
 
 ## Voice assistant
 
