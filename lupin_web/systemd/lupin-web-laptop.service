@@ -1,0 +1,33 @@
+[Unit]
+Description=Lupin Web HMI on the operator's laptop (HTTPS UI :8090, rosbridge :9090, video :8091)
+Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
+After=graphical-session.target network-online.target
+Wants=graphical-session.target network-online.target
+# User-mode unit — installed to ~/.config/systemd/user/. Pair with
+# `loginctl enable-linger $USER` so it starts at boot rather than at login.
+
+[Service]
+Type=simple
+# %h resolves to the user's home directory. The repo must be at
+# ~/ros2_ws/src/lupin (the documented laptop layout).
+WorkingDirectory=%h/ros2_ws/src/lupin/lupin_web/web
+# Refuse to start until the build artefact exists. Run `npm run build`
+# inside %h/ros2_ws/src/lupin/lupin_web/web after every HMI source change.
+ExecStartPre=/usr/bin/test -d dist
+# Bring up the HMI + rosbridge + LAN-reachable web_video_server in one
+# launch. rosbridge:=true co-locates the JSON broker with the UI on the
+# laptop so the Pi no longer encodes the /tf flood for the browser (the
+# Phase-2 split per project_offload_strategy). tls:=true keeps the voice
+# tab working over self-signed HTTPS.
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source %h/ros2_ws/install/setup.bash 2>/dev/null; exec ros2 launch lupin_web lupin_web.launch.py mode:=preview tls:=true rosbridge:=true'
+Restart=on-failure
+RestartSec=5
+# Cap memory in case a runaway HMR session leaks. Laptop has more headroom
+# than the Pi, but 1G is plenty for Vite preview + rosbridge_websocket.
+MemoryMax=1G
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lupin-web
+
+[Install]
+WantedBy=default.target
