@@ -73,10 +73,6 @@ laptop's co-located one. The vendor instance sits idle.
 Twist arbitration: HMI is priority 50, Xbox 100, Nav2 10 — so the
 operator override always wins.
 
-`hardware_full.launch.py` is now a deprecated alias for
-`hardware.launch.py mission:=true`; it forwards with a warning banner and
-will be removed in a future cleanup.
-
 ### Installing the robot-side services (one-time per Mirte image)
 
 The services are not in the stock MIRTE image. Install once per robot:
@@ -144,10 +140,9 @@ sessions where you actually need recent frames.
 | --- | --- |
 | `launch/onboard.launch.py` | Robot-side glue: `twist_mux` + `arm_preset_server` + `gripper_action_bridge`. Run via `lupin-onboard.service`. |
 | `launch/cameras_throttle.launch.py` | Reads `config/cameras.yaml` and spawns one `topic_tools throttle` per enabled camera. Run via `lupin-cameras-throttle.service`. |
-| `launch/hardware.launch.py` | Laptop-side: Nav2 + slam_toolbox + RViz against the real Mirte. Sentinel cascade waits for `/scan` then `/map` before each next stage. Slimmed: twist_mux moved to `lupin-onboard.service` so this never fights the robot's instance. |
-| `launch/hardware_full.launch.py` | Wraps `hardware.launch.py` plus the lupin_mission orchestrator and lupin_twin. End-to-end mission run. |
+| `launch/hardware.launch.py` | Laptop-side single entry point: HMI + Nav2 + slam_toolbox + twin + RViz against the real Mirte. Boolean flags per subsystem (`web`, `slam`, `nav2`, `twin`, `mission`, `rviz`, `joystick`). The sentinel cascade waits for `/scan`, `/map`, then a hot `odom→base_link` tf before each next stage. End-to-end mission run is `mission:=true`. |
 | `launch/sim.launch.py` | Generic sim entry point. Wraps `mirte_gazebo`'s empty / navigation launches; `nav:=true` brings up Nav2 + RViz against the KRR small-house world. |
-| `launch/sim_full.launch.py` | Full sim mission: greenhouse world + Nav2 + slam_toolbox + lupin_twin + lupin_mission + arm_sim_shim + RViz. The sim peer of `hardware_full.launch.py`. |
+| `launch/sim_full.launch.py` | Full sim mission: greenhouse world + Nav2 + slam_toolbox + lupin_twin + lupin_mission + arm_sim_shim + RViz. The sim peer of `hardware.launch.py mission:=true`. |
 | `launch/greenhouse_sim.launch.py` | Greenhouse-world entry point. Loads the SDF from `scripts/generate_greenhouse_world.py`, spawns the MIRTE Master, starts ros2_control + twist_mux. Sets Gazebo env vars in-launch so `/usr/share/gazebo/setup.sh` isn't needed. |
 
 Each launch has a thorough docstring header — open the file to see the args
