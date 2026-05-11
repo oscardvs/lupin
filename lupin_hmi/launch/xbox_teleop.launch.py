@@ -23,7 +23,7 @@ takes a *button* index and triggers on this controller are axes (4, 5).
 LB is the closest button equivalent.
 
 Does NOT include twist_mux — priority arbitration is owned by the bringup
-launch (sim_full.launch.py / hardware_full.launch.py) so all sources of
+launch (sim_full.launch.py / hardware.launch.py) so all sources of
 /cmd_vel_* are arbitrated in one place. Run this standalone if you only
 want joystick output (e.g. for bench-testing a new controller binding).
 
