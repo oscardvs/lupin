@@ -34,6 +34,11 @@ setup(
             # orchestrator's PREPARE.LOCALIZING gate clears in slam_toolbox
             # mode (no real AMCL in the chain). Hardware doesn't need it.
             'seed_amcl_pose = lupin_bringup.seed_amcl_pose:main',
+            # Launch sentinel — blocks until tf 'base_link' is resolvable
+            # against 'odom'. Used to gate Nav2 lifecycle start on hardware,
+            # where a cold DDS-over-WiFi /tf subscription needs ~5–10 s to
+            # warm up before Nav2's costmap activation can succeed.
+            'wait_for_tf = lupin_bringup.wait_for_tf:main',
         ],
     },
 )
