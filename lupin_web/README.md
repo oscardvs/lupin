@@ -153,30 +153,57 @@ with the flags pinned, so you still need `npm install` to have been run once.
 
 ### Auto-start at boot via systemd
 
-A system-level unit lives at `systemd/lupin-web.service` and is installed
-through `scripts/install-systemd.sh`. Idempotent — re-run any time:
+The HMI is now hosted on **the operator's laptop**, not the robot — the Pi
+was running out of CPU under the combined load of mirte-ros + rosbridge
+JSON encoding + Nav2 /tf flood. See `project_offload_strategy` for the
+rationale. Two installer scripts, pick the one matching your host:
+
+| Host | Unit file | Installer |
+| --- | --- | --- |
+| **Laptop** (recommended) | `systemd/lupin-web-laptop.service` (user-mode) | `scripts/install-systemd-laptop.sh` |
+| Robot (legacy / standalone) | `systemd/lupin-web.service` (system-wide) | `scripts/install-systemd.sh` |
+
+**Laptop install (no sudo needed for the unit itself):**
 
 ```bash
-# on the robot, from anywhere on the repo
-sudo ~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd.sh
+# from anywhere on the repo
+~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd-laptop.sh
+# or, to also start at boot before any GUI login:
+~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd-laptop.sh --linger
 ```
 
-The unit runs `npm run preview` against `dist/` as the `mirte` user. After
-each `git pull` you must rebuild and restart:
+The laptop unit runs `ros2 launch lupin_web lupin_web.launch.py mode:=preview
+tls:=true rosbridge:=true` — bringing up Vite preview (HTTPS :8090),
+web_video_server (:8091), AND a co-located rosbridge_websocket (:9090). The
+HMI talks to localhost rosbridge via the same-origin `/_ros` proxy; the Pi
+isn't in the JSON path. After each `git pull` rebuild + restart:
 
 ```bash
 cd ~/ros2_ws/src/lupin/lupin_web/web
 npm install      # only if package-lock.json changed
 npm run build
-sudo systemctl restart lupin-web
+systemctl --user restart lupin-web
 ```
 
-Inspect with `journalctl -u lupin-web -f`. Uninstall with
-`sudo .../install-systemd.sh --uninstall`.
+Inspect with `journalctl --user -u lupin-web -f`. Uninstall with
+`scripts/install-systemd-laptop.sh --uninstall`.
+
+**Robot install** (kept for offline / standalone teleop only — adds load
+back to the Pi):
+
+```bash
+sudo ~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd.sh
+```
 
 The unit binds `:8090` only — never `:80` (course UI), `:8080` (wifi-connect
-AP captive portal), or `:9090` (rosbridge). Failure of the course web stack
-does not bring this down and vice versa.
+AP captive portal), or `:9090` (rosbridge — the robot version defers to the
+vendor instance in mirte-ros). Failure of the course web stack does not
+bring this down and vice versa.
+
+> **Don't run both at once.** Browser will pick whichever URL you type but
+> the two HMIs each connect to their own rosbridge and will fight for the
+> same robot's topics — and the robot side loads the Pi unnecessarily.
+> Uninstall on the robot before installing on the laptop.
 
 ## Voice assistant
 

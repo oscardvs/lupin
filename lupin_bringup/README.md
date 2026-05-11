@@ -7,19 +7,32 @@ vendor file names.
 
 ## Hardware bring-up — minimal commands
 
-The robot is **operator-controllable from power-on**. Three systemd services
-on the Pi cover everything that has to be alive for HMI teleop, arm presets,
-and the gripper:
+Lupin's runtime is split across **the robot** (ROS-native, no JSON broker)
+and **the operator's laptop** (HMI + Nav2 + RViz). The robot only does what
+must live close to the hardware; everything else runs on the laptop where
+there's CPU headroom. See `project_offload_strategy` for the rationale.
+
+**On the robot — two systemd services, no HMI:**
 
 | Service | What it does | Lives in |
 | --- | --- | --- |
-| `lupin-web` | HMI on `https://<robot-ip>:8090` (HTTPS + same-origin `/_ros` and `/_video` proxies, web_video_server :8091) | `lupin_web/` |
-| `lupin-onboard` | `twist_mux` + `arm_preset_server` + `gripper_action_bridge` — operator surfaces wired to controllers | `lupin_bringup/` |
-| `lupin-cameras-throttle` | `topic_tools throttle` pipeline → `/lupin/camera/...` at config rates | `lupin_bringup/` |
+| `lupin-onboard` | `twist_mux` + `arm_preset_server` + `gripper_action_bridge` — operator surfaces wired to controllers. Must live on the robot so manual control still works while the laptop is rebooting. | `lupin_bringup/` |
+| `lupin-cameras-throttle` | `topic_tools throttle` pipeline → `/lupin/camera/...` at config rates, so the laptop subscribes to throttled streams instead of full-rate vendor feeds. | `lupin_bringup/` |
 
-After power-on, open `https://<robot-ip>:8090` and the joystick / arm /
-gripper widgets work. **No laptop launch required.** The browser will warn
-about the self-signed cert; accept it once per device.
+The vendor `mirte-ros.service` still runs telemetrix, ros2_control, RPLidar,
+cameras, and a vendor `rosbridge_websocket :9090` — but the Lupin HMI no
+longer connects to that vendor rosbridge; it talks to the laptop's
+co-located one. The vendor instance sits idle.
+
+**On the laptop — user-mode systemd HMI auto-starts at login:**
+
+| Service | What it does | Lives in |
+| --- | --- | --- |
+| `lupin-web` (user) | Vite preview (HTTPS :8090) + rosbridge_websocket :9090 + `web_video_server` :8091. All JSON encoding for the HMI lives here, off the Pi. | `lupin_web/` |
+
+After laptop boot + login, open `https://<laptop-ip>:8090` and the
+joystick / arm / gripper widgets work. The browser will warn about the
+self-signed cert; accept it once per device.
 
 For Nav2 + SLAM + RViz on top of the running robot, from the laptop:
 
@@ -27,10 +40,41 @@ For Nav2 + SLAM + RViz on top of the running robot, from the laptop:
 ros2 launch lupin_bringup hardware.launch.py
 ```
 
-That's it. One command, no flags. It assumes the robot is up and reachable
-on the same LAN. Useful args: `rviz:=false` (headless), `joystick:=true` (Xbox
-controller plugged into the laptop). Twist arbitration: HMI is priority 50,
-Xbox 100, Nav2 10 — so the operator override always wins.
+That's the one entry point. Each subsystem is behind a boolean flag, so
+the operator opts in or out without editing files:
+
+| Flag                  | Default | What it brings up |
+| --------------------- | ------- | ----------------- |
+| `slam:=`              | `true`  | `slam_toolbox` (owns `/map`, map→odom TF) + `slam_reset_node` (the HMI Erase-map service `/lupin/nav/clear_map`). |
+| `nav2:=`              | `true`  | Nav2 stack in slam mode. Sentinel waits for `/map` before activating. |
+| `twin:=`              | `true`  | `lupin_twin` — aggregates `/floranova/observations` into `/twin/state` for the HMI Twin tab. |
+| `mission:=`           | `false` | Mission pipeline bundle: `greenhouse_bridge` (oracle), `mission_orchestrator` lifecycle node, one-shot `/amcl_pose` seed. |
+| `rviz:=`              | `true`  | RViz2 with the persistent `full_bringup_viz.rviz` config. |
+| `joystick:=`          | `false` | Xbox controller teleop on the laptop (`joy_node` + `teleop_twist_joy` + `arm_teleop`). |
+| `dependency_timeout_s:=` | `120.0` | Mission orchestrator wait before FAULT. |
+
+Common invocations:
+
+```bash
+# Default operator mode — SLAM + Nav2 + twin + RViz.
+ros2 launch lupin_bringup hardware.launch.py
+
+# Headless smoke test.
+ros2 launch lupin_bringup hardware.launch.py rviz:=false
+
+# Full mission run.
+ros2 launch lupin_bringup hardware.launch.py mission:=true
+
+# Teleop only — laptop adds no autonomy, RViz still visualises /scan + /tf.
+ros2 launch lupin_bringup hardware.launch.py slam:=false nav2:=false
+```
+
+Twist arbitration: HMI is priority 50, Xbox 100, Nav2 10 — so the
+operator override always wins.
+
+`hardware_full.launch.py` is now a deprecated alias for
+`hardware.launch.py mission:=true`; it forwards with a warning banner and
+will be removed in a future cleanup.
 
 ### Installing the robot-side services (one-time per Mirte image)
 
@@ -45,10 +89,33 @@ cd ~/ros2_ws && colcon build --packages-up-to lupin_bringup --symlink-install
 source ~/ros2_ws/install/setup.bash
 sudo bash $(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/install-onboard-systemd.sh
 sudo bash $(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/install-cameras-throttle-systemd.sh
-sudo bash $(ros2 pkg prefix lupin_web)/share/lupin_web/scripts/install-systemd.sh
 ```
 
 Each install script is idempotent — safe to re-run. `--uninstall` undoes it.
+
+If `lupin-web.service` was previously installed on the robot (legacy
+configuration before the HMI offload), uninstall it now:
+
+```bash
+sudo bash $(ros2 pkg prefix lupin_web)/share/lupin_web/scripts/install-systemd.sh --uninstall
+```
+
+### Installing the laptop-side HMI service (one-time per laptop)
+
+```bash
+# On the laptop, from anywhere on the repo
+cd ~/ros2_ws/src/lupin/lupin_web/web && npm install && npm run build
+
+cd ~/ros2_ws && colcon build --packages-select lupin_web --symlink-install
+
+source ~/ros2_ws/install/setup.bash
+~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd-laptop.sh --linger
+```
+
+No sudo for the unit itself (it's a user-mode systemd unit installed to
+`~/.config/systemd/user/`). The optional `--linger` runs one `sudo
+loginctl enable-linger $USER` so the HMI starts at boot rather than at GUI
+login. Inspect with `journalctl --user -u lupin-web -f`.
 
 ### Tuning camera rates
 

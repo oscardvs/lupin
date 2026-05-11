@@ -1,43 +1,65 @@
-"""hardware.launch.py — Lupin Nav2 stack against the real Mirte.
+"""hardware.launch.py — Lupin laptop-side bring-up against the real Mirte.
 
-Laptop-side bring-up that adds Nav2 + online slam_toolbox + RViz on top of
-the robot's already-running vendor stack (mirte-ros.service: telemetrix,
-ros2_control, RPLidar, cameras, rosbridge :9090, vendor web_video_server).
-The Lupin Web HMI is served separately by lupin-web.service on :8090; this
-launch does NOT start either rosbridge or the HMI — they're already up and
-re-launching would just bind-conflict.
+Single, modular entry point for everything that runs on the operator's
+laptop on top of the robot's onboard services. Each subsystem is behind
+a boolean flag so the operator can opt in or out without editing files.
 
-Topology after launch:
+Topology after launch (defaults):
 
-    Robot (mirte-ros.service):
-        rplidar       → /scan
-        controllers   → /mirte_base_controller/odom + TF (odom→base_link)
-        controllers   ← /mirte_base_controller/cmd_vel  (Twist, BEST_EFFORT)
-        rosbridge_websocket :9090
-        web_video_server :8181 (vendor, localhost only)
+    Robot (already running via systemd):
+        mirte-ros.service               telemetrix, controllers,
+                                        RPLidar → /scan,
+                                        cameras, rosbridge :9090,
+                                        web_video_server :8181
+        lupin-onboard.service           twist_mux (cmd_vel arbitration),
+                                        arm_preset_server,
+                                        gripper_action_bridge
+        lupin-cameras-throttle.service  /camera/* → /lupin/camera/* @ 1 Hz
+        lupin-web.service               HMI on :8090 (HTTPS)
 
     Laptop (this launch):
-        slam_toolbox  → /map, map→odom TF
-        nav2          → /cmd_vel_auto via velocity_smoother
-        twist_mux     → /mirte_base_controller/cmd_vel
-        rviz2         (interactive)
+        slam_toolbox        → /map, map→odom TF              (slam:=true)
+        slam_reset_node     → /lupin/nav/clear_map service   (slam:=true)
+        nav2 (slam mode)    → /cmd_vel_auto via smoother     (nav2:=true)
+        lupin_twin          → /twin/state + /twin/get_field  (twin:=true)
+        greenhouse_bridge   → /floranova/* oracle            (mission:=true)
+        mission_orchestrator→ /mission/start + lifecycle     (mission:=true)
+        seed_amcl_pose      → one-shot /amcl_pose            (mission:=true)
+        xbox_teleop         → /cmd_vel_joy + arm_teleop      (joystick:=true)
+        rviz2               → interactive UI                 (rviz:=true)
 
-    Browser (lupin-web.service on robot, port :8090):
-        publishes /cmd_vel_manual and /goal_pose via rosbridge
+Flags (all booleans, default in parens):
 
-Online SLAM is the default — drive around with the joystick (Xbox or web)
-or RViz "2D Goal Pose", and slam_toolbox builds the map as we move. The
-map can be saved with `nav2_map_server map_saver_cli` (transient_local
-durability — see project_mirte_sim_nav_quirks for the flag) once the demo
-space is mapped.
+    slam (true)       slam_toolbox + slam_reset_node. Owns /map.
+    nav2 (true)       Nav2 stack. Waits for /map before activating.
+    twin (true)       lupin_twin aggregator. Cheap; HMI consumes it.
+    mission (false)   greenhouse_bridge + mission_orchestrator + AMCL
+                      pose seed as a bundle. Turn on for mission runs.
+    rviz (true)       RViz2 with the persistent full_bringup_viz config.
+    joystick (false)  Xbox controller teleop on the laptop.
 
-Deviations from sim_full.launch.py
-----------------------------------
-- No `greenhouse_sim` — robot is the source of /scan, /odom, /tf.
-- No `arm_sim_shim` — real Mirte exposes Hiwonder services natively.
-- No `rosbridge` / `lupin_web` Includes — both run on the robot via systemd.
-- All `use_sim_time:=false`.
-- twist_mux output → /mirte_base_controller/cmd_vel (stamped, not _unstamped).
+Common invocations:
+
+    # Operator drive / SLAM with HMI — default mode.
+    ros2 launch lupin_bringup hardware.launch.py
+
+    # Headless smoke test (no RViz window).
+    ros2 launch lupin_bringup hardware.launch.py rviz:=false
+
+    # Full mission run (bridge + orchestrator + twin + Nav2 + slam + RViz).
+    ros2 launch lupin_bringup hardware.launch.py mission:=true
+
+    # Just want the orchestrator on top of an already-mapped environment
+    # (skip slam, point Nav2 at a saved map manually).
+    ros2 launch lupin_bringup hardware.launch.py slam:=false nav2:=false mission:=true
+
+    # Robot teleop only — laptop adds nothing autonomous, just RViz for
+    # watching /scan + /tf.
+    ros2 launch lupin_bringup hardware.launch.py slam:=false nav2:=false
+
+The sentinel cascade (wait_for_scan → slam → wait_for_map → nav2) only
+fires when its target subsystem is enabled, so disabling one stage doesn't
+block the rest.
 """
 
 import os
@@ -51,6 +73,7 @@ from launch.actions import (
     LogInfo,
     RegisterEventHandler,
 )
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -58,23 +81,58 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    pkg_bringup = get_package_share_directory('lupin_bringup')  # noqa: F841
+    pkg_bringup = get_package_share_directory('lupin_bringup')
+    pkg_bridge = get_package_share_directory('lupin_greenhouse_bridge')
     pkg_nav = get_package_share_directory('lupin_navigation')
+    pkg_mission = get_package_share_directory('lupin_mission')
+    pkg_twin = get_package_share_directory('lupin_twin')
     pkg_hmi = get_package_share_directory('lupin_hmi')
 
     args = [
         DeclareLaunchArgument(
+            'slam', default_value='true',
+            description='Bring up slam_toolbox (+ slam_reset_node). '
+                        'Owns /map and the map→odom TF. Turn off when '
+                        'using a saved map with a separate map_server.',
+        ),
+        DeclareLaunchArgument(
+            'nav2', default_value='true',
+            description='Bring up the Nav2 stack in slam mode. Waits for '
+                        '/map before activating.',
+        ),
+        DeclareLaunchArgument(
+            'twin', default_value='true',
+            description='Bring up lupin_twin (aggregates '
+                        '/floranova/observations into /twin/state). Cheap '
+                        'and the HMI Twin tab is a pure consumer.',
+        ),
+        DeclareLaunchArgument(
+            'mission', default_value='false',
+            description='Bring up the mission pipeline as a bundle: '
+                        'greenhouse_bridge (oracle), mission_orchestrator '
+                        'lifecycle node, and a one-shot /amcl_pose seed. '
+                        'Turn on for end-to-end mission runs.',
+        ),
+        DeclareLaunchArgument(
             'rviz', default_value='true',
-            description='Launch RViz alongside Nav2 with the persistent '
-                        'config at rviz/full_bringup_viz.rviz. Ctrl+S in '
-                        'RViz writes back to that exact path.',
+            description='Launch RViz with the persistent config at '
+                        'rviz/full_bringup_viz.rviz. Ctrl+S in RViz writes '
+                        'back to that exact path.',
         ),
         DeclareLaunchArgument(
             'joystick', default_value='false',
             description='Bring up Xbox controller teleop (joy_node + '
-                        'teleop_twist_joy + arm_teleop). Set true if a USB '
-                        'gamepad is plugged into the laptop; false avoids '
-                        'noisy joy_node logs when no controller is present.',
+                        'teleop_twist_joy + arm_teleop) on the laptop. '
+                        'False avoids noisy joy_node logs when no '
+                        'controller is plugged in.',
+        ),
+        DeclareLaunchArgument(
+            'dependency_timeout_s', default_value='120.0',
+            description='How long the mission orchestrator waits for Nav2 '
+                        '+ bridge before transitioning to FAULT. Bumped '
+                        'from the 30 s default because Nav2 lifecycle '
+                        'activation in slam mode takes longer than that '
+                        'on a cold start.',
         ),
         DeclareLaunchArgument(
             'slam_params_file',
@@ -82,27 +140,37 @@ def generate_launch_description() -> LaunchDescription:
                 pkg_nav, 'config', 'slam_toolbox_sim.yaml',
             ),
             description='slam_toolbox params yaml. Sim and hardware share '
-                        'this — the only sim-specific bit (use_sim_time) is '
-                        'overridden via launch arg, not the yaml.',
+                        'this — the only sim-specific bit (use_sim_time) '
+                        'is overridden via launch arg, not the yaml.',
         ),
     ]
 
-    # ── Sentinel: wait for /scan from the robot's RPLidar ──────────────
-    # On hardware the robot's rplidar_node is already running, so /scan is
-    # usually live before this fires. The cascade still helps when the
-    # laptop launches before DDS discovery has propagated topics.
+    # Tag layout — for now the bridge consumes the same widened sim layout
+    # so the orchestrator can be smoke-tested against an oracle bridge on
+    # hardware before real perception lands. Per project_approach_pose_pipeline
+    # the operator can tune approach poses in approach_overrides.yaml without
+    # rebuilding. Replace with tag_locations_hardware.json once the demo
+    # space is measured.
+    tag_locations = os.path.join(pkg_bringup, 'config', 'tag_locations_widened.json')
+    approach_overrides = os.path.join(pkg_bringup, 'config', 'approach_overrides.yaml')
+
+    # ── SLAM ───────────────────────────────────────────────────────────
+    # Sentinel: wait for /scan from the robot's RPLidar. On hardware the
+    # robot's rplidar_node is already running, so /scan is usually live
+    # before this fires. The cascade still helps when the laptop launches
+    # before DDS discovery has propagated topics.
     wait_for_scan = ExecuteProcess(
         name='wait_for_scan',
         cmd=['ros2', 'topic', 'echo', '--once', '/scan',
              'sensor_msgs/msg/LaserScan'],
         output='log',
+        condition=IfCondition(LaunchConfiguration('slam')),
     )
 
-    # ── slam_toolbox starts after /scan is up ──────────────────────────
     # Spawned directly (not via online_async_launch.py) so we can pin
-    # `respawn=True`. The /lupin/nav/clear_map service exposed by
-    # `slam_reset_node` SIGTERMs this process to wipe the map; respawn
-    # then brings it back up with an empty pose graph.
+    # respawn=True. The /lupin/nav/clear_map service exposed by
+    # slam_reset_node SIGTERMs this process to wipe the map; respawn then
+    # brings it back up with an empty pose graph.
     slam_node = Node(
         package='slam_toolbox',
         executable='async_slam_toolbox_node',
@@ -115,27 +183,34 @@ def generate_launch_description() -> LaunchDescription:
         respawn_delay=1.0,
         output='screen',
     )
-    on_scan_ready = RegisterEventHandler(OnProcessExit(
-        target_action=wait_for_scan,
-        on_exit=[
-            LogInfo(msg='[lupin_bringup] /scan online — starting slam_toolbox'),
-            slam_node,
-        ],
-    ))
+    on_scan_ready = RegisterEventHandler(
+        OnProcessExit(
+            target_action=wait_for_scan,
+            on_exit=[
+                LogInfo(msg='[lupin_bringup] /scan online — starting slam_toolbox'),
+                slam_node,
+            ],
+        ),
+        condition=IfCondition(LaunchConfiguration('slam')),
+    )
 
-    # ── slam_reset — owns /lupin/nav/clear_map (Trigger). HMI hits this
-    # to wipe the SLAM map; node SIGTERMs slam_toolbox + clears costmaps.
+    # slam_reset — owns /lupin/nav/clear_map (Trigger). HMI hits this to
+    # wipe the SLAM map; node SIGTERMs slam_toolbox + clears costmaps.
     slam_reset_node = Node(
         package='lupin_navigation',
         executable='slam_reset_node',
         name='slam_reset_node',
         parameters=[{'use_sim_time': False}],
         output='log',
+        condition=IfCondition(LaunchConfiguration('slam')),
     )
 
-    # ── Sentinel: wait for /map from slam_toolbox ──────────────────────
-    # /map is RELIABLE+TRANSIENT_LOCAL; tell echo to match so the QoS
-    # negotiation actually connects.
+    # ── Nav2 ───────────────────────────────────────────────────────────
+    # Sentinel: wait for /map. RELIABLE+TRANSIENT_LOCAL; tell echo to
+    # match so the QoS negotiation actually connects. When slam=false the
+    # operator is responsible for providing /map (separate map_server);
+    # this sentinel still fires correctly whether slam_toolbox or
+    # map_server publishes it.
     wait_for_map = ExecuteProcess(
         name='wait_for_map',
         cmd=['ros2', 'topic', 'echo', '--once',
@@ -143,9 +218,9 @@ def generate_launch_description() -> LaunchDescription:
              '--qos-durability', 'transient_local',
              '/map', 'nav_msgs/msg/OccupancyGrid'],
         output='log',
+        condition=IfCondition(LaunchConfiguration('nav2')),
     )
 
-    # ── Nav2 (slam mode) starts after /map is up ───────────────────────
     # `map:=krr_house.yaml` is forwarded even though slam:=true means
     # map_server isn't instantiated — RewrittenYaml still substitutes the
     # path into the params blob and a literal '' makes it explode.
@@ -161,33 +236,94 @@ def generate_launch_description() -> LaunchDescription:
             ('autostart', 'true'),
         ],
     )
-    on_map_ready = RegisterEventHandler(OnProcessExit(
-        target_action=wait_for_map,
-        on_exit=[
-            LogInfo(msg='[lupin_bringup] /map online — starting Nav2 lifecycle '
-                        '(autostart=true; expect ~15-30 s to ACTIVE)'),
-            nav2_include,
+
+    # ── TF-ready sentinel between /map and Nav2 lifecycle ─────────────
+    # On hardware, a cold DDS-over-WiFi /tf subscription on the laptop
+    # takes ~5–10 s to populate the buffer with the robot's odom →
+    # base_link transform. Nav2's local_costmap activation does a single
+    # canTransform() call with a short retry budget and bails with
+    # "Invalid frame ID base_link" if TF isn't hot yet, leaving the
+    # lifecycle stuck. This sentinel blocks until an external listener
+    # resolves the transform, then exits — gating Nav2's launch.
+    wait_for_tf = ExecuteProcess(
+        name='wait_for_tf',
+        cmd=['ros2', 'run', 'lupin_bringup', 'wait_for_tf',
+             'odom', 'base_link', '30.0'],
+        output='log',
+        condition=IfCondition(LaunchConfiguration('nav2')),
+    )
+    on_map_ready = RegisterEventHandler(
+        OnProcessExit(
+            target_action=wait_for_map,
+            on_exit=[
+                LogInfo(msg='[lupin_bringup] /map online — waiting for tf '
+                            'odom→base_link to warm up before Nav2'),
+                wait_for_tf,
+            ],
+        ),
+        condition=IfCondition(LaunchConfiguration('nav2')),
+    )
+    on_tf_ready = RegisterEventHandler(
+        OnProcessExit(
+            target_action=wait_for_tf,
+            on_exit=[
+                LogInfo(msg='[lupin_bringup] tf hot — starting Nav2 lifecycle '
+                            '(autostart=true; expect ~15-30 s to ACTIVE)'),
+                nav2_include,
+            ],
+        ),
+        condition=IfCondition(LaunchConfiguration('nav2')),
+    )
+
+    # ── Mission pipeline (bridge + orchestrator + AMCL seed) ───────────
+    bridge = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_bridge, 'launch', 'greenhouse_bridge.launch.py'),
+        ),
+        launch_arguments=[('tag_file', tag_locations)],
+        condition=IfCondition(LaunchConfiguration('mission')),
+    )
+
+    mission = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_mission, 'launch', 'mission.launch.py'),
+        ),
+        launch_arguments=[
+            ('dependency_timeout_s', LaunchConfiguration('dependency_timeout_s')),
+            ('tag_locations_file', tag_locations),
+            ('approach_overrides_file', approach_overrides),
         ],
-    ))
+        condition=IfCondition(LaunchConfiguration('mission')),
+    )
 
-    # NOTE: twist_mux, arm_preset_server, and gripper_action_bridge used to
-    # live here; they moved to lupin-onboard.service on the robot so the
-    # operator can drive the chassis, move the arm, and operate the gripper
-    # the moment the robot finishes booting — no laptop launch required.
-    # See lupin_bringup/launch/onboard.launch.py and the project README's
-    # "Bring-up" section.
+    # The orchestrator subscribes to /amcl_pose at t=0 and caches whatever
+    # the seed publishes — no race with the slam/Nav2 cascade.
+    # PREPARE.LOCALIZING clears immediately when a mission is started.
+    seed = ExecuteProcess(
+        cmd=['ros2', 'run', 'lupin_bringup', 'seed_amcl_pose'],
+        output='log',
+        condition=IfCondition(LaunchConfiguration('mission')),
+    )
 
-    # ── Xbox controller teleop (optional) ──────────────────────────────
+    # ── Digital twin (HMI live-state aggregator) ───────────────────────
+    twin = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_twin, 'launch', 'twin.launch.py'),
+        ),
+        condition=IfCondition(LaunchConfiguration('twin')),
+    )
+
+    # ── Xbox controller teleop (optional, joystick on the laptop) ──────
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
     xbox_teleop = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_hmi, 'launch', 'xbox_teleop.launch.py'),
         ),
         launch_arguments=[('use_sim_time', 'false')],
-        condition=_when('joystick'),
+        condition=IfCondition(LaunchConfiguration('joystick')),
     )
 
-    # ── RViz with persistent source-tree config ─────────────────────────
+    # ── RViz with persistent source-tree config ────────────────────────
     rviz_config = _resolve_rviz_config()
     rviz = Node(
         package='rviz2',
@@ -195,18 +331,30 @@ def generate_launch_description() -> LaunchDescription:
         name='lupin_rviz',
         arguments=['-d', rviz_config],
         output='log',
-        condition=_when('rviz'),
+        condition=IfCondition(LaunchConfiguration('rviz')),
     )
+
+    # NOTE: twist_mux, arm_preset_server, and gripper_action_bridge USED
+    # to live in this launch; they moved to lupin-onboard.service on the
+    # robot so the operator can drive the chassis, move the arm, and
+    # operate the gripper the moment the robot finishes booting — no
+    # laptop launch required. See onboard.launch.py.
 
     return LaunchDescription([
         *args,
-        LogInfo(msg='[lupin_bringup] hardware: Nav2 + online slam_toolbox '
-                    '+ RViz against the real Mirte. /scan → slam_toolbox; '
-                    '/map → Nav2. twist_mux + arm_preset_server + '
-                    'gripper_action_bridge run on the robot via '
-                    'lupin-onboard.service.'),
-        # Phase 1 — fire-and-forget at t=0:
+        LogInfo(msg=['[lupin_bringup] hardware: laptop-side bring-up. ',
+                     'slam=', LaunchConfiguration('slam'),
+                     ' nav2=', LaunchConfiguration('nav2'),
+                     ' twin=', LaunchConfiguration('twin'),
+                     ' mission=', LaunchConfiguration('mission'),
+                     ' rviz=', LaunchConfiguration('rviz'),
+                     ' joystick=', LaunchConfiguration('joystick')]),
+        # Phase 1 — fire-and-forget at t=0 (each gated by its own flag):
         slam_reset_node,
+        bridge,
+        mission,
+        twin,
+        seed,
         xbox_teleop,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
@@ -216,14 +364,8 @@ def generate_launch_description() -> LaunchDescription:
         # Event handlers: chain the cascade.
         on_scan_ready,
         on_map_ready,
+        on_tf_ready,
     ])
-
-
-def _when(arg_name: str):
-    """Tiny helper — IfCondition needs a substitution, so wrap a launch arg
-    as a truthy/falsy condition for the include."""
-    from launch.conditions import IfCondition
-    return IfCondition(LaunchConfiguration(arg_name))
 
 
 def _resolve_rviz_config() -> str:
