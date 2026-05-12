@@ -30,12 +30,15 @@ cameras:
   # producer-side CPU saving.
   color:
     enabled: true
-    fps: 5            # vendor default 10; HMI and AprilTag are fine at 5
+    # The Astra Mini Pro's color sensor only offers 10/15/30 fps at 640×480
+    # (and 7 fps only at 1280×960). 10 is the lowest supported here — going
+    # lower would need a resolution drop to 320×240 or a smaller format.
+    fps: 10
     width: 640
     height: 480
   depth:
     enabled: false    # turn on for grasp/perception research
-    fps: 5
+    fps: 10           # mirror color — depth profiles map 1:1 on this device
   point_cloud:
     enabled: false    # heavy; only when offline analysis needs the cloud
 
