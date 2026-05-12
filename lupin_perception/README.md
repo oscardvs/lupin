@@ -22,10 +22,10 @@ The perception system has been updated to use **OpenCV's native ArUco detector**
    - Calculates rotation vector and translation vector
    - Broadcasts TF transforms with proper orientation
 3. **Visualizes Results**:
-- Draws bounding boxes around detected tags locally
-- Publishes tag ID, corner coordinates, and distance as JSON for the web overlay
-- Uses the live camera MJPEG stream plus JSON metadata instead of a separate boxed image stream
-4. **Provides Real-time TF Data** for downstream tasks (navigation, manipulation, etc.)
+   - Draws bounding boxes around detected tags locally
+   - Publishes tag ID, corner coordinates, and distance as JSON for the web overlay
+   - Uses the live camera MJPEG stream plus JSON metadata instead of a separate boxed image stream
+1. **Provides Real-time TF Data** for downstream tasks (navigation, manipulation, etc.)
 
 ## Launching
 
@@ -42,14 +42,12 @@ This launches only the `tag_annotator` node.
 Camera calibration is hard-coded in `tag_annotator.py`:
 - **Camera Matrix (K)**: Intrinsic parameters (focal length, principal point)
 - **Distortion Coefficients**: Currently set to zeros (no distortion model)
-- **Tag Size**: 0.1 m (10 cm) - used for distance calculations
+- **Tag Size**: 0.1 m (10 cm) - used for distance calculations. IMPORTANT: in the real world, the tags are 40x40 mm.
 
 To customize for a different camera:
-1. Run camera calibration to obtain the intrinsic matrix
+1. Run camera calibration to obtain the intrinsic matrix or get from manufacturer first.
 2. Update `self.K` in `tag_annotator.py`
 3. Update `self.dist_coeffs` if distortion correction is needed
-
-The legacy `config/tags.yaml` file is preserved but no longer used.
 
 ## Architecture
 
