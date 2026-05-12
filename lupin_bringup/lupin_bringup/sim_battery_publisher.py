@@ -19,9 +19,12 @@ you'd rather gate purely on percentage.
 Run via ``ros2 run lupin_bringup sim_battery_publisher``.
 """
 
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import BatteryState
+from rcl_interfaces.msg import SetParametersResult
+
 
 
 # Maps charge percentage [0..1] linearly to a Li-ion-ish voltage band so
@@ -38,6 +41,8 @@ class SimBatteryPublisher(Node):
         self.declare_parameter('initial_charge', 1.0)   # 0.0–1.0
         self.declare_parameter('drain_rate_per_sec', 0.001)
         self.declare_parameter('publish_rate_hz', 1.0)
+        self.declare_parameter('override_percentage', -1.0)  # -1.0 = disabled, 0.0–1.0 = freeze at this value
+
 
         self._charge = float(self.get_parameter('initial_charge').value)
         drain_per_sec = float(self.get_parameter('drain_rate_per_sec').value)
@@ -46,6 +51,7 @@ class SimBatteryPublisher(Node):
         # doesn't silently 10× the actual drain (and 10× over-report the
         # remaining-time signals downstream).
         self._drain_per_tick = drain_per_sec / rate if rate > 0.0 else drain_per_sec
+        self.add_on_set_parameters_callback(self._on_param_change)
 
         self._bat_pub = self.create_publisher(
             BatteryState, '/io/power/power_watcher', 10)
@@ -56,8 +62,30 @@ class SimBatteryPublisher(Node):
             f'drain={drain_per_sec}/s @ {rate} Hz '
             f'(= {self._drain_per_tick}/tick)')
 
+    def _on_param_change(self, params):
+        for p in params:
+            if p.name == 'drain_rate_per_sec':
+                rate = float(self.get_parameter('publish_rate_hz').value)
+                self._drain_per_tick = p.value / rate if rate > 0.0 else p.value
+                self.get_logger().info(f'drain updated to {p.value}/s (= {self._drain_per_tick}/tick)')
+            elif p.name == 'override_percentage':
+                if p.value >= 0.0:
+                    self._charge = float(p.value)
+                    self.get_logger().info(
+                        f'Battery overridden to {p.value:.2f} — draining resumes from here')
+                    
+                    # Reset immediately so draining continues without a second param set
+                    self.set_parameters([
+                        rclpy.parameter.Parameter('override_percentage', rclpy.parameter.Parameter.Type.DOUBLE, -1.0)])
+
+        return SetParametersResult(successful=True)
+
     def _tick(self):
+
+        # override = float(self.get_parameter('override_percentage').value)
+
         self._charge = max(0.0, self._charge - self._drain_per_tick)
+
 
         bat = BatteryState()
         bat.header.stamp = self.get_clock().now().to_msg()
