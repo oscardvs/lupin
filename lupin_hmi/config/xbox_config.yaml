@@ -24,6 +24,13 @@
 # dead-man without a custom adapter — LB is the closest button equivalent.
 # Without a dead-man, joy_node's continuous "all zeros" stream would pin
 # priority on twist_mux and starve Nav2 / the web HMI.
+# Negative scales here mirror the HMI's polarityInvertHmi flip
+# (see lupin_web/web/src/lib/polarity.ts): Mirte-247264's mecanum drive is
+# wired with motor + encoder leads physically reversed in pairs, so the
+# vendor cmd_vel frame is rotated 180° about Z relative to the physical
+# chassis. Joystick output must be flipped on linear.x, linear.y, and
+# angular.yaw to match what the operator expects — otherwise pushing the
+# stick forward drives backwards.
 teleop_twist_joy_node:
   ros__parameters:
     require_enable_button: true
@@ -33,16 +40,16 @@ teleop_twist_joy_node:
     axis_linear:
       x: 1                    # left stick vertical  → forward/back
       y: 0                    # left stick horizontal → strafe
-    scale_linear:               # LB-only normal drive
-      x: 0.2
-      y: 0.2
+    scale_linear:               # LB-only normal drive (negated; see header)
+      x: -0.2
+      y: -0.2
     scale_linear_turbo:         # RB → ~3× faster sprint
-      x: 0.6
-      y: 0.6
+      x: -0.6
+      y: -0.6
 
     axis_angular:
       yaw: 2                  # right stick horizontal → yaw
     scale_angular:
-      yaw: 0.7
+      yaw: -0.7
     scale_angular_turbo:
-      yaw: 1.4
+      yaw: -1.4
