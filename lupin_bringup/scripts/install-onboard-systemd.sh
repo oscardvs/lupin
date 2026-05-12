@@ -40,6 +40,20 @@ if [[ ! -f "$UNIT_SRC" ]]; then
   exit 1
 fi
 
+# joy_node opens the Xbox controller via SDL2's evdev backend, which reads
+# /dev/input/event* — those nodes are 0660 root:input on the stock Mirte
+# image. Without group membership the controller pairs and /dev/input/js0
+# even shows up, but joy_node can't open the matching event device and
+# silently never publishes /joy. Idempotent (usermod no-ops if already a
+# member); reflashed images need this rerun.
+if id -nG mirte 2>/dev/null | grep -qw input; then
+  echo "info: user 'mirte' already in 'input' group"
+else
+  echo "info: adding 'mirte' to 'input' group (Xbox controller via SDL2/evdev)"
+  usermod -aG input mirte
+  echo "      group change takes effect on next service start — done below."
+fi
+
 # Retire the legacy single-bridge unit if it's installed — onboard supersedes it.
 if systemctl list-unit-files "${LEGACY}.service" 2>/dev/null | grep -q "$LEGACY"; then
   echo "info: superseding $LEGACY.service with $SVC.service"
