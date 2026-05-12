@@ -25,13 +25,18 @@ Setting an `*_axis` to -1 falls back to the `*_plus`/`*_minus` button pair.
 Shoulder gating — both directions supported, mutually exclusive:
   - ``shoulder_enable_button`` (≥ 0): shoulder lives ONLY while held.
   - ``shoulder_disable_button`` (≥ 0): shoulder lives ONLY while NOT held.
-Defaults: ``enable=-1`` (off), ``disable=6`` (LB on this controller).
-Rationale: twist_mux sends LB-held joystick output to the chassis (drive
-mode), so the right stick is bound to yaw at the same time. Releasing LB
-hands the right stick back to the arm. The wrist/elbow channels
-intentionally have no gating — D-pad presses don't conflict with
-anything else. The gripper triggers are also ungated so you can grip
-mid-drive.
+Defaults: ``enable=99`` (out of range → shoulder OFF by default),
+          ``disable=-1`` (unused when enable gates).
+Rationale: an earlier version gated shoulder behind "LB not held" so the
+right stick reverted to shoulder duty whenever the operator wasn't
+driving. That left the shoulder commandable by stick drift the moment LB
+released — Xbox controllers routinely drift past a 0.2 deadzone — so the
+arm could swing while the operator pressed an unrelated D-pad button or
+sat idle. New default: shoulder demands a positive button hold. Probe a
+free button on your controller (Back/Select, stick-click, etc.) and
+override ``shoulder_enable_button`` at launch when you want shoulder
+control. Wrist/elbow (D-pad axes) and gripper (triggers) stay
+ungated — those input devices don't drift.
 """
 
 import rclpy
@@ -55,9 +60,11 @@ class ArmTeleop(Node):
         self.declare_parameter('elbow_minus_button', -1)
         self.declare_parameter('wrist_plus_button', -1)
         self.declare_parameter('wrist_minus_button', -1)
-        # Shoulder gating (mutually exclusive — see docstring).
-        self.declare_parameter('shoulder_enable_button', -1)
-        self.declare_parameter('shoulder_disable_button', 6)  # Xbox LB (probed)
+        # Shoulder gating (mutually exclusive — see docstring). Default
+        # enable=99 (no controller has that many buttons) → shoulder OFF;
+        # override at launch with a probed safe button to opt in.
+        self.declare_parameter('shoulder_enable_button', 99)
+        self.declare_parameter('shoulder_disable_button', -1)
         # Per-joint sign flips so we can flip a stick or D-pad axis without
         # hard-coding it. +1 = upstream sign, -1 = invert.
         self.declare_parameter('shoulder_pan_sign', 1)
@@ -163,6 +170,21 @@ class ArmTeleop(Node):
             f'step={self._gripper_step:.3f} rad, '
             f'action={self._gripper_action_name}'
         )
+        # Loudly surface the shoulder-gating state — it's the difference
+        # between "right stick safely inert" and "right stick drift becomes
+        # arm motion." Operators reading the journal should never have to
+        # guess.
+        shoulder_status = (
+            f'DISABLED (shoulder_enable_button={self._shoulder_enable_btn} '
+            f'is out of range)'
+            if self._shoulder_enable_btn >= 16 or (
+                self._shoulder_enable_btn < 0
+                and self._shoulder_disable_btn < 0
+            )
+            else f'enable_btn={self._shoulder_enable_btn} '
+                 f'disable_btn={self._shoulder_disable_btn}'
+        )
+        self.get_logger().info(f'shoulder pan/lift: {shoulder_status}')
 
         self.joint_names = [
             'shoulder_pan_joint',

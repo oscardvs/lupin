@@ -14,9 +14,14 @@ verified live with /tmp/joy_probe.py):
         RB (turbo)     → ~2× the linear/angular scale
 
     Arm (LB released — modes are mutually exclusive by construction):
-        Right stick    → shoulder pan / lift  (X = pan, Y = lift)
-        D-pad ←/→      → elbow ±   (always live)
-        D-pad ↑/↓      → wrist ±   (always live)
+        Right stick    → shoulder pan / lift  (OPT-IN; off by default —
+                         Xbox stick drift caused unintended shoulder
+                         motion when LB was released, so arm_teleop now
+                         requires a positive `shoulder_enable_button`
+                         param. Probe a free button on your controller
+                         and override at launch.)
+        D-pad ←/→      → elbow ±   (always live — D-pad doesn't drift)
+        D-pad ↑/↓      → wrist ±   (always live — D-pad doesn't drift)
 
 LT/RT can't be the dead-man — teleop_twist_joy's enable_button only
 takes a *button* index and triggers on this controller are axes (4, 5).
