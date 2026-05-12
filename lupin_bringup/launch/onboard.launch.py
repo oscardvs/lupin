@@ -12,6 +12,12 @@ robot boots, with no laptop-side launch needed:
         arm_preset_server      — /lupin/arm/preset (named arm poses)
         gripper_action_bridge  — /lupin/gripper/set_angle_with_speed →
                                  mirte_master_gripper_controller/gripper_cmd
+        xbox_teleop            — joy_node + teleop_twist_joy + arm_teleop,
+                                 reads /dev/input/jsN on the robot itself.
+                                 If no controller is plugged in, joy_node
+                                 logs an open error and the process idles
+                                 — twist_mux still arbitrates the other
+                                 two inputs, so this is non-blocking.
 
     Robot (lupin-web.service):
         Vite preview on :8090 (HTTPS), web_video_server on :8091
@@ -21,16 +27,20 @@ robot boots, with no laptop-side launch needed:
 
 After power-on, the HMI at https://<robot-ip>:8090 can drive the chassis,
 move the arm, and operate the gripper without anyone running a `ros2 launch`
-on a laptop. The laptop-side `hardware.launch.py` only adds Nav2 + slam +
-RViz on top of this baseline and pushes its goals through twist_mux at
-priority 10 (auto), so the operator override at priority 50/100 still wins.
+on a laptop. An Xbox controller plugged into the robot's USB works on boot
+too, no laptop needed. The laptop-side `hardware.launch.py` only adds Nav2 +
+slam + RViz on top of this baseline and pushes its goals through twist_mux
+at priority 10 (auto), so the operator override at priority 50/100 still
+wins. (`hardware.launch.py joystick:=true` still works as an escape hatch
+for bench-testing teleop on the laptop side.)
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import LogInfo
+from launch.actions import IncludeLaunchDescription, LogInfo
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
 
@@ -71,10 +81,26 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── xbox_teleop — joystick plugged directly into the robot ─────────
+    # Pulls in joy_node + teleop_twist_joy + arm_teleop (all configured
+    # in lupin_hmi/launch/xbox_teleop.launch.py). Always-on: when no
+    # controller is plugged in, joy_node just logs a device-open error
+    # and idles, which doesn't affect the other two nodes above.
+    # use_sim_time:=false because this launch only ever runs on the real
+    # robot (lupin-onboard.service).
+    xbox_teleop = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_hmi, 'launch', 'xbox_teleop.launch.py'),
+        ),
+        launch_arguments=[('use_sim_time', 'false')],
+    )
+
     return LaunchDescription([
         LogInfo(msg='[lupin_bringup] onboard: twist_mux + arm_preset_server '
-                    '+ gripper_action_bridge — operator can drive on boot'),
+                    '+ gripper_action_bridge + xbox_teleop — operator can '
+                    'drive on boot (web HMI or Xbox controller)'),
         twist_mux,
         arm_preset_server,
         gripper_action_bridge,
+        xbox_teleop,
     ])
