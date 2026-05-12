@@ -436,6 +436,25 @@ def generate_launch_description() -> LaunchDescription:
         condition=_when('seed_amcl'),
     )
 
+    # ── 9. Sim battery publisher (sim-only) ────────────────────────────────
+    # Publishes a linearly draining sensor_msgs/BatteryState on
+    # /io/power/power_watcher so the BatteryMonitor in the mission
+    # orchestrator has data to work with. Hardware doesn't need this —
+    # the real MIRTE power watcher publishes on the same topic natively.
+    # Tune drain_rate_per_sec: 0.001 ≈ 17 min to empty (demo-safe);
+    # use 0.01 for fast testing (~90 s to the 20% low-battery threshold).
+    sim_battery_publisher = Node(
+        package='lupin_bringup',
+        executable='sim_battery_publisher',
+        name='sim_battery_publisher',
+        parameters=[{
+            'use_sim_time': True,
+            'initial_charge': 1.0,
+            'drain_rate_per_sec': 0.001,
+        }],
+        output='log',
+    )
+
     # HMI URL banner — printed before any process starts so the user can
     # scroll up to find it later. Modern terminals (gnome-terminal, kitty,
     # iTerm, VS Code) auto-detect http:// strings and make them
@@ -466,6 +485,7 @@ def generate_launch_description() -> LaunchDescription:
         rosbridge,
         web,
         seed,
+        sim_battery_publisher,
         twist_mux,
         xbox_teleop,
         arm_sim_shim,

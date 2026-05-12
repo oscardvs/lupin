@@ -39,6 +39,11 @@ setup(
             # where a cold DDS-over-WiFi /tf subscription needs ~5–10 s to
             # warm up before Nav2's costmap activation can succeed.
             'wait_for_tf = lupin_bringup.wait_for_tf:main',
+            # Sim helper: publishes a draining BatteryState on
+            # /io/power/power_watcher (the topic the real MIRTE power
+            # watcher uses) so Nav2's IsBatteryLow and the mission
+            # orchestrator's BatteryMonitor have data in sim.
+            'sim_battery_publisher = lupin_bringup.sim_battery_publisher:main',
         ],
     },
 )
