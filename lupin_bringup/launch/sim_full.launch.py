@@ -437,7 +437,7 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[{
             'use_sim_time': True,
             'initial_charge': 1.0,
-            'drain_rate_per_sec': 0.01,
+            'drain_rate_per_sec': 0.001,
         }],
         output='log',
     )

@@ -25,7 +25,7 @@ class SimBatteryPublisher(Node):
     def __init__(self):
         super().__init__('sim_battery_publisher')
         self.declare_parameter('initial_charge', 1.0)   # 0.0–1.0
-        self.declare_parameter('drain_rate_per_sec', 0.01)  # tune for testing
+        self.declare_parameter('drain_rate_per_sec', 0.001)  # tune for testing
         self.declare_parameter('publish_rate_hz', 1.0)
 
         self._charge = float(self.get_parameter('initial_charge').value)
