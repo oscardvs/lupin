@@ -15,7 +15,9 @@ Topology after launch (defaults):
         lupin-onboard.service           twist_mux (cmd_vel arbitration),
                                         arm_preset_server,
                                         gripper_action_bridge
-        lupin-cameras-throttle.service  /camera/* → /lupin/camera/* @ 1 Hz
+        lupin-cameras.service           kills vendor cams, relaunches at
+                                        config-driven low FPS on the same
+                                        vendor topic names
 
     Laptop (this launch):
         lupin_web (Vite + web_video + rosbridge)              (web:=true)

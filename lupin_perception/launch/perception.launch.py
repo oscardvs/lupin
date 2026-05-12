@@ -1,9 +1,10 @@
 """Launch the `tag_annotator` AprilTag detector against the real Mirte.
 
 Defaults match the vendor Orbbec stack on the MIRTE Master (astra_camera
-publishes /camera/color/image_raw + /camera/color/camera_info). Override
-any of the launch args to retarget at the throttled `/lupin/camera/...`
-topic, the gripper cam, or a custom calibrated camera_info.
+publishes /camera/color/image_raw + /camera/color/camera_info). On hardware
+those topics are now served by lupin-cameras.service at a config-driven low
+FPS (typically 5 Hz) — the topic names are unchanged. Override
+`image_topic` to switch to the gripper cam or a custom feed.
 """
 
 from launch import LaunchDescription
@@ -18,9 +19,9 @@ def generate_launch_description() -> LaunchDescription:
             'image_topic',
             default_value='/camera/color/image_raw',
             description='Camera image stream to detect AprilTags on. Vendor '
-                        'Orbbec default; switch to /lupin/camera/color/'
-                        'image_raw to match the HMI throttle, or to '
-                        '/gripper_camera/image_raw for the wrist cam.',
+                        'Orbbec default (rate set by lupin-cameras.service '
+                        'on the robot); switch to /gripper_camera/image_raw '
+                        'for the wrist cam.',
         ),
         DeclareLaunchArgument(
             'camera_info_topic',

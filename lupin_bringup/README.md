@@ -17,7 +17,7 @@ there's CPU headroom. See `project_offload_strategy` for the rationale.
 | Service | What it does | Lives in |
 | --- | --- | --- |
 | `lupin-onboard` | `twist_mux` + `arm_preset_server` + `gripper_action_bridge` — operator surfaces wired to controllers. Must live on the robot so manual control still works while the laptop is rebooting. | `lupin_bringup/` |
-| `lupin-cameras-throttle` | `topic_tools throttle` pipeline → `/lupin/camera/...` at config rates, so the laptop subscribes to throttled streams instead of full-rate vendor feeds. | `lupin_bringup/` |
+| `lupin-cameras` | Kills the vendor camera nodes (`usb_cam` + Orbbec component container) after `mirte-ros` is up, then relaunches them with our params: 5 fps RGB on `/camera/color/image_raw`, 5 fps gripper on `/gripper_camera/image_raw`, depth + pointcloud off by default. Topic names are identical to the vendor's so downstream consumers see no interface change. | `lupin_bringup/` |
 
 The vendor `mirte-ros.service` still runs telemetrix, ros2_control, RPLidar,
 cameras, and a vendor `rosbridge_websocket :9090` — but the Lupin HMI no
@@ -79,14 +79,17 @@ The services are not in the stock MIRTE image. Install once per robot:
 
 ```bash
 # On the robot, from a Lupin checkout under ~/ros2_ws/src/lupin
-sudo apt install ros-humble-twist-mux ros-humble-topic-tools
+sudo apt install ros-humble-twist-mux v4l-utils
 
 cd ~/ros2_ws && colcon build --packages-up-to lupin_bringup --symlink-install
 
 source ~/ros2_ws/install/setup.bash
 sudo bash $(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/install-onboard-systemd.sh
-sudo bash $(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/install-cameras-throttle-systemd.sh
+sudo bash $(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/install-cameras-systemd.sh
 ```
+
+The cameras install script auto-removes the legacy `lupin-cameras-throttle`
+service if it's still installed, so the upgrade is a single command.
 
 Each install script is idempotent — safe to re-run. `--uninstall` undoes it.
 
@@ -123,23 +126,25 @@ systemctl --user daemon-reload
 
 ### Tuning camera rates
 
-Edit `lupin_bringup/config/cameras.yaml` (toggle `enabled`, change `rate_hz`),
+Edit `lupin_bringup/config/cameras.yaml` (toggle `enabled`, change `fps`),
 then on the robot:
 
 ```bash
 cd ~/ros2_ws && colcon build --packages-select lupin_bringup
-sudo systemctl restart lupin-cameras-throttle
+sudo systemctl restart lupin-cameras
 ```
 
-Defaults: RGB + gripper at 1 Hz, depth disabled. Bump rates for arm-aiming
-sessions where you actually need recent frames.
+Defaults: RGB at 5 fps, gripper at 5 fps, depth + pointcloud off. Bump
+rates for arm-aiming sessions where you actually need recent frames; turn
+on depth/pointcloud only when perception research needs them — they're the
+single biggest producer-side CPU drain on the A55 Pi.
 
 ## Launches
 
 | File | Purpose |
 | --- | --- |
 | `launch/onboard.launch.py` | Robot-side glue: `twist_mux` + `arm_preset_server` + `gripper_action_bridge`. Run via `lupin-onboard.service`. |
-| `launch/cameras_throttle.launch.py` | Reads `config/cameras.yaml` and spawns one `topic_tools throttle` per enabled camera. Run via `lupin-cameras-throttle.service`. |
+| `launch/cameras.launch.py` | Reads `config/cameras.yaml` and (re)launches the Orbbec + USB gripper cameras at the configured FPS, on the vendor topic names. Run via `lupin-cameras.service`, which kills the vendor cameras first so the v4l/USB devices are free. |
 | `launch/hardware.launch.py` | Laptop-side single entry point: HMI + Nav2 + slam_toolbox + twin + RViz against the real Mirte. Boolean flags per subsystem (`web`, `slam`, `nav2`, `twin`, `mission`, `rviz`, `joystick`). The sentinel cascade waits for `/scan`, `/map`, then a hot `odom→base_link` tf before each next stage. End-to-end mission run is `mission:=true`. |
 | `launch/sim.launch.py` | Generic sim entry point. Wraps `mirte_gazebo`'s empty / navigation launches; `nav:=true` brings up Nav2 + RViz against the KRR small-house world. |
 | `launch/sim_full.launch.py` | Full sim mission: greenhouse world + Nav2 + slam_toolbox + lupin_twin + lupin_mission + arm_sim_shim + RViz. The sim peer of `hardware.launch.py mission:=true`. |

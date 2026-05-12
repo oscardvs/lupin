@@ -24,8 +24,9 @@ robot boots, with no laptop-side launch needed:
     Robot (lupin-web.service):
         Vite preview on :8090 (HTTPS), web_video_server on :8091
 
-    Robot (lupin-cameras-throttle.service):
-        topic_tools throttle pipeline → /lupin/camera/...
+    Robot (lupin-cameras.service):
+        kills vendor camera nodes, relaunches at config-driven low FPS
+        on the same /camera/* and /gripper_camera/* topic names
 
 After power-on, the HMI at https://<robot-ip>:8090 can drive the chassis,
 move the arm, and operate the gripper without anyone running a `ros2 launch`

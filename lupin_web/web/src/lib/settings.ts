@@ -108,14 +108,13 @@ export const DEFAULT_SETTINGS: Settings = {
   // /io/power/power_watcher is what the telemetrix node actually publishes.
   batteryTopic: '/io/power/power_watcher',
   rosoutTopic: '/rosout',
-  // Real Mirte: hit the Lupin-throttled republish (typically 1 Hz) instead of
-  // the full-rate vendor topic /camera/color/image_raw, so web_video_server
-  // only encodes the slow stream and the Pi keeps headroom for rosbridge
-  // during Nav2 sessions. The republisher is the lupin-cameras-throttle
-  // systemd service on the robot — see lupin_bringup/config/cameras.yaml to
-  // tune rates or enable depth. Sim branch overrides this default to the
+  // Real Mirte: subscribe to the vendor topic directly — lupin-cameras.service
+  // on the robot now publishes here at a low FPS (5 Hz default) by relaunching
+  // the vendor cameras with our params, so there's no separate /lupin/camera
+  // shadow topic to track. See lupin_bringup/config/cameras.yaml for the FPS
+  // and depth/pointcloud toggles. Sim branch overrides this default to the
   // greenhouse plugin's /camera/image_raw.
-  cameraTopic: '/lupin/camera/color/image_raw',
+  cameraTopic: '/camera/color/image_raw',
   webVideoServerUrl: '',
   mapTopic: '/map',
   planTopic: '/plan',

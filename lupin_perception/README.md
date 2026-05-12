@@ -36,21 +36,20 @@ Launch arguments (with defaults):
 
 | Arg | Default | Notes |
 | --- | --- | --- |
-| `image_topic` | `/camera/color/image_raw` | Vendor Orbbec RGB. Set to `/lupin/camera/color/image_raw` to match the HMI throttle (boxes track the displayed frame); set to `/gripper_camera/image_raw` for the wrist cam. |
+| `image_topic` | `/camera/color/image_raw` | Vendor Orbbec RGB. On hardware this is served by `lupin-cameras.service` at a config-driven low FPS — the detection rate is capped to that setting and the HMI overlay stays in sync automatically. Switch to `/gripper_camera/image_raw` for the wrist cam. |
 | `camera_info_topic` | `/camera/color/camera_info` | Must be the matching rectified intrinsics for `image_topic`. |
 | `detections_topic` | `/camera/tag_detections_json` | What the HMI subscribes to. Don't change unless you also reconfigure the HMI. |
 | `tag_size_m` | `0.10` | Physical edge length of the printed tags. |
 | `tf_frame_prefix` | `tag_` | Child frame id = `f"{prefix}{id}"`. |
-| `image_qos` | `sensor_data` | BEST_EFFORT (KEEP_LAST 5). Works with both the vendor RELIABLE driver and `topic_tools throttle` (BEST_EFFORT). Set to `reliable` for sim-style profiles. |
+| `image_qos` | `sensor_data` | BEST_EFFORT (KEEP_LAST 5). Matches the vendor driver. Set to `reliable` for sim-style profiles. |
 | `use_sim_time` | `false` | Real robot has no `/clock`. |
 
-Example — overlay-on-throttled-stream variant (boxes stay perfectly in
-sync with what the operator sees in the HMI, at the cost of detection
-rate being capped to the throttle setting):
+Example — gripper-cam variant for in-hand tag tracking:
 
 ```bash
 ros2 launch lupin_perception perception.launch.py \
-  image_topic:=/lupin/camera/color/image_raw
+  image_topic:=/gripper_camera/image_raw \
+  camera_info_topic:=/gripper_camera/camera_info
 ```
 
 ## Topic contract

@@ -1,43 +1,50 @@
-# Lupin camera throttle config — runs on the robot via lupin-cameras-throttle.service.
+# Lupin camera config — drives lupin-cameras.service (v2 native-FPS pipeline).
 #
-# The vendor mirte-ros stack publishes RGB / depth / gripper camera streams at
-# their native rates (typically 15-30 fps). Through web_video_server's MJPEG
-# encoder and the wifi/DDS bridge to the laptop, those streams burn enough CPU
-# on the Pi to push it past the rosbridge wedge threshold during Nav2 sessions
-# (see project_rosbridge_wedge memory).
+# Vendor mirte-ros starts USB and Orbbec cameras at default rates (~30 fps for
+# usb_cam, 10 fps for the Orbbec astra; full depth + pointcloud streams). On
+# the 4-core A55 Pi those producers alone consume ~85% of one core combined,
+# and they run at native rate regardless of subscribers.
 #
-# This config drives a topic_tools throttle pipeline: vendor cameras stay
-# running at full rate (we don't fight the vendor stack — see
-# feedback_pragmatic_v1), Lupin republishes each one at a tame rate under
-# /lupin/<source>. The HMI defaults to the Lupin topics so web_video_server
-# only encodes the slow stream.
+# The v2 pipeline (lupin-cameras.service):
+#   1. ExecStartPre kills the vendor camera processes so the v4l/USB devices
+#      are released (see scripts/kill-vendor-cameras.sh).
+#   2. cameras.launch.py relaunches them with the params below. Topic names
+#      match the vendor's (`/camera/color/image_raw`, `/gripper_camera/image_raw`)
+#      so downstream consumers (HMI, AprilTag detector, web_video_server) see
+#      no change in interface — only lower-rate frames.
 #
-# Per-camera fields:
-#   enabled       — emit the throttled topic at all
-#   rate_hz       — max rate of the Lupin output topic
-#   source_topic  — vendor publisher (don't change unless vendor topology shifts)
-#   output_topic  — what the HMI subscribes to (must match HMI defaults)
+# After editing this file:
+#   colcon build --packages-select lupin_bringup
+#   sudo systemctl restart lupin-cameras
 #
-# To change rates live without a redeploy: edit this file then
-# `sudo systemctl restart lupin-cameras-throttle`. To turn a stream off
-# entirely (e.g. for SLAM where we don't want any image flow), set enabled:false.
+# Tuning hints:
+#   - For arm-aim work that needs fresh frames, bump `gripper.framerate`.
+#   - For perception research that uses depth, set `depth.enabled: true`.
+#   - To inspect the raw pointcloud, set `point_cloud.enabled: true`
+#     (depth must also be on — they're coupled at the driver).
 
 cameras:
-  rgb:
+  # Orbbec astra (Mirte's depth cam — detected as /dev/astra_mini_pro).
+  # The driver wants colour enabled for camera_info / tf to flow, so we keep
+  # it on by default. Disabling depth + pointcloud is the single biggest
+  # producer-side CPU saving.
+  color:
     enabled: true
-    rate_hz: 1.0
-    source_topic: /camera/color/image_raw
-    output_topic: /lupin/camera/color/image_raw
-
+    fps: 5            # vendor default 10; HMI and AprilTag are fine at 5
+    width: 640
+    height: 480
   depth:
-    # Off by default — depth is heavy and only the perception/arm work needs it.
-    enabled: false
-    rate_hz: 1.0
-    source_topic: /camera/depth/image_raw
-    output_topic: /lupin/camera/depth/image_raw
+    enabled: false    # turn on for grasp/perception research
+    fps: 5
+  point_cloud:
+    enabled: false    # heavy; only when offline analysis needs the cloud
 
+  # USB gripper camera (auto-detected /dev/videoN matching the vendor's name
+  # list). usb_cam pumps the v4l device at the framerate we ask for, so this
+  # also caps the producer-side CPU. No throttling node downstream.
   gripper:
     enabled: true
-    rate_hz: 1.0
-    source_topic: /gripper_camera/image_raw
-    output_topic: /lupin/gripper_camera/image_raw
+    framerate: 5.0    # usb_cam default ~30; 5 is plenty for tag aim
+    pixel_format: yuyv2rgb
+    width: 640
+    height: 480
