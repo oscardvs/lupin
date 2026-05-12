@@ -32,6 +32,7 @@ setup(
             # orchestrator's PREPARE.LOCALIZING gate clears in slam_toolbox
             # mode (no real AMCL in the chain). Hardware doesn't need it.
             'seed_amcl_pose = lupin_bringup.seed_amcl_pose:main',
+            'sim_battery_publisher = lupin_bringup.sim_battery_publisher:main',
         ],
     },
 )
