@@ -49,6 +49,7 @@ from lupin_msgs.msg import MissionState, Observation
 from lupin_msgs.srv import ConfirmTag, GetTagReading, StartMission
 
 from .estop_monitor import EStopMonitor
+from .battery_monitor import BatteryMonitor
 from .inspection_mission import InspectionMission
 from .observations import make_tag_observation
 from .approach import (
@@ -239,6 +240,8 @@ class MissionOrchestratorNode(Node):
 
         self.declare_parameter('dock_pose', [0.0, 0.0, 0.0])
         self.declare_parameter('dock_timeout_s', 60.0)
+        self.declare_parameter('battery_topic', '/io/power/power_watcher') # real MIRTE topic; sim publisher mirrors it
+        self.declare_parameter('battery_low_threshold', 0.20) # fraction 0–1; triggers docking below this
 
         self.declare_parameter('state_publish_rate_hz', 5.0)
         self.declare_parameter('mission_id_prefix', 'lupin')
@@ -465,6 +468,19 @@ class MissionOrchestratorNode(Node):
             callback_group=self._cb_group,
         )
 
+        # Battery monitor.
+        # True from on_battery_low() until battery recovers; keeps is_blocked() True
+        # so no new nav goals are issued while the robot heads to the dock.
+        self._battery_low: bool = False
+        self.battery_monitor = BatteryMonitor(
+            self,
+            str(self.get_parameter('battery_topic').value),
+            low_threshold=float(self.get_parameter('battery_low_threshold').value),
+            on_low=self.on_battery_low,
+            on_recovered=self.on_battery_recovered,
+            callback_group= self._cb_group,
+        )
+
         # Operator services. Created with their absolute names per spec.
         self._srv_start = self.create_service(
             StartMission, '/mission/start', self._handle_start_mission,
@@ -542,11 +558,11 @@ class MissionOrchestratorNode(Node):
     def _is_blocked(self) -> bool:
         """True iff the orchestrator must hold the active state.
 
-        Either the operator has paused (or the orchestrator implicitly
-        paused on E-stop engagement and is waiting for /mission/resume)
-        or the E-stop is currently engaged.
+        Either the operator has paused, the E-stop is engaged, or the battery
+        is low and the robot is heading to the dock. All three require an
+        explicit /mission/resume to unblock.
         """
-        return self._paused or self._estop_engaged
+        return self._paused or self._estop_engaged or self._battery_low
 
     def _on_estop_engaged(self) -> None:
         """Rising edge of /e_stop_state. Hold pose; require explicit resume."""
@@ -560,6 +576,26 @@ class MissionOrchestratorNode(Node):
         """Falling edge: clear engaged flag, but stay paused awaiting resume."""
         self._estop_engaged = False
         # _paused intentionally untouched.
+
+    def on_battery_low(self) -> None:
+        # Rising edge: battery below threshold or insufficient time to reach dock.
+        # Cancel any in-flight nav goal, redirect to RETURNING (dock pose).
+        # Mirrors on_estop_engaged — operator must call /mission/resume after docking.
+        self._battery_low = True
+        self._cancel_inflight_nav('battery_low')
+        self._last_error = 'battery_low'
+        if _is_state_inspecting(self.state):
+            self.abort_to_return()  # type: ignore[attr-defined]
+
+    def on_battery_recovered(self) -> None:
+        # Falling edge: battery rose back above threshold (e.g. after charging).
+        # Clear the flag but leave paused=True — operator resumes explicitly,
+        # same policy as E-stop release.
+        self._battery_low = False
+        self.get_logger().info(
+            'Battery recovered above threshold; awaiting /mission/resume.'
+        )
+
 
     # ─── nav cancellation ──────────────────────────────────────────────
     # Operator-initiated cancels (pause / E-stop / abort / skip) drop the
@@ -837,6 +873,11 @@ class MissionOrchestratorNode(Node):
             response.success = False
             response.message = 'cannot resume while E-stop is engaged'
             return response
+        if self._battery_low:
+            response.success = False
+            response.message = 'cannot resume while battery is low — dock the robot first'
+            return response
+
         self._paused = False
         # Re-kick the active state so the held action resumes. Only the
         # states that had work-to-do need a kick.
@@ -967,6 +1008,10 @@ class MissionOrchestratorNode(Node):
         msg.paused = self._paused
         msg.started_at = self._mission_started_at
 
+        msg.battery_percentage = self.battery_monitor.percentage
+        msg.battery_low = self._battery_low
+
+
         self._state_pub.publish(msg)
 
     # ─── kick: re-run the current state's action after resume ──────────
@@ -994,7 +1039,8 @@ class MissionOrchestratorNode(Node):
                     self._call_bridge()
         elif st == 'RETURNING':
             if self._nav_goal_handle is None:
-                self._send_return_nav_goal()
+                if not self._estop_engaged and not self._paused:
+                    self._send_return_nav_goal()
 
     # ─── on_enter handlers: the heart of the inspection sub-FSM ────────
     # transitions auto-discovers methods named on_enter_<full_state>; the
@@ -1058,7 +1104,10 @@ class MissionOrchestratorNode(Node):
             self.next_tag()  # type: ignore[attr-defined]
 
     def on_enter_RETURNING(self, event_data) -> None:
-        if self._is_blocked():
+        # Guard on E-stop and operator pause only — NOT is_blocked().
+        # battery_low is intentionally excluded: it's what triggered RETURNING
+        # in the first place.
+        if self._estop_engaged or self._paused :
             return
         self._send_return_nav_goal()
 

@@ -26,4 +26,8 @@ string last_error                # last non-fatal error surfaced by the orchestr
 bool   estop_engaged
 bool   paused
 
+float32 battery_percentage
+bool    battery_low
+
+
 builtin_interfaces/Time started_at  # zero stamp when no mission has started yet
