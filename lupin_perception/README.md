@@ -1,0 +1,110 @@
+# lupin_perception
+
+Vision package for Team Lupin on the **real MIRTE Master**. Today it
+ships one node — `tag_annotator` — which detects AprilTags in the
+Orbbec RGB stream, broadcasts a TF for every detection, and publishes
+overlay JSON for the web HMI. It's the home for future flower- and
+anomaly-detection pipelines.
+
+## What it does
+
+1. **Detects AprilTags** (family `36h11`) using OpenCV's native ArUco
+   detector — no `apriltag_ros` dependency.
+2. **Estimates each tag's 3D pose** with `cv2.solvePnP`, using camera
+   intrinsics **read live from `CameraInfo`** (so the same code works
+   against any calibrated camera, no per-bot hard-coded K).
+3. **Broadcasts a TF transform** per tag: parent = whatever frame the
+   driver puts in `Image.header.frame_id` (e.g. `camera_color_optical_frame`),
+   child = `tag_<id>`.
+4. **Publishes overlay JSON** (corners + ID + distance) on
+   `/camera/tag_detections_json` for the HMI's `CameraStream` widget to
+   draw boxes on the MJPEG stream.
+
+## Launching
+
+```bash
+ros2 launch lupin_perception perception.launch.py
+```
+
+It's also folded into `lupin_bringup hardware.launch.py` behind a
+`perception:=true` (default) flag, so the standard one-shot bringup
+already starts it. Pass `perception:=false` to skip it.
+
+## Configuration
+
+Launch arguments (with defaults):
+
+| Arg | Default | Notes |
+| --- | --- | --- |
+| `image_topic` | `/camera/color/image_raw` | Vendor Orbbec RGB. Set to `/lupin/camera/color/image_raw` to match the HMI throttle (boxes track the displayed frame); set to `/gripper_camera/image_raw` for the wrist cam. |
+| `camera_info_topic` | `/camera/color/camera_info` | Must be the matching rectified intrinsics for `image_topic`. |
+| `detections_topic` | `/camera/tag_detections_json` | What the HMI subscribes to. Don't change unless you also reconfigure the HMI. |
+| `tag_size_m` | `0.10` | Physical edge length of the printed tags. |
+| `tf_frame_prefix` | `tag_` | Child frame id = `f"{prefix}{id}"`. |
+| `image_qos` | `sensor_data` | BEST_EFFORT (KEEP_LAST 5). Works with both the vendor RELIABLE driver and `topic_tools throttle` (BEST_EFFORT). Set to `reliable` for sim-style profiles. |
+| `use_sim_time` | `false` | Real robot has no `/clock`. |
+
+Example — overlay-on-throttled-stream variant (boxes stay perfectly in
+sync with what the operator sees in the HMI, at the cost of detection
+rate being capped to the throttle setting):
+
+```bash
+ros2 launch lupin_perception perception.launch.py \
+  image_topic:=/lupin/camera/color/image_raw
+```
+
+## Topic contract
+
+Subscriptions:
+
+| Topic | Type | Notes |
+| --- | --- | --- |
+| `image_topic` | `sensor_msgs/Image` | First frame ignored if `camera_info` hasn't arrived yet — node logs a throttled warning and waits. |
+| `camera_info_topic` | `sensor_msgs/CameraInfo` | First message latches `K` and `D`; subsequent messages ignored. |
+
+Publications:
+
+| Topic | Type | Notes |
+| --- | --- | --- |
+| `/camera/tag_detections_json` | `std_msgs/String` | JSON array: `[{id, corners: [[x,y]×4], dist}]`. Empty array per frame when no tags are visible (clears the HMI overlay). |
+| `/tf` | `tf2_msgs/TFMessage` | One transform per detected tag, stamped with `Image.header.stamp`. |
+
+## Why this differs from the sim build
+
+| Aspect | sim | hardware (this branch) |
+| --- | --- | --- |
+| `image_topic` | `/camera/image_raw` (Gazebo plugin) | `/camera/color/image_raw` (Orbbec driver) |
+| Intrinsics | Hard-coded for Gazebo 640×480, no distortion | Latched from live `CameraInfo` (per-bot calibration) |
+| `use_sim_time` | `True` | `False` |
+| Image QoS | `RELIABLE` | `BEST_EFFORT` (sensor_data) |
+
+## Debugging
+
+```bash
+# Verify the camera stack is alive
+ros2 topic hz /camera/color/image_raw
+ros2 topic echo --once /camera/color/camera_info
+
+# Watch live detections
+ros2 topic echo /camera/tag_detections_json --no-arr
+
+# Inspect TFs (transient, only published while tags are in view)
+ros2 run tf2_ros tf2_echo camera_color_optical_frame tag_1
+```
+
+If the HMI shows the camera feed but never any boxes:
+
+1. Check the JSON publisher rate: `ros2 topic hz /camera/tag_detections_json`.
+   - Zero → the node isn't getting either `image_topic` or `camera_info_topic`.
+     Re-check the QoS warning in the node log (a BEST_EFFORT publisher won't
+     deliver to a RELIABLE subscriber, but our default goes the other way).
+2. If JSON is publishing but boxes don't appear in the HMI, make sure the
+   HMI's "Overlay AprilTags" toggle is on (top of the Cameras view).
+
+## Future work
+
+- `/perception/confirm_tag` service for the mission-orchestrator's
+  per-leg confirmation hook (see `project_approach_pose_pipeline`).
+- Flower detection + anomaly classification pipelines.
+- Move intrinsics latching to a one-shot `wait_for_message` so the
+  first frame after startup actually processes instead of being dropped.

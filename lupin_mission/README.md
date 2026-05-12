@@ -170,6 +170,11 @@ mission advances. The perception node itself is **not** part of this
 package — see `lupin_msgs/srv/ConfirmTag.srv` for the contract a future
 detector implementation must satisfy.
 
+This repository already includes `lupin_perception`, a small vision package
+that launches the `tag_annotator` node. It publishes `/camera/tag_detections_json`
+with AprilTag metadata for debugging overlays, rather than relying on a
+separate boxed-image topic. The `/perception/confirm_tag` gate is still a future integration point.
+
 Sim leaves the gate off (`false`) and the bridge oracle path is used directly.
 
 ### Per-leg AMCL drift gate

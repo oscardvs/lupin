@@ -27,6 +27,7 @@ Topology after launch (defaults):
         mission_orchestrator→ /mission/start + lifecycle     (mission:=true)
         seed_amcl_pose      → one-shot /amcl_pose            (mission:=true)
         xbox_teleop         → /cmd_vel_joy + arm_teleop      (joystick:=true)
+        tag_annotator       → tag_<id> TFs + overlay JSON    (perception:=true)
         rviz2               → interactive UI                 (rviz:=true)
 
 Flags (all booleans, default in parens):
@@ -41,6 +42,9 @@ Flags (all booleans, default in parens):
                       pose seed as a bundle. Turn on for mission runs.
     rviz (true)       RViz2 with the persistent full_bringup_viz config.
     joystick (false)  Xbox controller teleop on the laptop.
+    perception (true) lupin_perception/tag_annotator — AprilTag detection
+                      against the Orbbec RGB stream. Publishes tag_<id>
+                      TFs and JSON detections for the HMI overlay.
 
 Common invocations:
 
@@ -92,6 +96,7 @@ def generate_launch_description() -> LaunchDescription:
     pkg_twin = get_package_share_directory('lupin_twin')
     pkg_hmi = get_package_share_directory('lupin_hmi')
     pkg_web = get_package_share_directory('lupin_web')
+    pkg_perception = get_package_share_directory('lupin_perception')
 
     args = [
         DeclareLaunchArgument(
@@ -135,6 +140,14 @@ def generate_launch_description() -> LaunchDescription:
             description='Launch RViz with the persistent config at '
                         'rviz/full_bringup_viz.rviz. Ctrl+S in RViz writes '
                         'back to that exact path.',
+        ),
+        DeclareLaunchArgument(
+            'perception', default_value='true',
+            description='Bring up lupin_perception (tag_annotator) — '
+                        'subscribes to the vendor Orbbec /camera/color/* '
+                        'stream, broadcasts tag_<id> TFs, and publishes '
+                        'overlay JSON for the HMI Cameras view. Cheap; '
+                        'turn off if the camera driver is down.',
         ),
         DeclareLaunchArgument(
             'joystick', default_value='false',
@@ -358,6 +371,15 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('joystick')),
     )
 
+    # ── Perception (AprilTag detector + HMI overlay JSON) ──────────────
+    perception = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_perception, 'launch', 'perception.launch.py'),
+        ),
+        launch_arguments=[('use_sim_time', 'false')],
+        condition=IfCondition(LaunchConfiguration('perception')),
+    )
+
     # ── RViz with persistent source-tree config ────────────────────────
     rviz_config = _resolve_rviz_config()
     rviz = Node(
@@ -407,7 +429,8 @@ def generate_launch_description() -> LaunchDescription:
                      ' twin=', LaunchConfiguration('twin'),
                      ' mission=', LaunchConfiguration('mission'),
                      ' rviz=', LaunchConfiguration('rviz'),
-                     ' joystick=', LaunchConfiguration('joystick')]),
+                     ' joystick=', LaunchConfiguration('joystick'),
+                     ' perception=', LaunchConfiguration('perception')]),
         # Phase 1 — fire-and-forget at t=0 (each gated by its own flag):
         web,
         slam_reset_node,
@@ -416,6 +439,7 @@ def generate_launch_description() -> LaunchDescription:
         twin,
         seed,
         xbox_teleop,
+        perception,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.

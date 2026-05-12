@@ -1,3 +1,5 @@
+import os
+from glob import glob
 from setuptools import find_packages, setup
 
 package_name = 'lupin_perception'
@@ -10,16 +12,18 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Team Lupin',
-    maintainer_email='TODO@student.tudelft.nl',
-    description='Flower detection and vision pipelines for MDP Team Lupin.',
+    maintainer_email='o.a.e.devos@student.tudelft.nl',
+    description='AprilTag detection and future flower-detection pipelines for MDP Team Lupin.',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'tag_annotator = lupin_perception.tag_annotator:main'
         ],
     },
 )

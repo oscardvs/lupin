@@ -19,6 +19,7 @@
   <exec_depend>lupin_greenhouse_bridge</exec_depend>
   <exec_depend>lupin_mission</exec_depend>
   <exec_depend>lupin_web</exec_depend>
+  <exec_depend>lupin_perception</exec_depend>
   <exec_depend>rosbridge_server</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
 

@@ -3,11 +3,19 @@
 <package format="3">
   <name>lupin_perception</name>
   <version>0.0.1</version>
-  <description>Flower detection and vision pipelines for MDP Team Lupin.</description>
-  <maintainer email="TODO@student.tudelft.nl">Team Lupin</maintainer>
+  <description>AprilTag detection and future flower-detection pipelines for MDP Team Lupin.</description>
+  <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>tf2_ros</depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

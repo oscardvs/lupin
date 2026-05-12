@@ -556,7 +556,7 @@ expand once the chain is proven.
 | `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator. Single `~/get_tag_reading` service. Open-sourced separately at `lupin_greenhouse_ros/`. |
 | `lupin_hmi` | PS4 + keyboard teleop, `cmd_vel_mux` for arbitration between manual override / Nav2 / web. |
 | `lupin_web` | Browser HMI on `:8090` — Vite + React + shadcn/ui. Tabs: Teleop, Arm, Voice, Cameras, Telemetry, Logs, Map. Talks to rosbridge on `:9090`. The Voice tab is a Gemini Live agent with a 14-tool surface (`drive`, `nav_goto`, `nav_forward`, `rotate`, `arm_preset`, `query_state`, `engage_estop`, …) that drives the robot in natural language. |
-| `lupin_perception` | Flower detection, vision pipelines (in progress). |
+| `lupin_perception` | Vision package: `tag_annotator` (OpenCV ArUco) for AprilTag detection on the Orbbec RGB stream, TF broadcasts, and overlay JSON for the HMI. Future home for flower / anomaly detection. |
 | `docs/` | Architecture diagrams, design notes. |
 
 ## Contributing
