@@ -10,6 +10,8 @@ robot boots, with no laptop-side launch needed:
         twist_mux              — arbitrates /cmd_vel_{joy,manual,auto} →
                                  /mirte_base_controller/cmd_vel
         arm_preset_server      — /lupin/arm/preset (named arm poses)
+        arm_calibrate_server   — /lupin/arm/calibrate (Hiwonder zero-offset
+                                 calibration, operator-in-the-loop)
         gripper_action_bridge  — /lupin/gripper/set_angle_with_speed →
                                  mirte_master_gripper_controller/gripper_cmd
         xbox_teleop            — joy_node + teleop_twist_joy + arm_teleop,
@@ -69,6 +71,18 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── arm_calibrate_server — Hiwonder zero-offset calibration ────────
+    # Hardware-only. Drives the operator-in-the-loop calibration flow via
+    # /lupin/arm/calibrate {start|commit|cancel|status}. Bus services
+    # (/io/servo/hiwonder/<j>/_set_offset, /enable_arm_control) only exist
+    # on the real Mirte, so on sim the start action will return an error.
+    arm_calibrate_server = Node(
+        package='lupin_hmi', executable='arm_calibrate_server',
+        name='arm_calibrate_server',
+        parameters=[{'use_sim_time': False}],
+        output='log',
+    )
+
     # ── gripper_action_bridge ──────────────────────────────────────────
     # HMI gripper goes /lupin/gripper/set_angle_with_speed → this bridge →
     # mirte_master_gripper_controller/gripper_cmd. See
@@ -97,10 +111,12 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription([
         LogInfo(msg='[lupin_bringup] onboard: twist_mux + arm_preset_server '
-                    '+ gripper_action_bridge + xbox_teleop — operator can '
-                    'drive on boot (web HMI or Xbox controller)'),
+                    '+ arm_calibrate_server + gripper_action_bridge + '
+                    'xbox_teleop — operator can drive + calibrate on boot '
+                    '(web HMI or Xbox controller)'),
         twist_mux,
         arm_preset_server,
+        arm_calibrate_server,
         gripper_action_bridge,
         xbox_teleop,
     ])

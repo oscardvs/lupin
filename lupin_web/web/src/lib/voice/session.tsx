@@ -438,6 +438,52 @@ export function useVoiceSession(): VoiceSession {
             }
           }
 
+          case 'calibrate_arm': {
+            const action = String(args.action ?? '')
+            if (!['start', 'commit', 'cancel', 'status'].includes(action)) {
+              return finish({
+                ok: false,
+                error: `calibrate_arm: action must be one of start|commit|cancel|status, got "${action}"`,
+              })
+            }
+            // E-stop gates 'start' only — cancel/status must still work while
+            // e-stopped so the operator can recover a stranded session.
+            if (action === 'start' && estop.active) {
+              return finish(
+                { ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` },
+              )
+            }
+            try {
+              const result = await ros.callService<
+                { action: string },
+                {
+                  success: boolean
+                  state: string
+                  message: string
+                  joint_names: string[]
+                  offsets_applied: number[]
+                  diffs_observed: number[]
+                }
+              >('/lupin/arm/calibrate', 'lupin_msgs/srv/CalibrateArm', { action })
+              return finish({
+                ok: !!result.success,
+                action: 'calibrate_arm',
+                wizard_action: action,
+                state: result.state,
+                message: result.message,
+                joint_names: result.joint_names,
+                offsets_applied: result.offsets_applied,
+                diffs_observed: result.diffs_observed,
+              })
+            } catch (e) {
+              return finish({
+                ok: false,
+                error: `calibrate service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+              })
+            }
+          }
+
           case 'query_state': {
             const fields = Array.isArray(args.fields) ? (args.fields as string[]) : ['pose', 'battery', 'estop']
             const out: Record<string, unknown> = {}

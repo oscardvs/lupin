@@ -33,6 +33,7 @@ setup(
             'arm_teleop = lupin_hmi.arm_teleop:main',
             'arm_sim_shim = lupin_hmi.arm_sim_shim:main',
             'arm_preset_server = lupin_hmi.arm_preset_server:main',
+            'arm_calibrate_server = lupin_hmi.arm_calibrate_server:main',
             'gripper_action_bridge = lupin_hmi.gripper_action_bridge:main',
         ],
     },

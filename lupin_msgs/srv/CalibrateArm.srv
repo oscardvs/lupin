@@ -1,0 +1,29 @@
+# Multi-step Hiwonder zero-offset calibration for the arm + gripper servos.
+#
+# Hardware-only. In sim, arm_sim_shim has no Hiwonder offset services and the
+# server will refuse to start the procedure.
+#
+# Flow:
+#   action: "start"   — Disables arm controller, zeroes offsets, commands
+#                       angle 0, then disables all servos so the operator can
+#                       hand-pose the arm. State transitions IDLE → AWAITING_POSE.
+#   action: "commit"  — Samples ServoPosition.raw for ~2 s, computes per-joint
+#                       (raw - home + curr_offset) in centidegrees, writes to
+#                       /io/servo/hiwonder/<j>/_set_offset, re-commands angle 0,
+#                       re-enables /enable_arm_control. State → IDLE.
+#   action: "cancel"  — Re-enables servos + arm control. Offsets stay zeroed
+#                       (matches upstream mirte_master_calibrate behaviour).
+#                       State → IDLE.
+#   action: "status"  — No side effects. Returns current state.
+#
+# joint_names / offsets_applied / diffs_observed are populated only on
+# successful "commit". Order matches the server-side ranges dict.
+
+string action
+---
+bool success
+string state                # "IDLE" | "AWAITING_POSE"
+string message
+string[] joint_names
+int32[] offsets_applied     # centidegrees actually written via _set_offset
+int32[] diffs_observed      # raw-tick diff (position - home + curr_offset)
