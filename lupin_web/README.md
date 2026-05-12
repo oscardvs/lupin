@@ -29,7 +29,10 @@ gear · permanent E-STOP) wraps seven tabs:
   named-location memory, telemetry reads, and software E-stop. Mock session
   runs without an API key. See **Voice assistant** below.
 - **Cameras** — MJPEG stream from `web_video_server` with FPS counter,
-  reload, fullscreen, friendly placeholder when no stream.
+  reload, fullscreen, friendly placeholder when no stream. The view can
+  also overlay AprilTag detections (corner box + ID + range) using JSON
+  metadata from `/camera/tag_detections_json` — toggled by the "Overlay
+  AprilTags" switch above the tab list.
 - **Telemetry** — Lidar canvas (top-down), IMU (roll/pitch/yaw + ω bars),
   Odometry pose+twist, Battery + voltage sparkline, Arm joints, System
   placeholder.
@@ -38,7 +41,7 @@ gear · permanent E-STOP) wraps seven tabs:
 - **Map** — live SLAM occupancy grid (subscribes `/map`), robot pose via
   `ROSLIB.TFClient` against the `map → base_link` transform, latest Nav2
   plan (`/plan`) as a chartreuse polyline, and click-and-drag to publish a
-  `geometry_msgs/PoseStamped` to `/goal_pose`. AprilTag overlay still TODO.
+  `geometry_msgs/PoseStamped` to `/goal_pose`. AprilTag overlay on the map view still TODO.
 
 ## Engineering notes
 
@@ -251,7 +254,7 @@ already has a code seam to swap in the token-fetching client.
 
 ## What's not in here yet
 
-- AprilTag overlay on the camera stream
+- AprilTag overlay on the in-app Map view
 - Voice agent: ephemeral-token broker, persona / wake-word, multi-turn memory
 - Voice tool gaps awaiting backend: `scan_apriltags`, `detect_flowers`,
   `get_camera_frame`, `record_observation` — deliberately not stubbed; see

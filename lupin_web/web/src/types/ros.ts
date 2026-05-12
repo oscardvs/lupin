@@ -381,3 +381,19 @@ export function quatToEuler(q: Quaternion): { roll: number; pitch: number; yaw: 
 
   return { roll, pitch, yaw }
 }
+
+// ── AprilTag overlay (HMI Cameras view) ────────────────────────────────
+/** `std_msgs/String`. Only `data` is meaningful for our consumer; the
+ * AprilTag node packs a JSON array into it (see `TagDetection`). */
+export interface StdMsgsString {
+  data: string
+}
+
+/** One tag in the JSON payload published by `lupin_perception/tag_annotator`
+ * on `/camera/tag_detections_json`. Pixel coordinates are in the original
+ * (un-resized) image frame; the HMI's overlay canvas is sized to match. */
+export interface TagDetection {
+  id: number
+  corners: [[number, number], [number, number], [number, number], [number, number]]
+  dist: number
+}
