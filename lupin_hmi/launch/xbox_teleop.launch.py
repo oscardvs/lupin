@@ -81,7 +81,13 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[{
                 'device_name': LaunchConfiguration('device_name'),
                 'device_id': LaunchConfiguration('device_id'),
-                'deadzone': 0.05,
+                # 0.15 covers the Series X|S BT-mode resting drift we see
+                # on Mirte-247264's pad (probed 2026-05-12: right-stick X
+                # idled ~0.5% off centre and made the chassis spin in
+                # place when LB was held). 0.05 (the joy_node default) was
+                # too tight; with cmd_vel_joy ≈ drift × scale_angular(-0.7),
+                # any drift >0.05 yielded a constant angular.z.
+                'deadzone': 0.15,
                 'autorepeat_rate': 20.0,
                 'use_sim_time': LaunchConfiguration('use_sim_time'),
             }],
