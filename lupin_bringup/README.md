@@ -28,9 +28,7 @@ or just open the file. Launch args are listed there with rationale.
   `greenhouse_sim` Python package via `importlib.resources`; pass
   `--input` to point it elsewhere.
 
-- AprilTag visuals in the generated world are bright magenta
-  `_PLACEHOLDER` stand-ins until real `tag36h11` textures land. See
-  the TODO inside `_render_tag` and the heads-up note in the top-level
+
   README's "Greenhouse Gazebo world" section.
 
 ## Where to start

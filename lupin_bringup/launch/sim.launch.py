@@ -36,7 +36,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, AppendEnvironmentVariable
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
@@ -47,6 +47,8 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     pkg_mirte_gazebo = get_package_share_directory('mirte_gazebo')
+    pkg_bringup = get_package_share_directory('lupin_bringup')
+    lupin_models_path = os.path.join(pkg_bringup, 'models')
     empty_launch = os.path.join(
         pkg_mirte_gazebo, 'launch', 'gazebo_mirte_master_empty.launch.xml'
     )
@@ -85,4 +87,4 @@ def generate_launch_description():
         condition=IfCondition(nav),
     )
 
-    return LaunchDescription([*args, sim_only, sim_with_nav])
+    return LaunchDescription([AppendEnvironmentVariable('GAZEBO_MODEL_PATH', lupin_models_path),*args, sim_only, sim_with_nav])

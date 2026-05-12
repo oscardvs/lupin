@@ -40,7 +40,7 @@ from typing import Any
 
 DEFAULT_TAG_SIZE_M = 0.16          # square apriltag edge length
 DEFAULT_TAG_THICKNESS_M = 0.005    # plane thickness (so depth camera sees it)
-DEFAULT_TAG_HEIGHT_M = 0.40        # mid-height on the table side, below table top
+DEFAULT_TAG_HEIGHT_M = 0.20        # mid-height on the table side, below table top
 DEFAULT_TABLE_HEIGHT_M = 0.70      # typical greenhouse bench top height
 DEFAULT_WALL_HEIGHT_M = 2.0
 DEFAULT_WALL_THICKNESS_M = 0.10
@@ -205,21 +205,14 @@ def _render_tag(
     size: float,
     thickness: float,
     height: float,
+    use_placeholder: bool = False, # toggle to see if stuff works 
 ) -> str:
-    # TODO(perception): replace this magenta placeholder with a real tag36h11
-    # texture per ID once the perception teammate provides the asset pack.
-    # The placeholder is INTENTIONALLY ugly (bright self-lit magenta) so it's
-    # immediately obvious to anyone running an AprilTag detector against this
-    # world that the visuals are stand-ins — without real textures the
-    # detector will see nothing, which would otherwise be a silent footgun.
-    #
     # The plate is a thin box with its thin axis along the model's local +X.
-    # Yaw rotates the model so that local +X points outward from the nearest
-    # table face — the tag's visible face is what the camera sees.
     pose = f"{x:.4f} {y:.4f} {height:.4f} 0 0 {yaw:.6f}"
-    # Integer ID embedded in name: AprilTag detector will publish detections
-    # using these IDs, and "apriltag_<int>" is parseable downstream.
-    return f"""    <model name="apriltag_{tag_id}_PLACEHOLDER">
+
+    if use_placeholder:
+        # ORIGINAL MAGENTA PLACEHOLDER (Safe and sound)
+        return f"""    <model name="apriltag_{tag_id}_PLACEHOLDER">
       <static>true</static>
       <pose>{pose}</pose>
       <link name="link">
@@ -232,6 +225,41 @@ def _render_tag(
             <ambient>1.0 0.0 1.0 1</ambient>
             <diffuse>1.0 0.0 1.0 1</diffuse>
             <emissive>1.0 0.0 1.0 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>"""
+    
+    else:
+        # NEW REAL APRILTAG TEXTURE
+        return f"""    <model name="apriltag_{tag_id}">
+      <static>true</static>
+      <pose>{pose}</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>{thickness:.4f} {size:.4f} {size:.4f}</size></box></geometry>
+        </collision>
+        
+        <!-- White background plate to give the tag a border -->
+        <visual name="bg_visual">
+          <geometry><box><size>{thickness:.4f} {size:.4f} {size:.4f}</size></box></geometry>
+          <material>
+            <ambient>1.0 1.0 1.0 1</ambient>
+            <diffuse>1.0 1.0 1.0 1</diffuse>
+          </material>
+        </visual>
+
+        <!-- The actual AprilTag texture, mapped to a plane on the +X face -->
+        <visual name="tag_visual">
+          <!-- Shifted slightly forward on X to prevent Z-fighting, rotated to face outward -->
+          <pose>{thickness/2 + 0.001} 0 0 0 1.57079 0</pose>
+          <geometry><plane><normal>0 0 1</normal><size>{size*0.9:.4f} {size*0.9:.4f}</size></plane></geometry>
+          <material>
+            <script>
+              <uri>model://apriltags/materials/scripts</uri>
+              <uri>model://apriltags/materials/textures</uri>
+              <name>AprilTag/Tag36h11_{tag_id}</name>
+            </script>
           </material>
         </visual>
       </link>
