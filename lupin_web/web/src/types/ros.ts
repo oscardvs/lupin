@@ -200,7 +200,31 @@ export const LUPIN_SRV = {
   StartMission: 'lupin_msgs/srv/StartMission',
   Trigger: 'std_srvs/srv/Trigger',
   GetField: 'lupin_msgs/srv/GetField',
+  CalibrateArm: 'lupin_msgs/srv/CalibrateArm',
 } as const
+
+/** Mirror of `lupin_msgs/srv/CalibrateArm`. The single-srv-with-action
+ * shape (vs three separate srvs) mirrors the operator wizard 1:1: start
+ * disables servos, operator hand-poses the arm, commit samples positions
+ * and writes Hiwonder zero offsets, cancel re-enables without writing. */
+export type CalibrateArmAction = 'start' | 'commit' | 'cancel' | 'status'
+export type CalibrateArmState = 'IDLE' | 'AWAITING_POSE'
+
+export interface CalibrateArmRequest {
+  action: CalibrateArmAction
+}
+
+export interface CalibrateArmResponse {
+  success: boolean
+  state: CalibrateArmState | ''
+  message: string
+  /** Servo names in server-side order; populated only on commit. */
+  joint_names: string[]
+  /** Centidegrees actually written via _set_offset (per joint). */
+  offsets_applied: number[]
+  /** Raw-tick diff (position - home + curr_offset). */
+  diffs_observed: number[]
+}
 
 /** Sensor channels the digital twin understands. Order is the canonical
  * sensor-pill order in the HMI header. */
