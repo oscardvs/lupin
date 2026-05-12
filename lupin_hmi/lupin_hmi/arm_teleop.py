@@ -25,18 +25,29 @@ Setting an `*_axis` to -1 falls back to the `*_plus`/`*_minus` button pair.
 Shoulder gating — both directions supported, mutually exclusive:
   - ``shoulder_enable_button`` (≥ 0): shoulder lives ONLY while held.
   - ``shoulder_disable_button`` (≥ 0): shoulder lives ONLY while NOT held.
-Defaults: ``enable=99`` (out of range → shoulder OFF by default),
-          ``disable=-1`` (unused when enable gates).
-Rationale: an earlier version gated shoulder behind "LB not held" so the
-right stick reverted to shoulder duty whenever the operator wasn't
-driving. That left the shoulder commandable by stick drift the moment LB
-released — Xbox controllers routinely drift past a 0.2 deadzone — so the
-arm could swing while the operator pressed an unrelated D-pad button or
-sat idle. New default: shoulder demands a positive button hold. Probe a
-free button on your controller (Back/Select, stick-click, etc.) and
-override ``shoulder_enable_button`` at launch when you want shoulder
-control. Wrist/elbow (D-pad axes) and gripper (triggers) stay
-ungated — those input devices don't drift.
+Defaults: ``enable=-1`` + ``disable=6`` (Xbox LB).
+Rationale: the right stick is shared with chassis yaw (teleop_twist_joy
+also reads axis 2 → angular.yaw). The chassis dead-man is LB (button 6),
+so the right stick produces yaw only while LB is held. To stop the
+shoulder from following the same stick during drive, gate it off
+whenever LB is held — that's what ``disable=6`` does. LB released →
+chassis idle, shoulder live. LB held → chassis driving, shoulder
+silenced. A previous revision defaulted ``enable=99`` (out of range →
+OFF entirely) as a defence against Xbox stick drift. Drift defence now
+lives in its proper place: ``xbox_teleop.launch.py`` sets the joy_node
+deadzone to 0.15, which zeros out the analog values before they ever
+reach this node. Wrist/elbow (D-pad axes) and gripper (triggers) stay
+ungated — those input devices don't drift to begin with.
+
+Seeding the commanded pose from ``/joint_states``
+-------------------------------------------------
+``current_positions`` is the joint vector this node publishes on every
+trajectory. Until the first ``/joint_states`` covering all four arm
+joints arrives, no trajectory is sent — otherwise the first joy nudge
+would publish a 4-joint goal where three joints are stale defaults,
+yanking them to wherever the defaults happened to land. The gripper
+follows the same rule: ``_gripper_pos`` is seeded from the gripper joint
+in ``/joint_states`` before any ``gripper_cmd`` action goal is fired.
 """
 
 import rclpy
@@ -61,10 +72,14 @@ class ArmTeleop(Node):
         self.declare_parameter('wrist_plus_button', -1)
         self.declare_parameter('wrist_minus_button', -1)
         # Shoulder gating (mutually exclusive — see docstring). Default
-        # enable=99 (no controller has that many buttons) → shoulder OFF;
-        # override at launch with a probed safe button to opt in.
-        self.declare_parameter('shoulder_enable_button', 99)
-        self.declare_parameter('shoulder_disable_button', -1)
+        # enable=-1 (no positive enable required) + disable=6 (Xbox LB
+        # — the drive dead-man). Net effect: the right stick drives
+        # shoulder pan/lift in arm mode, and is silenced while LB is
+        # held so the chassis can use it for yaw without the arm
+        # following along. Stick-drift defence lives in the joy_node
+        # deadzone (0.15 in xbox_teleop.launch.py), not here.
+        self.declare_parameter('shoulder_enable_button', -1)
+        self.declare_parameter('shoulder_disable_button', 6)
         # Per-joint sign flips so we can flip a stick or D-pad axis without
         # hard-coding it. +1 = upstream sign, -1 = invert.
         self.declare_parameter('shoulder_pan_sign', 1)
@@ -93,7 +108,6 @@ class ArmTeleop(Node):
         self.declare_parameter('gripper_pos_max', 0.25)
         self.declare_parameter('gripper_step_rad', 0.03)
         self.declare_parameter('gripper_max_effort', 2.0)
-        self.declare_parameter('gripper_initial_pos', 0.0)
         self.declare_parameter('gripper_trigger_threshold', 0.1)
 
         self._pan_ax = self._iparam('shoulder_pan_axis')
@@ -126,8 +140,13 @@ class ArmTeleop(Node):
         self._gripper_step = float(self.get_parameter('gripper_step_rad').value)
         self._gripper_effort = float(self.get_parameter('gripper_max_effort').value)
         self._gripper_thresh = float(self.get_parameter('gripper_trigger_threshold').value)
-        self._gripper_pos = float(self.get_parameter('gripper_initial_pos').value)
-        self._last_gripper_goal = self._gripper_pos
+        # Gripper position state — seeded from /joint_states[gripper_joint]
+        # on the first reading (see _on_joint_state). Held at NaN until
+        # then; _tick_gripper bails so an early trigger pull can't snap
+        # the jaw away from where the HMI slider left it.
+        self._gripper_pos = float('nan')
+        self._last_gripper_goal = float('nan')
+        self._gripper_seeded = False
         # Trigger axes rest at +1 by convention; before the user pulls a
         # trigger they may publish 0 (uninitialised). Treat values close to
         # +1 OR exactly 0 as "rest" until proven otherwise.
@@ -138,6 +157,25 @@ class ArmTeleop(Node):
             self, GripperCommand, self._gripper_action_name)
         self._gripper_pull_open = 0.0
         self._gripper_pull_close = 0.0
+
+        # State that callbacks read must exist before the subscriptions are
+        # registered — otherwise a /joint_states or /joy message arriving
+        # between create_subscription() and the assignments below would
+        # hit an AttributeError.
+        self.joint_names = [
+            'shoulder_pan_joint',
+            'shoulder_lift_joint',
+            'elbow_joint',
+            'wrist_joint',
+        ]
+        # Commanded pose. Held at NaN until the first /joint_states
+        # covering all four arm joints arrives — see _on_joint_state.
+        # Publishing a trajectory before the seed would yank three idle
+        # joints to whatever default we chose here (the previous
+        # hard-coded [0, -1.56, -1.56, 1.56] caused exactly that bug).
+        self.current_positions = [float('nan')] * 4
+        self._positions_seeded = False
+        self.joy_cmds = [0.0, 0.0, 0.0, 0.0]
 
         self.publisher_ = self.create_publisher(
             JointTrajectory,
@@ -170,32 +208,21 @@ class ArmTeleop(Node):
             f'step={self._gripper_step:.3f} rad, '
             f'action={self._gripper_action_name}'
         )
-        # Loudly surface the shoulder-gating state — it's the difference
-        # between "right stick safely inert" and "right stick drift becomes
-        # arm motion." Operators reading the journal should never have to
-        # guess.
-        shoulder_status = (
-            f'DISABLED (shoulder_enable_button={self._shoulder_enable_btn} '
-            f'is out of range)'
-            if self._shoulder_enable_btn >= 16 or (
-                self._shoulder_enable_btn < 0
-                and self._shoulder_disable_btn < 0
+        # Surface the gating state so the operator never has to guess
+        # whether the right stick is live.
+        if self._shoulder_enable_btn < 0 and self._shoulder_disable_btn < 0:
+            shoulder_status = 'always live (no gating button configured)'
+        elif self._shoulder_enable_btn >= 16:
+            shoulder_status = (
+                f'DISABLED (shoulder_enable_button={self._shoulder_enable_btn} '
+                'is out of range)'
             )
-            else f'enable_btn={self._shoulder_enable_btn} '
-                 f'disable_btn={self._shoulder_disable_btn}'
-        )
+        else:
+            shoulder_status = (
+                f'enable_btn={self._shoulder_enable_btn} '
+                f'disable_btn={self._shoulder_disable_btn}'
+            )
         self.get_logger().info(f'shoulder pan/lift: {shoulder_status}')
-
-        self.joint_names = [
-            'shoulder_pan_joint',
-            'shoulder_lift_joint',
-            'elbow_joint',
-            'wrist_joint',
-        ]
-
-        # Start at neutral positions matching the URDF's stowed pose.
-        self.current_positions = [0.0, -1.56, -1.56, 1.56]
-        self.joy_cmds = [0.0, 0.0, 0.0, 0.0]
 
     def _iparam(self, name: str) -> int:
         return int(self.get_parameter(name).value)
@@ -248,13 +275,62 @@ class ArmTeleop(Node):
         self._gripper_pull_close = self._trigger_pull(msg, self._gripper_close_ax)
 
     def _on_joint_state(self, msg: JointState) -> None:
-        """Log when a tracked joint's actual position changes by ≥ 0.02 rad
-        since the last logged value. Lets us see whether the JTC is actually
-        executing what arm_teleop commanded — separates 'didn't command'
-        from 'commanded but joint didn't move'."""
+        """Seed commanded pose from the first reading and log subsequent
+        actual-vs-commanded divergence.
+
+        Seeding: on the first /joint_states covering all four arm joints,
+        ``current_positions`` adopts the actual pose so the very first
+        joystick nudge publishes a trajectory consistent with where the
+        arm physically is — not a stale URDF default that would yank the
+        three idle joints. The gripper seeds the same way the first time
+        gripper_joint is present.
+
+        Logging: once seeded, logs when a tracked joint's actual position
+        changes by ≥ 0.02 rad since the last logged value, rate-limited
+        per joint to 2 Hz. Lets us tell 'didn't command' from 'commanded
+        but joint didn't move'.
+        """
+        positions_by_name = {
+            name: float(pos)
+            for name, pos in zip(msg.name, msg.position)
+        }
+
+        if not self._positions_seeded:
+            if all(n in positions_by_name for n in self.joint_names):
+                for i, n in enumerate(self.joint_names):
+                    self.current_positions[i] = positions_by_name[n]
+                self._positions_seeded = True
+                self.get_logger().info(
+                    'arm_teleop seeded from /joint_states: '
+                    + ', '.join(
+                        f'{n}={self.current_positions[i]:+.3f}'
+                        for i, n in enumerate(self.joint_names)
+                    )
+                )
+
+        if not self._gripper_seeded and 'gripper_joint' in positions_by_name:
+            self._gripper_pos = positions_by_name['gripper_joint']
+            self._last_gripper_goal = self._gripper_pos
+            self._gripper_seeded = True
+            self.get_logger().info(
+                f'gripper seeded from /joint_states: '
+                f'gripper_joint={self._gripper_pos:+.3f}'
+            )
+
+        # Only log divergence after seeding — pre-seed the commanded
+        # value is NaN and the comparison is meaningless.
+        if not self._positions_seeded and not self._gripper_seeded:
+            return
+
         now_ns = self.get_clock().now().nanoseconds
         for name, pos in zip(msg.name, msg.position):
             if name not in self._js_logged_ns:
+                continue
+            # Skip arm joints until they're seeded; otherwise the
+            # commanded value is NaN and the Δ is meaningless.
+            if name in self.joint_names and not self._positions_seeded:
+                continue
+            if name == 'gripper_joint' and not self._gripper_seeded:
                 continue
             last = self._js_last.get(name)
             if last is not None and abs(pos - last) < 0.02:
@@ -264,13 +340,11 @@ class ArmTeleop(Node):
             if (now_ns - self._js_logged_ns[name]) < 500_000_000:
                 continue
             short = name.replace('_joint', '')
-            cmd = self.current_positions[
-                ['shoulder_pan_joint', 'shoulder_lift_joint',
-                 'elbow_joint', 'wrist_joint'].index(name)
-            ] if name in (
-                'shoulder_pan_joint', 'shoulder_lift_joint',
-                'elbow_joint', 'wrist_joint',
-            ) else self._gripper_pos
+            cmd = (
+                self.current_positions[self.joint_names.index(name)]
+                if name in self.joint_names
+                else self._gripper_pos
+            )
             self.get_logger().info(
                 f'js {short}: actual={pos:+.3f}  commanded={cmd:+.3f}  '
                 f'Δ={pos - cmd:+.3f}'
@@ -297,6 +371,13 @@ class ArmTeleop(Node):
         return max(0.0, min(1.0, pull))
 
     def timer_callback(self) -> None:
+        # No trajectory until we know where the arm actually is. The
+        # gripper has its own seed gate inside _tick_gripper, so it
+        # can still fire as long as gripper_joint has been seen.
+        if not self._positions_seeded:
+            self._tick_gripper()
+            return
+
         moved = False
         active = [False, False, False, False]
         for i in range(4):
@@ -319,6 +400,8 @@ class ArmTeleop(Node):
         self._tick_gripper()
 
     def _tick_gripper(self) -> None:
+        if not self._gripper_seeded:
+            return
         net = self._gripper_pull_open - self._gripper_pull_close
         if abs(net) < self._gripper_thresh:
             return
