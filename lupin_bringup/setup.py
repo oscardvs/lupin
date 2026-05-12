@@ -20,6 +20,7 @@ setup(
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
         ('share/' + package_name + '/systemd', glob('systemd/*.service')),
         ('share/' + package_name + '/scripts', glob('scripts/*.sh')),
+        ('share/' + package_name + '/udev', glob('udev/*.rules')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

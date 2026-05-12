@@ -91,6 +91,15 @@ def generate_launch_description() -> LaunchDescription:
                 'autorepeat_rate': 20.0,
                 'use_sim_time': LaunchConfiguration('use_sim_time'),
             }],
+            # joy_node only enumerates SDL2 gamepads at startup. If the pad
+            # is off at boot, the node binds nothing and stays dead until
+            # restarted. Pair with the lupin_bringup udev rule
+            # (99-lupin-xbox-rebind.rules) which pkills this process when an
+            # Xbox Wireless Controller appears — respawn brings it back, the
+            # fresh scan picks up the device, and the operator doesn't have
+            # to `systemctl restart lupin-onboard` after powering the pad.
+            respawn=True,
+            respawn_delay=2.0,
         ),
         Node(
             package='teleop_twist_joy', executable='teleop_node',

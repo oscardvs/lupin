@@ -30,6 +30,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   systemctl stop "$SVC" 2>/dev/null || true
   systemctl disable "$SVC" 2>/dev/null || true
   rm -f "$UNIT_DST"
+  rm -f /etc/udev/rules.d/99-lupin-xbox-rebind.rules
+  udevadm control --reload-rules 2>/dev/null || true
   systemctl daemon-reload
   echo "$SVC service removed."
   exit 0
@@ -79,6 +81,23 @@ if command -v ros2 >/dev/null; then
       echo "         Did you 'colcon build --packages-up-to lupin_hmi' on the robot?" >&2
     fi
   done
+fi
+
+# Install the Xbox-rebind udev rule. joy_node only enumerates SDL2
+# gamepads at startup, so when the operator powers the pad on AFTER
+# lupin-onboard is up it stays silent. The rule SIGTERMs joy_node when
+# an Xbox Wireless Controller event device appears; the launch's
+# `respawn=True` brings it back, and the fresh scan binds the new pad.
+# Without it the operator has to `systemctl restart lupin-onboard` after
+# every pad power-on — which is slow (~5 min on Mirte-247264 during
+# heavy boot) and bounces twist_mux as collateral damage.
+UDEV_SRC="$PKG_DIR/udev/99-lupin-xbox-rebind.rules"
+UDEV_DST="/etc/udev/rules.d/99-lupin-xbox-rebind.rules"
+if [[ -f "$UDEV_SRC" ]]; then
+  install -m 0644 "$UDEV_SRC" "$UDEV_DST"
+  udevadm control --reload-rules
+  udevadm trigger --subsystem-match=input --action=change 2>/dev/null || true
+  echo "info: installed udev rule $UDEV_DST"
 fi
 
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
