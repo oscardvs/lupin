@@ -137,6 +137,41 @@ function mockServiceResponse(serviceType: string, request: unknown): unknown {
   switch (serviceType) {
     case 'lupin_msgs/srv/GetField':
       return mockTwinField(request as Parameters<typeof mockTwinField>[0])
+    case 'lupin_msgs/srv/CalibrateArm': {
+      // Stateless mock — the dialog's local state drives the wizard; the
+      // service response just has to be shape-correct. Return AWAITING_POSE
+      // for "start", IDLE for everything else, and synthetic diffs for
+      // "commit" so the per-joint table has something to render.
+      const action = (request as { action?: string })?.action ?? ''
+      if (action === 'start') {
+        return {
+          success: true,
+          state: 'AWAITING_POSE',
+          message: '[mock] servos disabled — hand-pose the arm',
+          joint_names: [],
+          offsets_applied: [],
+          diffs_observed: [],
+        }
+      }
+      if (action === 'commit') {
+        return {
+          success: true,
+          state: 'IDLE',
+          message: '[mock] calibration complete',
+          joint_names: ['shoulder_pan', 'shoulder_lift', 'elbow', 'wrist', 'gripper'],
+          offsets_applied: [12, -34, 7, 0, -2],
+          diffs_observed: [288, -816, 168, 0, -48],
+        }
+      }
+      return {
+        success: true,
+        state: 'IDLE',
+        message: `[mock] ${action || 'status'}`,
+        joint_names: [],
+        offsets_applied: [],
+        diffs_observed: [],
+      }
+    }
     default:
       return { success: true }
   }

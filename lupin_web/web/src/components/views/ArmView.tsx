@@ -1,6 +1,7 @@
-import { Activity, Camera, Grip, Home, Power, RotateCcw, Square } from 'lucide-react'
+import { Activity, Camera, Compass, Grip, Home, Power, RotateCcw, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { ArmCalibrateDialog } from '@/components/widgets/ArmCalibrateDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
@@ -125,6 +126,7 @@ export function ArmView() {
   const [homeTick, setHomeTick] = useState(0)
   const [initStatus, setInitStatus] = useState<CallStatus>('idle')
   const [initError, setInitError] = useState<string | null>(null)
+  const [calibOpen, setCalibOpen] = useState(false)
 
   const blocked = estopActive || rosStatus !== 'connected'
 
@@ -235,6 +237,16 @@ export function ArmView() {
             <Home className="mr-2 h-4 w-4" />
             Init (home, 5s)
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCalibOpen(true)}
+            disabled={blocked}
+            title="Hiwonder zero-offset calibration (operator-in-the-loop, hardware only)"
+          >
+            <Compass className="mr-2 h-4 w-4" />
+            Calibrate…
+          </Button>
           {enableStatus === 'error' && enableError ? (
             <span className="tag text-destructive">enable failed: {enableError}</span>
           ) : enableStatus === 'ok' ? (
@@ -296,6 +308,8 @@ export function ArmView() {
         <span className="tag">·</span>
         <span className="ticker">on release</span>
       </div>
+
+      <ArmCalibrateDialog open={calibOpen} onOpenChange={setCalibOpen} />
     </div>
   )
 }

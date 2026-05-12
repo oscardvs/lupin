@@ -28,6 +28,7 @@ set(srv_files
   "srv/SetArmPreset.srv"
   "srv/GetField.srv"
   "srv/ConfirmTag.srv"
+  "srv/CalibrateArm.srv"
 )
 set(action_files
 )

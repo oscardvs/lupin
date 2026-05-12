@@ -177,6 +177,22 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'calibrate_arm',
+    description:
+      "CRITICAL: NEVER call this with action='commit' in the same turn as 'start'. You MUST wait for an explicit operator utterance like 'go ahead', 'commit', 'save it', or 'I've moved the arm' before calling 'commit'. Calling commit immediately leaves the arm calibrated to whatever pose it happened to be in when start fired — i.e. broken. Hiwonder zero-offset arm calibration is operator-in-the-loop: (1) action='start' disables the servos and the arm goes limp — tell the user to physically support the arm and move it into its mechanical home pose. (2) After the user confirms they have hand-posed the arm, action='commit' samples positions for ~2 s and writes new zero offsets. (3) action='cancel' aborts and re-enables without writing. (4) action='status' queries state without side effects. Hardware-only; in sim this returns synthetic results.",
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['start', 'commit', 'cancel', 'status'],
+          description: 'Step in the calibration workflow.',
+        },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'query_state',
     description:
       "Read live telemetry from the robot. 'fields' is a list of items to fetch from: pose, battery, estop. Returns whatever subset is currently known. Read-only — never moves the robot.",
@@ -224,6 +240,7 @@ export type ToolName =
   | 'save_named_location'
   | 'gripper'
   | 'arm_preset'
+  | 'calibrate_arm'
   | 'engage_estop'
   | 'query_state'
   | 'speak'
