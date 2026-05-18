@@ -15,7 +15,7 @@ setup(
         ('share/' + package_name + '/launch',
             glob('launch/*.launch.py') + glob('launch/*.launch.xml')),
         ('share/' + package_name + '/config',
-            glob('config/*.yaml') + glob('config/*.json')),
+            glob('config/*.yaml') + glob('config/*.json') + glob('config/*.xml.in')),
         ('share/' + package_name + '/worlds', glob('worlds/*.world')),
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
         ('share/' + package_name + '/systemd', glob('systemd/*.service')),
