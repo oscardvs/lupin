@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Lupin laptop-side FastDDS SUPER_CLIENT profile — generated from this
+  template by `scripts/setup-laptop-dds-env.sh`. The setup script substitutes
+  @ROBOT_IP@ with the address of the robot's FastDDS discovery server.
+
+  Why this template exists:
+  * Default ROS 2 simple discovery uses UDP multicast, which most WiFi APs
+    (iPhone hotspot, mirte-ap, university captive portals) silently drop.
+  * The vendor MIRTE image ships a FastDDS discovery server (started via
+    `MIRTE_FASTDDS=true` in `~/.mirte_settings.sh`, listening on
+    UDP :11811). All robot participants are SUPER_CLIENTs of it; the
+    laptop just needs to do the same.
+  * On Humble's FastDDS 2.6, both this XML AND `ROS_DISCOVERY_SERVER`
+    env var must be set in the daemon's environment — either alone is
+    flaky. The setup script wires both.
+
+  See `lupin_bringup/README.md` "Laptop ↔ robot DDS over WiFi".
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="super_client_profile" is_default_profile="true">
+    <rtps>
+      <builtin>
+        <discovery_config>
+          <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
+          <discoveryServersList>
+            <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+              <metatrafficUnicastLocatorList>
+                <locator>
+                  <udpv4>
+                    <address>@ROBOT_IP@</address>
+                    <port>11811</port>
+                  </udpv4>
+                </locator>
+              </metatrafficUnicastLocatorList>
+            </RemoteServer>
+          </discoveryServersList>
+        </discovery_config>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>

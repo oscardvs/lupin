@@ -100,6 +100,96 @@ configuration before the HMI offload), uninstall it now:
 sudo bash $(ros2 pkg prefix lupin_web)/share/lupin_web/scripts/install-systemd.sh --uninstall
 ```
 
+### Laptop ↔ robot DDS over WiFi (one-time per laptop)
+
+ROS 2's default FastDDS uses UDP multicast for participant discovery, which
+WiFi access points (iPhone hotspot, the robot's own `mirte-ap.service`,
+many university APs) silently drop. Symptom: `ssh` and `ping` to the robot
+work fine, but `ros2 topic list` from the laptop returns only
+`/parameter_events` + `/rosout`. The HMI loads but every panel is blank.
+
+The vendor MIRTE image ships a FastDDS Discovery Server for exactly this
+case. The fix is two flags — one on each side.
+
+**On the robot** — enable the vendor's discovery server, then restart the
+service stack:
+
+```bash
+# In ~/.mirte_settings.sh, ensure this line is set to true:
+echo 'export MIRTE_FASTDDS=true' >> /home/mirte/.mirte_settings.sh
+sudo systemctl restart mirte-ros.service lupin-onboard.service lupin-cameras.service
+
+# Verify the server is listening (UDP, not TCP):
+sudo ss -lnup | grep 11811        # expect "fast-discovery-server" listening on 0.0.0.0:11811
+```
+
+**On the laptop** — run the setup script once. It generates the FastDDS
+XML profile, writes the env-loader, and wires `~/.bashrc` to source it.
+The default robot IP is `192.168.42.1` (the robot's own AP); override if
+you're on a shared LAN where the robot has a different address.
+
+```bash
+# from the source tree:
+./lupin_bringup/scripts/setup-laptop-dds-env.sh                  # uses 192.168.42.1
+./lupin_bringup/scripts/setup-laptop-dds-env.sh 10.0.0.42        # custom IP
+./lupin_bringup/scripts/setup-laptop-dds-env.sh --uninstall      # back out
+
+# from an installed workspace:
+$(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/setup-laptop-dds-env.sh
+```
+
+Open a fresh terminal (or `source ~/.config/lupin/ros-env.sh`), then:
+
+```bash
+ros2 daemon start && sleep 5
+ros2 topic list | wc -l                          # expect 50+, not 2
+ros2 topic echo /io/power/power_watcher --once   # should print BatteryState
+```
+
+If you swap networks (lab WiFi → robot AP → travel router), re-run the
+setup script with the new IP. The robot side doesn't need to change —
+its participants always point at `127.0.0.1:11811`.
+
+Three gotchas that wasted a full day on 2026-05-18, captured here so we
+never relearn them:
+
+- **Both XML and `ROS_DISCOVERY_SERVER` env var are required** on Humble's
+  FastDDS 2.6. Either alone is flaky — the env-var auto-config path is
+  inconsistent, and the XML alone doesn't trigger discovery-server
+  connection. The setup script wires both in the daemon's environment.
+- **Zombie ROS processes from a `Ctrl-C`'d launch** keep binding DDS ports
+  (7410–7447) and hijack discovery responses — the discovery server hands
+  topic info to the zombie and your fresh CLI/HMI participant gets
+  nothing. Before a fresh launch, sweep them:
+  ```bash
+  pgrep -af 'robot_state_pub|rosbridge_websocket|rviz2|twin_node|tag_annotator|wait_for' \
+    | grep -v grep
+  # kill -9 any PIDs that show up
+  ```
+- **`ros2 topic list` auto-starts the daemon but doesn't wait for
+  discovery to complete.** Right after env changes, do
+  `ros2 daemon start && sleep 5` before the first `topic list` call,
+  otherwise the first invocation returns `/parameter_events` + `/rosout`
+  while the daemon is still discovering. Subsequent calls are fine.
+
+**Troubleshooting — is this my problem?**
+
+| Symptom | Likely fix |
+| --- | --- |
+| `ros2 topic list` returns only `/parameter_events` and `/rosout` from the laptop, but `ssh` and `ping` to the robot work | DDS over WiFi — run the setup script. |
+| HMI loads and shows "LIVE" but every panel is blank (no battery, no IMU, no lidar) | Same — laptop's rosbridge can't subscribe to anything via DDS. |
+| Battery was working, then stopped after a launch Ctrl-C | Zombie ROS process from the killed launch. Sweep PIDs (see above) and re-launch. |
+| Topic count was 50+ then dropped to 2 after switching WiFi | Network changed, but daemon still has the old config. Re-run the setup script with the new robot IP, open a fresh shell. |
+| Setup script ran fine, fresh shell, still 2 topics | Robot's discovery server isn't actually listening. SSH in and `sudo ss -lnup \| grep 11811` — if empty, `MIRTE_FASTDDS=true` wasn't picked up (check `~/.mirte_settings.sh`, then `sudo systemctl restart mirte-ros.service`). |
+
+**Note for zsh users:** the setup script appends a source-line to
+`~/.bashrc` only. If your interactive shell is zsh, add the same line to
+`~/.zshrc` manually:
+
+```bash
+echo '[ -f ~/.config/lupin/ros-env.sh ] && source ~/.config/lupin/ros-env.sh' >> ~/.zshrc
+```
+
 ### Laptop-side setup (one-time per laptop)
 
 The HMI is part of `hardware.launch.py` — no extra service to install,
