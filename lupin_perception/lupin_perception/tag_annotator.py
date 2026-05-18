@@ -76,8 +76,20 @@ class TagAnnotator(Node):
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(
             cv2.aruco.DICT_APRILTAG_36h11,
         )
-        self.aruco_params = cv2.aruco.DetectorParameters()
-        self.detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
+        # OpenCV ≥ 4.7 introduced `ArucoDetector` + `DetectorParameters()`
+        # constructor; 4.6 (still common on Ubuntu 22.04 / ROS Humble) keeps
+        # the old `DetectorParameters_create()` factory + module-level
+        # `detectMarkers`. Pick whichever this host ships.
+        if hasattr(cv2.aruco, 'ArucoDetector'):
+            self.aruco_params = cv2.aruco.DetectorParameters()
+            _detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
+            self._detect_markers = _detector.detectMarkers
+        else:
+            self.aruco_params = cv2.aruco.DetectorParameters_create()
+            _adict, _aparams = self.aruco_dict, self.aruco_params
+            self._detect_markers = lambda img: cv2.aruco.detectMarkers(
+                img, _adict, parameters=_aparams,
+            )
 
         # Intrinsics — populated on the first CameraInfo message and then
         # cached. Until then, image_callback short-circuits with a
@@ -152,7 +164,7 @@ class TagAnnotator(Node):
             self.get_logger().error(f'cv_bridge failed: {e}', throttle_duration_sec=5.0)
             return
 
-        corners, ids, _ = self.detector.detectMarkers(cv_image)
+        corners, ids, _ = self._detect_markers(cv_image)
 
         detections: list[dict] = []
         if ids is not None:
