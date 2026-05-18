@@ -50,7 +50,10 @@ class BatteryMonitor:
             durability=QoSDurabilityPolicy.VOLATILE,
         )
         self._bat_sub = node.create_subscription(
-            BatteryState, battery_topic, self._on_battery_msg, qos,
+            BatteryState,
+            battery_topic,
+            self._on_battery_msg,
+            qos,
             callback_group=callback_group,
         )
 
@@ -70,14 +73,13 @@ class BatteryMonitor:
         self._low = is_low
         if is_low:
             self._node.get_logger().warn(
-                f'Battery LOW: {self._percentage:.1%} remaining. '
-                f'Triggering dock.'
+                f"Battery LOW: {self._percentage:.1%} remaining. " f"Triggering dock."
             )
             if self._on_low is not None:
                 self._on_low()
         else:
             self._node.get_logger().info(
-                'Battery recovered above threshold; awaiting /mission/resume.'
+                "Battery recovered above threshold; awaiting /mission/resume."
             )
             if self._on_recovered is not None:
                 self._on_recovered()
