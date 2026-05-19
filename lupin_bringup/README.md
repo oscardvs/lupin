@@ -214,6 +214,29 @@ rm -f ~/.config/systemd/user/lupin-web.service \
 systemctl --user daemon-reload
 ```
 
+### Post-boot clock-sync helper (one-time per laptop)
+
+The Orange Pi 3B has no RTC and in AP mode has no NTP source, so the
+robot boots with whatever clock it had at shutdown. `scripts/post-boot-sync.sh`
+syncs the clock laptop→robot and sanity-checks the discovery server +
+service stack in one shot. `DEMO_DAY.md` and the `project_robot_clock_skew`
+memory both reference it as `~/.config/lupin/post-boot-sync.sh`, so set
+that path up once:
+
+```bash
+mkdir -p ~/.config/lupin
+ln -s "$(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/post-boot-sync.sh" \
+      ~/.config/lupin/post-boot-sync.sh
+```
+
+Symlinked (not copied) so a future `colcon build --packages-select lupin_bringup`
+updates the script in-place. Override the target robot at call-time:
+
+```bash
+~/.config/lupin/post-boot-sync.sh                              # mirte@192.168.42.1 (default)
+ROBOT=mirte@10.0.0.42 ~/.config/lupin/post-boot-sync.sh        # any other robot
+```
+
 ### Tuning camera rates
 
 Edit `lupin_bringup/config/cameras.yaml` (toggle `enabled`, change `fps`),
