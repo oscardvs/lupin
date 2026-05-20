@@ -47,7 +47,7 @@ cameras:
   # also caps the producer-side CPU. No throttling node downstream.
   gripper:
     enabled: true
-    framerate: 5.0    # usb_cam default ~30; 5 is plenty for tag aim
+    framerate: 20.0    # usb_cam default ~30; 20 keeps the tag detector fed during arm aim
     pixel_format: yuyv2rgb
     width: 640
     height: 480
