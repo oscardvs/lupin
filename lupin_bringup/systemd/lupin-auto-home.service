@@ -1,0 +1,33 @@
+[Unit]
+Description=Move arm to 'home' preset at boot (low-load rest pose)
+Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
+# Run after lupin-onboard so arm_preset_server is up and joint_state_broadcaster
+# has been spawned. PartOf=mirte-ros so a vendor service restart re-fires this
+# unit alongside the rest of the stack.
+After=lupin-onboard.service
+Wants=lupin-onboard.service
+PartOf=mirte-ros.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=mirte
+Group=mirte
+# Mirte settings sourced for LUPIN_AUTO_HOME=false opt-out.
+ExecStart=/bin/bash -lc 'source /home/mirte/.mirte_settings.sh; \
+  source /opt/ros/humble/setup.bash; \
+  source /home/mirte/mirte_ws/install/setup.bash; \
+  source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; \
+  exec ros2 run lupin_hmi auto_home'
+# Boot-time race: if the discovery server fails to bind (the documented
+# project_mirte_ros_discovery_server_cold_boot_race) the arm controllers
+# never load and auto_home exits non-zero after timeout. Don't loop on
+# that — the operator will recover the stack manually and home the arm
+# via the HMI preset button.
+Restart=no
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lupin-auto-home
+
+[Install]
+WantedBy=multi-user.target

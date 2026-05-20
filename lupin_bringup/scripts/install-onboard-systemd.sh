@@ -18,7 +18,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(dirname "$SCRIPT_DIR")"
 UNIT_SRC="$PKG_DIR/systemd/lupin-onboard.service"
 UNIT_DST="/etc/systemd/system/lupin-onboard.service"
+# Companion one-shot — moves the arm to the 'home' preset on boot (low
+# gravity load on shoulder_lift; see project_arm_servo_thermal_trip).
+# Installed alongside lupin-onboard because its lifecycle is tied to it.
+AUTOHOME_SRC="$PKG_DIR/systemd/lupin-auto-home.service"
+AUTOHOME_DST="/etc/systemd/system/lupin-auto-home.service"
 SVC=lupin-onboard
+AUTOHOME=lupin-auto-home
 LEGACY=lupin-gripper-bridge
 
 if [[ "$EUID" -ne 0 ]]; then
@@ -27,13 +33,16 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 if [[ "${1:-}" == "--uninstall" ]]; then
+  systemctl stop "$AUTOHOME" 2>/dev/null || true
+  systemctl disable "$AUTOHOME" 2>/dev/null || true
+  rm -f "$AUTOHOME_DST"
   systemctl stop "$SVC" 2>/dev/null || true
   systemctl disable "$SVC" 2>/dev/null || true
   rm -f "$UNIT_DST"
   rm -f /etc/udev/rules.d/99-lupin-xbox-rebind.rules
   udevadm control --reload-rules 2>/dev/null || true
   systemctl daemon-reload
-  echo "$SVC service removed."
+  echo "$SVC + $AUTOHOME services removed."
   exit 0
 fi
 
@@ -101,6 +110,16 @@ if [[ -f "$UDEV_SRC" ]]; then
 fi
 
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
+
+# Install + enable lupin-auto-home alongside. NOT restarted here — auto-home
+# is meant to fire ONCE at boot, not on every install-script rerun (which
+# would move the arm unexpectedly). On the next reboot it will run.
+if [[ -f "$AUTOHOME_SRC" ]]; then
+  install -m 0644 "$AUTOHOME_SRC" "$AUTOHOME_DST"
+  systemctl enable "$AUTOHOME"
+  echo "info: installed $AUTOHOME (fires on next boot)"
+fi
+
 systemctl daemon-reload
 systemctl enable "$SVC"
 systemctl restart "$SVC"
@@ -109,4 +128,6 @@ echo
 systemctl --no-pager --lines=0 status "$SVC" || true
 echo
 echo "Tail logs with:  journalctl -u $SVC -f"
+echo "Auto-home logs:  journalctl -u $AUTOHOME -b"
+echo "Disable auto-home for a session: add LUPIN_AUTO_HOME=false to ~/.mirte_settings.sh"
 echo "Verify topics:   ros2 topic list | grep -E '(cmd_vel|/lupin/(arm|gripper))'"
