@@ -7,12 +7,18 @@ Both run inside a controller_manager ticking at 10 Hz, so this node
 publishes trajectories at the same rate (faster just thrashes goals).
 
 Xbox (default — verified live for Xbox Wireless Controller via SDL2):
-    shoulder_pan  = axes[2]   (right stick X)
-    shoulder_lift = axes[3]   (right stick Y)
+    shoulder_pan  = buttons B (+) / X (-)   (face buttons, indices set in
+                                             xbox_teleop.launch.py)
+    shoulder_lift = buttons Y (+) / A (-)
     elbow ±       = axes[7]   (D-pad UP/DOWN)
     wrist ±       = axes[6]   (D-pad LEFT/RIGHT)
     gripper close = axes[5]   (LT trigger; rest +1, full pull -1)
     gripper open  = axes[4]   (RT trigger)
+
+The right stick used to drive shoulder pan/lift but shared axis 2 with
+chassis yaw, so any LB-release while the stick was off-centre nudged the
+arm. Moved to discrete face buttons so chassis and arm inputs never
+share a physical control. Right stick is now chassis-yaw only.
 
 DualShock 4 (legacy — override at launch):
     shoulder_pan  = axes[2]
@@ -20,7 +26,9 @@ DualShock 4 (legacy — override at launch):
     elbow ±       = buttons[11/12]   (D-pad)
     wrist ±       = buttons[13/14]
 
-Setting an `*_axis` to -1 falls back to the `*_plus`/`*_minus` button pair.
+Setting an `*_axis` to -1 falls back to the `*_plus`/`*_minus` button
+pair. All four arm joints support this fallback: shoulder_pan,
+shoulder_lift, elbow, wrist.
 
 Shoulder gating — both directions supported, mutually exclusive:
   - ``shoulder_enable_button`` (≥ 0): shoulder lives ONLY while held.
@@ -71,6 +79,14 @@ class ArmTeleop(Node):
         self.declare_parameter('elbow_minus_button', -1)
         self.declare_parameter('wrist_plus_button', -1)
         self.declare_parameter('wrist_minus_button', -1)
+        # Shoulder face-button fallback. Used when shoulder_*_axis is -1
+        # (or the axis reads 0). Pairs are set in xbox_teleop.launch.py to
+        # the X/Y/A/B face buttons so the right stick can be dedicated to
+        # chassis yaw.
+        self.declare_parameter('shoulder_pan_plus_button', -1)
+        self.declare_parameter('shoulder_pan_minus_button', -1)
+        self.declare_parameter('shoulder_lift_plus_button', -1)
+        self.declare_parameter('shoulder_lift_minus_button', -1)
         # Shoulder gating (mutually exclusive — see docstring). Default
         # enable=-1 (no positive enable required) + disable=6 (Xbox LB
         # — the drive dead-man). Net effect: the right stick drives
@@ -118,6 +134,10 @@ class ArmTeleop(Node):
         self._elbow_minus_btn = self._iparam('elbow_minus_button')
         self._wrist_plus_btn = self._iparam('wrist_plus_button')
         self._wrist_minus_btn = self._iparam('wrist_minus_button')
+        self._pan_plus_btn = self._iparam('shoulder_pan_plus_button')
+        self._pan_minus_btn = self._iparam('shoulder_pan_minus_button')
+        self._lift_plus_btn = self._iparam('shoulder_lift_plus_button')
+        self._lift_minus_btn = self._iparam('shoulder_lift_minus_button')
         self._shoulder_enable_btn = self._iparam('shoulder_enable_button')
         self._shoulder_disable_btn = self._iparam('shoulder_disable_button')
         self._signs = [
@@ -253,8 +273,16 @@ class ArmTeleop(Node):
         )
         shoulder_live = enable_held and not disable_held
         if shoulder_live:
-            self.joy_cmds[0] = self._read_axis(msg, self._pan_ax)
-            self.joy_cmds[1] = self._read_axis(msg, self._lift_ax)
+            pan_axis_val = self._read_axis(msg, self._pan_ax)
+            self.joy_cmds[0] = (
+                pan_axis_val if abs(pan_axis_val) > 1e-3
+                else self._read_button_pair(msg, self._pan_plus_btn, self._pan_minus_btn)
+            )
+            lift_axis_val = self._read_axis(msg, self._lift_ax)
+            self.joy_cmds[1] = (
+                lift_axis_val if abs(lift_axis_val) > 1e-3
+                else self._read_button_pair(msg, self._lift_plus_btn, self._lift_minus_btn)
+            )
         else:
             self.joy_cmds[0] = 0.0
             self.joy_cmds[1] = 0.0

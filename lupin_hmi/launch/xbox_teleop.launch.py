@@ -10,23 +10,34 @@ verified live with /tmp/joy_probe.py):
 
     Drive (hold LB as dead-man):
         Left stick     → translation  (forward/back + strafe)
-        Right stick X  → rotation
+        Right stick X  → rotation (turn in place)
         RB (turbo)     → ~2× the linear/angular scale
 
     Arm (LB released — modes are mutually exclusive by construction):
-        Right stick    → shoulder pan / lift  (live whenever LB is NOT
-                         held; LB-held silences the shoulder so the
-                         right stick is exclusively chassis yaw during
-                         drive — gating is in arm_teleop via
-                         shoulder_disable_button=6. Joy_node deadzone
-                         0.15 below absorbs Xbox stick drift before it
-                         reaches anything.)
-        D-pad ←/→      → elbow ±
-        D-pad ↑/↓      → wrist ±
+        Y (top)        → shoulder_lift +
+        A (bottom)     → shoulder_lift -
+        B (right)      → shoulder_pan +
+        X (left)       → shoulder_pan -
+        D-pad ←/→      → wrist ±
+        D-pad ↑/↓      → elbow ±
+
+Shoulder pan/lift moved off the right stick to the face buttons because
+the right stick used to be dual-use — chassis yaw while LB was held,
+shoulder pan while LB was released. Brushing the stick during an
+LB-release flicked the arm. Face buttons are physically separate from
+any chassis input, so the two modes can never bleed into each other.
+Right stick Y is now unbound. Shoulder gating via shoulder_disable_button
+is kept (LB-held silences shoulder buttons too) as a "don't move the
+arm while driving" safety.
 
 LT/RT can't be the dead-man — teleop_twist_joy's enable_button only
 takes a *button* index and triggers on this controller are axes (4, 5).
 LB is the closest button equivalent.
+
+Face-button indices assume the SDL2 standard (A=0, B=1, X=2, Y=3). On
+this Series X|S BT mapping, LB/RB landed at 6/7 instead of the expected
+4/5, so re-probe with `ros2 topic echo /joy` before trusting the face
+indices. They're plain launch params, so a swap is one-line.
 
 Does NOT include twist_mux — priority arbitration is owned by the bringup
 launch (sim_full.launch.py / hardware.launch.py) so all sources of
@@ -137,6 +148,14 @@ def generate_launch_description() -> LaunchDescription:
                 'joint_velocity': 2.0,
                 'deadzone': 0.05,
                 'gripper_step_rad': 0.04,
+                # Shoulder pan/lift on face buttons; right stick is now
+                # chassis-yaw only. -1 disables the stick fallback.
+                'shoulder_pan_axis': -1,
+                'shoulder_lift_axis': -1,
+                'shoulder_pan_plus_button': 1,    # B  (right)  → pan +
+                'shoulder_pan_minus_button': 2,   # X  (left)   → pan -
+                'shoulder_lift_plus_button': 3,   # Y  (top)    → lift +
+                'shoulder_lift_minus_button': 0,  # A  (bottom) → lift -
             }],
         ),
     ])
