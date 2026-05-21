@@ -46,7 +46,7 @@ Each subsystem is behind a boolean flag:
 | `twin:=`              | `true`  | `lupin_twin` — aggregates `/floranova/observations` into `/twin/state` for the HMI Twin tab. |
 | `mission:=`           | `false` | Mission pipeline bundle: `greenhouse_bridge` (oracle), `mission_orchestrator` lifecycle node, one-shot `/amcl_pose` seed. |
 | `rviz:=`              | `true`  | RViz2 with the persistent `full_bringup_viz.rviz` config. |
-| `joystick:=`          | `false` | Xbox controller teleop on the laptop (`joy_node` + `teleop_twist_joy` + `arm_teleop`). |
+| `joystick:=`          | `true`  | Xbox controller teleop on the laptop (`joy_node` + `teleop_twist_joy` + `arm_teleop`). Pad plugs into the laptop (USB-C is the no-drama path); the robot-side joy path was removed because BLE pairing on the vendor image is fragile. Pass `joystick:=false` to silence joy_node when no pad is connected. |
 | `dependency_timeout_s:=` | `120.0` | Mission orchestrator wait before FAULT. |
 
 Common invocations:

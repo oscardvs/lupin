@@ -14,7 +14,7 @@ than prose — the goal is "look up this file under pressure and follow it".
 ## 0. Pre-flight (do this BEFORE the audience walks in)
 
 - [ ] Laptop battery > 60 % AND on charger. Brightness up.
-- [ ] Xbox controller: charged, **powered ON before robot boot** (so joy_node enumerates it at startup — saves a `systemctl restart` later).
+- [ ] Xbox controller: charged, **plugged into the laptop via USB-C** (or BT-paired to the laptop). joy_node now runs laptop-side under `hardware.launch.py joystick:=true` — the robot-side joy path was removed (see `project_xbox_ble_pairing_fix`).
 - [ ] Robot powered on, on the floor in the demo space, lidar mast clear of obstacles.
 - [ ] Wait ~90 s after robot power-on for the boot storm to settle (load avg 8–12 is normal — see [`project_mirte_boot_storm`]).
 - [ ] Laptop WiFi connected to `Mirte-247264` AP. Verify with `ip -br addr | grep wlp` shows `192.168.42.66/24`.
@@ -28,22 +28,20 @@ than prose — the goal is "look up this file under pressure and follow it".
 ~/.config/lupin/post-boot-sync.sh
 ```
 
-**Expect:** drift `0s` or `1s`, discovery server `LISTENING` with `users:(("fast-discovery-",…))`, all 3 services `active`.
+**Expect:** drift `0s` or `1s`, discovery server `LISTENING` with `users:(("fast-discovery-",…))`, all services `active`, **all three controllers `active`** (joint_state_broadcaster, mirte_master_arm_controller, pid_wheels_controller). The vendor `mirte_ros.sh` first-boot race that used to leave controllers stuck `unconfigured` is now closed by `lupin_hmi/auto_home`, which calls `/controller_manager/configure_controller` then `switch_controller` before the home-pose call.
 
-**If discovery server `NOT-LISTENING`** (vendor `mirte_ros.sh` cold-boot race fired):
+**If any controller is still `unconfigured` after auto-home runs** (the heal call was unreachable — deeper DDS problem):
 
 ```bash
-ssh lupin 'sudo systemctl stop lupin-onboard lupin-cameras mirte-ros && sleep 3 && sudo pkill -9 -f fast-discovery-server'
-LAPTOP_TS=$(date -u +%s); ssh lupin "sudo date -s @${LAPTOP_TS} && sudo systemctl start mirte-ros"
-sleep 25
-ssh lupin 'sudo systemctl start lupin-onboard lupin-cameras'
-sleep 10
-~/.config/lupin/post-boot-sync.sh   # re-verify; discovery server should be up now
+ssh lupin sudo systemctl restart mirte-ros.service
+# That cascades a restart of lupin-onboard + lupin-auto-home (PartOf=mirte-ros),
+# so auto_home re-runs and re-fires the heal. ~25 s.
+~/.config/lupin/post-boot-sync.sh   # re-verify
 ```
 
-The "controllers (should show 5 active)" line at the end **always fails** with
-`rcl node's context is invalid` — that's a `ros2 control` CLI bug, not a real
-failure. Ignore it; the controllers are fine.
+If the restart still leaves controllers stuck, power-cycle the robot (off → 15 s → on) — that clears any ros2_control wedge cleanly.
+
+The "controllers (should show 5 active)" line at the end of `post-boot-sync.sh` sometimes fails with `rcl node's context is invalid` — that's a `ros2 control` CLI bug, not a real failure. The state to trust is what `ros2 control list_controllers` reports directly.
 
 ---
 
