@@ -17,6 +17,13 @@ Lifecycle
 Runs as a one-shot from ``lupin-auto-home.service``, ordered after
 ``lupin-onboard.service``. Procedure:
 
+  0. Self-heal the ros2_control stack. The vendor mirte-ros first-boot
+     races between ros2_control_node's YAML auto-load and the spawners,
+     leaving joint_state_broadcaster + pid_wheels_controller stuck
+     ``unconfigured`` (see project_2026_05_21_session_state). We list
+     controllers, call configure_controller on any unconfigured target,
+     then activate the lot via switch_controller. Idempotent: a clean
+     boot finds everything active and returns immediately.
   1. Wait for ``/joint_states`` to publish all 4 arm joints (= arm
      controller is loaded and reading hardware).
   2. Wait for ``/lupin/arm/preset`` service to exist (= arm_preset_server
@@ -57,6 +64,11 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
+from controller_manager_msgs.srv import (
+    ConfigureController,
+    ListControllers,
+    SwitchController,
+)
 from lupin_msgs.srv import SetArmPreset
 
 
@@ -65,6 +77,16 @@ REQUIRED_ARM_JOINTS = (
     'shoulder_lift_joint',
     'elbow_joint',
     'wrist_joint',
+)
+# Controllers that must be active for /joint_states to publish and for
+# wheel + arm commands to take effect. mirte_master_arm_controller is
+# usually fine on first boot (separate launch path); pid_wheels +
+# joint_state_broadcaster lose the vendor's "already loaded" race
+# (see project_2026_05_21_session_state) and stay stuck `unconfigured`.
+HEAL_TARGETS = (
+    'joint_state_broadcaster',
+    'pid_wheels_controller',
+    'mirte_master_arm_controller',
 )
 # Generous timeouts — the arm controllers can take a while to load on a
 # cold boot (telemetrix + spawners + hardware init). 30s covers the 95th
@@ -95,6 +117,94 @@ class AutoHome(Node):
             self.arm_joints_seen = True
 
 
+def heal_controllers(node: Node, timeout_s: float = 30.0) -> bool:
+    """Detect controllers stuck `unconfigured` and bring them to `active`.
+
+    Workaround for the vendor stack's first-boot race where ros2_control_node's
+    YAML auto-load and the spawner both try to load the same controller — the
+    spawner sees "already loaded", FATALs out, and the controller stays
+    `unconfigured` until something configures it manually. This function does
+    exactly that, idempotently. Returns True if all HEAL_TARGETS ended up
+    active (or were already), False if controller_manager itself is unreachable
+    (a deeper DDS problem that we can't fix from here).
+    """
+    list_cli = node.create_client(
+        ListControllers, '/controller_manager/list_controllers',
+    )
+    print('[lupin_auto_home] heal: waiting up to %.0fs for controller_manager'
+          % timeout_s)
+    if not list_cli.wait_for_service(timeout_sec=timeout_s):
+        print('[lupin_auto_home] heal: controller_manager unreachable — '
+              'self-heal cannot run (DDS / wedge problem upstream)')
+        return False
+
+    fut = list_cli.call_async(ListControllers.Request())
+    rclpy.spin_until_future_complete(node, fut, timeout_sec=10.0)
+    if not fut.done() or fut.result() is None:
+        print('[lupin_auto_home] heal: list_controllers call timed out')
+        return False
+
+    states = {c.name: c.state for c in fut.result().controller}
+    print('[lupin_auto_home] heal: current states: %s'
+          % ', '.join('%s=%s' % (n, s) for n, s in sorted(states.items())))
+
+    to_configure = [n for n in HEAL_TARGETS if states.get(n) == 'unconfigured']
+    needs_activate = [n for n in HEAL_TARGETS
+                      if states.get(n) in ('unconfigured', 'inactive')]
+    if not needs_activate:
+        print('[lupin_auto_home] heal: all targets already active — nothing to do')
+        return True
+
+    # Step 1: unconfigured → inactive
+    if to_configure:
+        conf_cli = node.create_client(
+            ConfigureController, '/controller_manager/configure_controller',
+        )
+        if not conf_cli.wait_for_service(timeout_sec=5.0):
+            print('[lupin_auto_home] heal: configure_controller service missing')
+            return False
+        for name in to_configure:
+            req = ConfigureController.Request()
+            req.name = name
+            print('[lupin_auto_home] heal: configure %s' % name)
+            fut = conf_cli.call_async(req)
+            rclpy.spin_until_future_complete(node, fut, timeout_sec=15.0)
+            if not fut.done() or fut.result() is None or not fut.result().ok:
+                print('[lupin_auto_home] heal: configure FAILED for %s' % name)
+                # Keep trying the others; switch will silently skip the ones
+                # still in `unconfigured`.
+
+    # Step 2: inactive → active via switch (BEST_EFFORT so a single bad one
+    # doesn't block the rest — partial recovery beats none).
+    switch_cli = node.create_client(
+        SwitchController, '/controller_manager/switch_controller',
+    )
+    if not switch_cli.wait_for_service(timeout_sec=5.0):
+        print('[lupin_auto_home] heal: switch_controller service missing')
+        return False
+    req = SwitchController.Request()
+    req.activate_controllers = list(needs_activate)
+    req.strictness = SwitchController.Request.BEST_EFFORT
+    req.activate_asap = True
+    print('[lupin_auto_home] heal: activate %s' % needs_activate)
+    fut = switch_cli.call_async(req)
+    rclpy.spin_until_future_complete(node, fut, timeout_sec=15.0)
+    if not fut.done() or fut.result() is None or not fut.result().ok:
+        print('[lupin_auto_home] heal: switch_controller (activate) FAILED')
+        return False
+
+    # Verify
+    fut = list_cli.call_async(ListControllers.Request())
+    rclpy.spin_until_future_complete(node, fut, timeout_sec=10.0)
+    if fut.done() and fut.result() is not None:
+        states = {c.name: c.state for c in fut.result().controller}
+        ok = all(states.get(n) == 'active' for n in HEAL_TARGETS)
+        print('[lupin_auto_home] heal: post-heal states: %s'
+              % ', '.join('%s=%s' % (n, s) for n, s in sorted(states.items())))
+        return ok
+    return True
+
+
 def main() -> int:
     # Opt-out path. Empty / unset → enabled by default.
     opt = os.environ.get('LUPIN_AUTO_HOME', 'true').strip().lower()
@@ -106,6 +216,12 @@ def main() -> int:
     node = AutoHome()
 
     try:
+        # 0) Self-heal controllers if they got stuck `unconfigured` on this
+        #    boot. This is what makes auto_home close the wedge instead of
+        #    just being a victim of it. Idempotent — if everything's already
+        #    active the function returns quickly.
+        heal_controllers(node)
+
         # 1) /joint_states with all 4 arm joints
         print('[lupin_auto_home] waiting up to %.0fs for /joint_states with arm joints'
               % JOINT_STATE_TIMEOUT_S)
