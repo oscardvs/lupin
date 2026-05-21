@@ -34,10 +34,12 @@ LT/RT can't be the dead-man — teleop_twist_joy's enable_button only
 takes a *button* index and triggers on this controller are axes (4, 5).
 LB is the closest button equivalent.
 
-Face-button indices assume the SDL2 standard (A=0, B=1, X=2, Y=3). On
-this Series X|S BT mapping, LB/RB landed at 6/7 instead of the expected
-4/5, so re-probe with `ros2 topic echo /joy` before trusting the face
-indices. They're plain launch params, so a swap is one-line.
+Face-button indices on this Series X|S BLE HID mapping (probed live
+2026-05-21): A=0, B=1, X=3, Y=4. Index 2 is reserved/skipped by
+Microsoft's HID descriptor (it is NOT X — that's the SDL2 layout, which
+this BT pad does not follow). LB/RB sit at 6/7, also shifted from SDL2's
+4/5. Re-probe with `ros2 topic echo /joy --field buttons` if you swap
+pads — they're plain launch params, so a remap is one-line.
 
 Does NOT include twist_mux — priority arbitration is owned by the bringup
 launch (sim_full.launch.py / hardware.launch.py) so all sources of
@@ -153,8 +155,8 @@ def generate_launch_description() -> LaunchDescription:
                 'shoulder_pan_axis': -1,
                 'shoulder_lift_axis': -1,
                 'shoulder_pan_plus_button': 1,    # B  (right)  → pan +
-                'shoulder_pan_minus_button': 2,   # X  (left)   → pan -
-                'shoulder_lift_plus_button': 3,   # Y  (top)    → lift +
+                'shoulder_pan_minus_button': 3,   # X  (left)   → pan -
+                'shoulder_lift_plus_button': 4,   # Y  (top)    → lift +
                 'shoulder_lift_minus_button': 0,  # A  (bottom) → lift -
             }],
         ),

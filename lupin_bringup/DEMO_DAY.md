@@ -4,7 +4,7 @@ Step-by-step procedure for getting the full Lupin stack live in front of an
 audience. Each step has *what to expect* and *if it fails*. Scan-able rather
 than prose — the goal is "look up this file under pressure and follow it".
 
-> The 7-terminal layout is intentional: every subsystem can be killed and
+> The 8-terminal layout is intentional: every subsystem can be killed and
 > restarted in its own terminal without taking the rest down. Recommended
 > over `ros2 launch lupin_bringup hardware.launch.py` for demos where
 > on-stage debugging may be needed.
@@ -28,9 +28,25 @@ than prose — the goal is "look up this file under pressure and follow it".
 ~/.config/lupin/post-boot-sync.sh
 ```
 
-**Expect:** drift `0s` or `1s`, discovery server `LISTENING` with `users:(("fast-discovery-",…))`, all services `active`, **all three controllers `active`** (joint_state_broadcaster, mirte_master_arm_controller, pid_wheels_controller). The vendor `mirte_ros.sh` first-boot race that used to leave controllers stuck `unconfigured` is now closed by `lupin_hmi/auto_home`, which calls `/controller_manager/configure_controller` then `switch_controller` before the home-pose call.
+**Expect:** drift `0s` or `1s`, discovery server `LISTENING` with `users:(("fast-discovery-",…))`, all services `active`, **all 5 controllers `active`**:
 
-**If any controller is still `unconfigured` after auto-home runs** (the heal call was unreachable — deeper DDS problem):
+| Controller | Role |
+|---|---|
+| `joint_state_broadcaster` | publishes `/joint_states` |
+| `mirte_master_arm_controller` | JTC for the 4-DOF arm |
+| `mirte_master_gripper_controller` | gripper action server |
+| `pid_wheels_controller` | per-wheel velocity PID |
+| `mirte_base_controller` | mecanum_drive_controller (Twist → 4 wheels) |
+
+The vendor `mirte_ros.sh` first-boot race that used to leave controllers stuck `unconfigured` is now closed by `lupin_hmi/auto_home`, which calls `/controller_manager/configure_controller` then `switch_controller` before the home-pose call.
+
+**If `mirte_base_controller` is missing from the list** (observed 2026-05-21): the vendor `spawner-10` is invoked with both `pid_wheels_controller` and `mirte_base_controller` as args. If `switch_controller` times out activating the first one, the spawner dies with exit 1 before reaching the second — so `pid_wheels_controller` ends up active but `mirte_base_controller` is silently dropped. Without it no Twist will move the wheels. Manual recovery:
+
+```bash
+ssh lupin "source ~/.mirte_settings.sh && ros2 control load_controller --set-state active mirte_base_controller"
+```
+
+**If any *other* controller is still `unconfigured` after auto-home runs** (the heal call was unreachable — deeper DDS problem):
 
 ```bash
 ssh lupin sudo systemctl restart mirte-ros.service
@@ -182,6 +198,39 @@ within 3 s `Latched intrinsics from camera_info: fx=… fy=… cx=… cy=…`.
 Check `ros2 topic hz /camera/color/camera_info` — should be ~5 Hz. If silent,
 `ssh lupin 'sudo systemctl restart lupin-cameras'`.
 
+### T8 — Xbox teleop (joy_node + teleop_twist_joy + arm_teleop)
+
+```bash
+ros2 launch lupin_hmi xbox_teleop.launch.py
+```
+
+**Expect:** `joy_node ... Opened joystick: Xbox Series X Controller. deadzone: 0.150000`, then `arm_teleop ready @ 10 Hz, step=0.150 rad, ...`, then `arm_teleop seeded from /joint_states: shoulder_pan_joint=..., shoulder_lift_joint=..., ...` once `/joint_states` arrives. Topics published: `/joy`, `/cmd_vel_joy`, arm trajectories on `/mirte_master_arm_controller/joint_trajectory`, gripper goals via the action client.
+
+**Button map (Series X|S BLE HID — probed live 2026-05-21):**
+
+| Input | Role | Index |
+|---|---|---|
+| **LB** (hold) | drive dead-man — also silences shoulder while held | 6 |
+| **RB** (hold) | turbo (~2× scale) | 7 |
+| Left stick | translation (forward/back + strafe — mecanum) | axes 0/1 |
+| Right stick X | rotation in place (only while LB held) | axis 2 |
+| **A** | shoulder_lift − | 0 |
+| **B** | shoulder_pan + | 1 |
+| **X** | shoulder_pan − | 3 |
+| **Y** | shoulder_lift + | 4 |
+| D-pad ↑/↓ | elbow ± | axis 7 |
+| D-pad ←/→ | wrist ± | axis 6 |
+| **RT** (pull) | gripper open | axis 4 |
+| **LT** (pull) | gripper close | axis 5 |
+
+Shoulder pan/lift are gated off while LB is held — don't expect Y/A/B/X to move the arm while driving. Release LB before pressing face buttons.
+
+**If a button does nothing:** the BLE HID indices shift between controllers. Probe with `ros2 topic echo /joy --field buttons` and press one button at a time. If yours differ from the table above, patch `lupin_hmi/launch/xbox_teleop.launch.py:153-159` and rebuild `lupin_hmi`.
+
+**If the pad isn't detected (no `Opened joystick:` line):** joy_node only enumerates SDL2 gamepads at startup. Power the controller on first, *then* launch. If you must hotplug, the udev rule `99-lupin-xbox-rebind.rules` pkills joy_node on Xbox-pad arrival and respawn picks it up.
+
+> Alternative: pass `joystick:=true` to the unified bringup (`ros2 launch lupin_bringup hardware.launch.py joystick:=true ...`) instead of running T8 standalone. Same node graph — pick whichever fits the on-stage debugging story.
+
 ---
 
 ## 5. Demo test sequence — verify everything works before the audience arrives
@@ -189,6 +238,8 @@ Check `ros2 topic hz /camera/color/camera_info` — should be ~5 Hz. If silent,
 | Test | How | Pass criterion |
 |---|---|---|
 | **Xbox drive** | Hold **LB**, push left stick forward | Robot moves **forward** physically (negative scales in `xbox_config.yaml` compensate for Mirte-247264 polarity) |
+| **Xbox arm** | Release LB. Press/hold **Y/A** → lift up/down. **B/X** → pan right/left. D-pad → wrist/elbow | Arm joints move at ~1.5 rad/s while held; quick taps step 0.15 rad. Watch `arm joints active:` log to confirm input is reaching `arm_teleop` |
+| **Xbox gripper** | Release LB. Pull **RT** (open) or **LT** (close) | Gripper opens/closes between [−0.20, 0.25] rad |
 | **HMI joystick** | HMI Teleop view, click Reset on e-stop banner, wiggle virtual stick | Robot drives in operator-expected direction (HMI applies `polarityInvertHmi`) |
 | **Lidar visible in HMI** | HMI Lidar view | Live scan paints at ~10 Hz |
 | **Map visible in HMI** | HMI Map view | OccupancyGrid renders, rotates with robot |
