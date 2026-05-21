@@ -67,6 +67,7 @@ from sensor_msgs.msg import JointState
 from controller_manager_msgs.srv import (
     ConfigureController,
     ListControllers,
+    LoadController,
     SwitchController,
 )
 from lupin_msgs.srv import SetArmPreset
@@ -117,45 +118,113 @@ class AutoHome(Node):
             self.arm_joints_seen = True
 
 
-def heal_controllers(node: Node, timeout_s: float = 30.0) -> bool:
-    """Detect controllers stuck `unconfigured` and bring them to `active`.
+def _list_controller_states(node: Node, list_cli) -> dict | None:
+    """Return {name: state} from /controller_manager/list_controllers, or None
+    if the call failed. Empty dict (no controllers loaded yet) is a valid
+    successful response — distinguish from None at the call site."""
+    fut = list_cli.call_async(ListControllers.Request())
+    rclpy.spin_until_future_complete(node, fut, timeout_sec=10.0)
+    if not fut.done() or fut.result() is None:
+        return None
+    return {c.name: c.state for c in fut.result().controller}
 
-    Workaround for the vendor stack's first-boot race where ros2_control_node's
-    YAML auto-load and the spawner both try to load the same controller — the
-    spawner sees "already loaded", FATALs out, and the controller stays
-    `unconfigured` until something configures it manually. This function does
-    exactly that, idempotently. Returns True if all HEAL_TARGETS ended up
-    active (or were already), False if controller_manager itself is unreachable
-    (a deeper DDS problem that we can't fix from here).
+
+def heal_controllers(
+    node: Node,
+    service_timeout_s: float = 30.0,
+    poll_budget_s: float = 60.0,
+) -> bool:
+    """Bring HEAL_TARGETS to `active`, handling every failure mode the vendor
+    first-boot race throws at us.
+
+    The vendor mirte-ros stack races ros2_control_node's YAML auto-load
+    against three controller_manager spawners (state_publishers.launch.py,
+    mirte_base.launch.py, mirte_master_arm_control.launch.py). When the race
+    fires, controllers end up in one of three bad states by the time we look:
+      - `unconfigured`   (loaded but configure() never fired) → configure
+      - `inactive`       (configured but switch() never fired)  → activate
+      - missing entirely (spawner FATALd, controller never loaded) → load
+                         then configure then activate
+
+    Earlier the function only handled the first two and treated the missing
+    case as "all good" — `states.get(n)` returns None for absent entries,
+    `None not in ('unconfigured', 'inactive')`, and the empty-set
+    needs_activate triggered the "nothing to do" early exit. False-positive
+    silenced exactly the wedge case the heal was supposed to catch.
+
+    Returns True only if all HEAL_TARGETS are `active` at the end.
     """
     list_cli = node.create_client(
         ListControllers, '/controller_manager/list_controllers',
     )
     print('[lupin_auto_home] heal: waiting up to %.0fs for controller_manager'
-          % timeout_s)
-    if not list_cli.wait_for_service(timeout_sec=timeout_s):
+          % service_timeout_s)
+    if not list_cli.wait_for_service(timeout_sec=service_timeout_s):
         print('[lupin_auto_home] heal: controller_manager unreachable — '
               'self-heal cannot run (DDS / wedge problem upstream)')
         return False
 
-    fut = list_cli.call_async(ListControllers.Request())
-    rclpy.spin_until_future_complete(node, fut, timeout_sec=10.0)
-    if not fut.done() or fut.result() is None:
-        print('[lupin_auto_home] heal: list_controllers call timed out')
-        return False
+    # Poll list_controllers until either all targets are visible OR we've
+    # burned the poll budget. The service registers as soon as
+    # controller_manager initializes its node, which happens BEFORE any
+    # controller is loaded — so an empty result here means "wait, don't
+    # assume done".
+    poll_deadline = time.monotonic() + poll_budget_s
+    states: dict[str, str] = {}
+    while time.monotonic() < poll_deadline:
+        result = _list_controller_states(node, list_cli)
+        if result is None:
+            print('[lupin_auto_home] heal: list_controllers call failed; '
+                  'retrying')
+            time.sleep(2.0)
+            continue
+        states = result
+        rendered = ', '.join('%s=%s' % (n, s)
+                             for n, s in sorted(states.items())) or '(empty)'
+        print('[lupin_auto_home] heal: current states: %s' % rendered)
+        missing = [n for n in HEAL_TARGETS if n not in states]
+        if not missing:
+            break
+        print('[lupin_auto_home] heal: not yet visible: %s — waiting' % missing)
+        time.sleep(2.0)
 
-    states = {c.name: c.state for c in fut.result().controller}
-    print('[lupin_auto_home] heal: current states: %s'
-          % ', '.join('%s=%s' % (n, s) for n, s in sorted(states.items())))
-
-    to_configure = [n for n in HEAL_TARGETS if states.get(n) == 'unconfigured']
-    needs_activate = [n for n in HEAL_TARGETS
-                      if states.get(n) in ('unconfigured', 'inactive')]
-    if not needs_activate:
-        print('[lupin_auto_home] heal: all targets already active — nothing to do')
+    # Positive done-check: all targets must explicitly be `active`. Anything
+    # else (unconfigured / inactive / missing) drops to recovery below.
+    if all(states.get(n) == 'active' for n in HEAL_TARGETS):
+        print('[lupin_auto_home] heal: all targets active — nothing to do')
         return True
 
-    # Step 1: unconfigured → inactive
+    # Recovery 1: anything missing from list_controllers needs to be loaded.
+    # We use LoadController; the controller TYPE is already known to
+    # controller_manager via the vendor's ros2_control YAML.
+    missing = [n for n in HEAL_TARGETS if n not in states]
+    if missing:
+        load_cli = node.create_client(
+            LoadController, '/controller_manager/load_controller',
+        )
+        if not load_cli.wait_for_service(timeout_sec=5.0):
+            print('[lupin_auto_home] heal: load_controller service missing — '
+                  'cannot recover missing controllers')
+            return False
+        for name in missing:
+            req = LoadController.Request()
+            req.name = name
+            print('[lupin_auto_home] heal: load %s' % name)
+            fut = load_cli.call_async(req)
+            rclpy.spin_until_future_complete(node, fut, timeout_sec=15.0)
+            if not fut.done() or fut.result() is None or not fut.result().ok:
+                # "already loaded" surfaces as ok=false here; that's fine —
+                # the re-list below will pick the controller up either way.
+                print('[lupin_auto_home] heal: load returned non-ok for %s '
+                      '(may already be loaded — will verify)' % name)
+        # Re-read state so the configure/activate steps see the just-loaded
+        # controllers. New loads land as `unconfigured`.
+        result = _list_controller_states(node, list_cli)
+        if result is not None:
+            states = result
+
+    # Recovery 2: configure anything in `unconfigured`.
+    to_configure = [n for n in HEAL_TARGETS if states.get(n) == 'unconfigured']
     if to_configure:
         conf_cli = node.create_client(
             ConfigureController, '/controller_manager/configure_controller',
@@ -171,38 +240,41 @@ def heal_controllers(node: Node, timeout_s: float = 30.0) -> bool:
             rclpy.spin_until_future_complete(node, fut, timeout_sec=15.0)
             if not fut.done() or fut.result() is None or not fut.result().ok:
                 print('[lupin_auto_home] heal: configure FAILED for %s' % name)
-                # Keep trying the others; switch will silently skip the ones
-                # still in `unconfigured`.
 
-    # Step 2: inactive → active via switch (BEST_EFFORT so a single bad one
-    # doesn't block the rest — partial recovery beats none).
-    switch_cli = node.create_client(
-        SwitchController, '/controller_manager/switch_controller',
-    )
-    if not switch_cli.wait_for_service(timeout_sec=5.0):
-        print('[lupin_auto_home] heal: switch_controller service missing')
-        return False
-    req = SwitchController.Request()
-    req.activate_controllers = list(needs_activate)
-    req.strictness = SwitchController.Request.BEST_EFFORT
-    req.activate_asap = True
-    print('[lupin_auto_home] heal: activate %s' % needs_activate)
-    fut = switch_cli.call_async(req)
-    rclpy.spin_until_future_complete(node, fut, timeout_sec=15.0)
-    if not fut.done() or fut.result() is None or not fut.result().ok:
-        print('[lupin_auto_home] heal: switch_controller (activate) FAILED')
-        return False
+    # Recovery 3: activate anything not already `active`. BEST_EFFORT so one
+    # bad controller doesn't sink the rest — partial recovery beats none.
+    needs_activate = [n for n in HEAL_TARGETS if states.get(n) != 'active']
+    if needs_activate:
+        switch_cli = node.create_client(
+            SwitchController, '/controller_manager/switch_controller',
+        )
+        if not switch_cli.wait_for_service(timeout_sec=5.0):
+            print('[lupin_auto_home] heal: switch_controller service missing')
+            return False
+        req = SwitchController.Request()
+        req.activate_controllers = list(needs_activate)
+        req.strictness = SwitchController.Request.BEST_EFFORT
+        req.activate_asap = True
+        print('[lupin_auto_home] heal: activate %s' % needs_activate)
+        fut = switch_cli.call_async(req)
+        rclpy.spin_until_future_complete(node, fut, timeout_sec=15.0)
+        if not fut.done() or fut.result() is None or not fut.result().ok:
+            print('[lupin_auto_home] heal: switch_controller (activate) FAILED')
+            return False
 
-    # Verify
-    fut = list_cli.call_async(ListControllers.Request())
-    rclpy.spin_until_future_complete(node, fut, timeout_sec=10.0)
-    if fut.done() and fut.result() is not None:
-        states = {c.name: c.state for c in fut.result().controller}
-        ok = all(states.get(n) == 'active' for n in HEAL_TARGETS)
-        print('[lupin_auto_home] heal: post-heal states: %s'
-              % ', '.join('%s=%s' % (n, s) for n, s in sorted(states.items())))
-        return ok
-    return True
+    # Verify with the same positive check we use at the top — anything other
+    # than "every target is `active`" is a heal failure, including a missing
+    # entry (which previously was the false-positive bug).
+    final = _list_controller_states(node, list_cli)
+    if final is None:
+        print('[lupin_auto_home] heal: post-heal list_controllers call failed')
+        return False
+    ok = all(final.get(n) == 'active' for n in HEAL_TARGETS)
+    print('[lupin_auto_home] heal: post-heal states: %s'
+          % (', '.join('%s=%s' % (n, s) for n, s in sorted(final.items()))
+             or '(empty)'))
+    print('[lupin_auto_home] heal: %s' % ('OK' if ok else 'FAILED — see states above'))
+    return ok
 
 
 def main() -> int:
