@@ -14,10 +14,16 @@ Topology after launch (defaults):
                                         web_video_server :8181
         lupin-onboard.service           twist_mux (cmd_vel arbitration),
                                         arm_preset_server,
+                                        arm_calibrate_server,
                                         gripper_action_bridge
+                                        (joy_node / teleop_twist_joy moved
+                                        to laptop — see joystick: arg)
         lupin-cameras.service           kills vendor cams, relaunches at
                                         config-driven low FPS on the same
                                         vendor topic names
+        lupin-auto-home.service         oneshot at boot — self-heals stuck
+                                        controllers (vendor first-boot
+                                        race) then sends arm to 'home'.
 
     Laptop (this launch):
         lupin_web (Vite + web_video + rosbridge)              (web:=true)
@@ -195,11 +201,14 @@ def generate_launch_description() -> LaunchDescription:
                         'turn off if the camera driver is down.',
         ),
         DeclareLaunchArgument(
-            'joystick', default_value='false',
+            'joystick', default_value='true',
             description='Bring up Xbox controller teleop (joy_node + '
                         'teleop_twist_joy + arm_teleop) on the laptop. '
-                        'False avoids noisy joy_node logs when no '
-                        'controller is plugged in.',
+                        'Default true — the robot-side joy_node path was '
+                        'removed (BLE pad pairing on the Orange Pi image is '
+                        'fragile, see project_xbox_ble_pairing_fix); the pad '
+                        'now plugs into the laptop. Pass joystick:=false to '
+                        'silence joy_node when no controller is connected.',
         ),
         DeclareLaunchArgument(
             'dependency_timeout_s', default_value='120.0',
