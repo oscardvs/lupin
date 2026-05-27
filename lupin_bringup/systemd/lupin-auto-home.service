@@ -7,6 +7,10 @@ Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
 After=lupin-onboard.service
 Wants=lupin-onboard.service
 PartOf=mirte-ros.service
+# Bounds on the Restart=on-failure policy below. systemd 230+ expects these
+# in [Unit] rather than [Service]; we're on systemd 249 (Ubuntu 22.04 jammy).
+StartLimitBurst=4
+StartLimitIntervalSec=240
 
 [Service]
 Type=oneshot
@@ -19,12 +23,16 @@ ExecStart=/bin/bash -lc 'source /home/mirte/.mirte_settings.sh; \
   source /home/mirte/mirte_ws/install/setup.bash; \
   source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; \
   exec ros2 run lupin_hmi auto_home'
-# Boot-time race: if the discovery server fails to bind (the documented
-# project_mirte_ros_discovery_server_cold_boot_race) the arm controllers
-# never load and auto_home exits non-zero after timeout. Don't loop on
-# that — the operator will recover the stack manually and home the arm
-# via the HMI preset button.
-Restart=no
+# Boot-time race: if the discovery server fails to bind, or mirte-ros is
+# slow to spawn controller_manager (the documented
+# project_mirte_ros_discovery_server_cold_boot_race), auto_home exits
+# non-zero after its internal 30s timeout. Retry on failure with a short
+# backoff so the second/third attempt — by which point mirte-ros has
+# settled — picks up the heal. Capped at StartLimitBurst attempts so a
+# truly-wedged stack doesn't loop forever (operator will recover via
+# post-boot-sync.sh anyway, which reset-failed + start's this unit).
+Restart=on-failure
+RestartSec=15
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=lupin-auto-home

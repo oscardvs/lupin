@@ -36,6 +36,18 @@ echo "=== robot service stack ==="
 ssh "$ROBOT" 'for s in mirte-ros lupin-onboard lupin-cameras; do printf "  %-25s %s\n" "$s" "$(systemctl is-active $s)"; done'
 
 echo
+echo "=== ensure lupin-auto-home ran this session ==="
+# A previous boot's failure leaves the oneshot in `failed`, and systemd
+# does NOT auto-retry it on the next boot (and does not fire it at all on
+# resume-from-suspend, where the boot ID doesn't change). Symptom: 3 of
+# the 5 controllers stuck `unconfigured`, the wheel + gripper controllers
+# never loaded, and the arm never moves to its low-load home pose.
+# Idempotent: `reset-failed` is a no-op on non-failed units; `start` is a
+# no-op on a oneshot already `active (exited)`.
+ssh "$ROBOT" 'sudo systemctl reset-failed lupin-auto-home 2>/dev/null; sudo systemctl start lupin-auto-home'
+echo "  $(ssh "$ROBOT" 'systemctl is-active lupin-auto-home')"
+
+echo
 echo "=== controllers (should show 5 active) ==="
 # The "rcl node's context is invalid" error here is a ros2cli bug, not a real
 # failure — controllers themselves work fine. See DEMO_DAY.md section 1.

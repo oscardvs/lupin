@@ -38,21 +38,16 @@ than prose — the goal is "look up this file under pressure and follow it".
 | `pid_wheels_controller` | per-wheel velocity PID |
 | `mirte_base_controller` | mecanum_drive_controller (Twist → 4 wheels) |
 
-The vendor `mirte_ros.sh` first-boot race that used to leave controllers stuck `unconfigured` is now closed by `lupin_hmi/auto_home`, which calls `/controller_manager/configure_controller` then `switch_controller` before the home-pose call.
+The vendor `mirte_ros.sh` first-boot race that used to leave controllers stuck `unconfigured` (and that used to drop `mirte_base_controller` + `mirte_master_gripper_controller` entirely when the vendor `spawner-10` died mid-activation) is now closed by `lupin_hmi/auto_home`. The heal loads anything missing from the loaded set, configures the unconfigured, then activates all 5 — runs as `lupin-auto-home.service` after `lupin-onboard`, and `post-boot-sync.sh` re-triggers it idempotently every operator session (handles resume-from-suspend, where systemd doesn't auto-fire boot units).
 
-**If `mirte_base_controller` is missing from the list** (observed 2026-05-21): the vendor `spawner-10` is invoked with both `pid_wheels_controller` and `mirte_base_controller` as args. If `switch_controller` times out activating the first one, the spawner dies with exit 1 before reaching the second — so `pid_wheels_controller` ends up active but `mirte_base_controller` is silently dropped. Without it no Twist will move the wheels. Manual recovery:
-
-```bash
-ssh lupin "source ~/.mirte_settings.sh && ros2 control load_controller --set-state active mirte_base_controller"
-```
-
-**If any *other* controller is still `unconfigured` after auto-home runs** (the heal call was unreachable — deeper DDS problem):
+**If `post-boot-sync.sh` reports `lupin-auto-home` as `failed` or `activating` for more than ~90 s:** the heal can't reach controller_manager. Within-boot retries are bounded by `Restart=on-failure StartLimitBurst=4` on the unit, so it'll have given up after ~3 min. Force a clean cycle:
 
 ```bash
-ssh lupin sudo systemctl restart mirte-ros.service
-# That cascades a restart of lupin-onboard + lupin-auto-home (PartOf=mirte-ros),
-# so auto_home re-runs and re-fires the heal. ~25 s.
-~/.config/lupin/post-boot-sync.sh   # re-verify
+ssh mirte@192.168.42.1 sudo systemctl restart mirte-ros.service
+# lupin-onboard + lupin-cameras are PartOf=mirte-ros and follow the restart.
+# lupin-auto-home is After= but no longer PartOf, so the next post-boot-sync.sh
+# run is what re-fires it. Wait ~25 s after the restart, then:
+~/.config/lupin/post-boot-sync.sh   # re-verifies + re-triggers auto-home
 ```
 
 If the restart still leaves controllers stuck, power-cycle the robot (off → 15 s → on) — that clears any ros2_control wedge cleanly.
@@ -78,15 +73,21 @@ ls /dev/shm | grep -i fast || echo "laptop SHM clean ✓"
 
 ---
 
-## 3. CLI sanity check
+## 3. First laptop terminal — get topics streaming + sanity check
+
+This is the recipe for the **first** terminal of the session. It points the
+laptop's DDS at the robot's discovery server, brings up the ros2 daemon, and
+verifies topics are flowing. Every subsequent terminal only needs the two
+`source` lines (see §4).
 
 ```bash
-source ~/.config/lupin/ros-env.sh
-ros2 daemon start
-sleep 5
-ros2 topic list | wc -l       # expect ~52 (only systemd services up so far)
-ros2 topic hz /scan           # expect ~10 Hz, Ctrl-C after 3 s
-ros2 topic hz /joy            # expect ~15 Hz if Xbox on, nothing if off
+source ~/.config/lupin/ros-env.sh            # ROS_DISCOVERY_SERVER + super-client XML
+source ~/ros2_ws/install/setup.bash          # lupin_* packages + RViz mesh paths
+ros2 daemon start                            # one-time per session
+sleep 5                                       # let discovery fill (~52 topics)
+ros2 topic list | wc -l                      # expect ~52 (systemd services only)
+ros2 topic hz /scan                          # expect ~10 Hz, Ctrl-C after 3 s
+ros2 topic hz /joy                           # expect ~15 Hz if Xbox on, nothing if off
 ```
 
 **If `topic list | wc -l == 2`**: DDS is wedged. Re-run step 2. If it still
@@ -99,12 +100,16 @@ and try again.
 
 ## 4. Bit-by-bit launch (one terminal per subsystem)
 
-Every terminal starts with:
+**Every new terminal opened from this point on** starts with the two `source`
+lines (same as §3 but without daemon-start, which is already done):
 
 ```bash
-source ~/.config/lupin/ros-env.sh
-source ~/ros2_ws/install/setup.bash    # for RViz mesh resolution
+source ~/.config/lupin/ros-env.sh            # DDS env: discovery server + super-client
+source ~/ros2_ws/install/setup.bash          # workspace overlays: lupin_*, RViz meshes
 ```
+
+Skip either and the terminal will see 2 topics (DDS) or fail to find
+`lupin_*` packages and RViz meshes (overlay). Both are needed.
 
 ### T1 — HMI (Vite preview + rosbridge :9090 + web_video_server :8091)
 

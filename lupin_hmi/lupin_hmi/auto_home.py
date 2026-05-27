@@ -19,11 +19,13 @@ Runs as a one-shot from ``lupin-auto-home.service``, ordered after
 
   0. Self-heal the ros2_control stack. The vendor mirte-ros first-boot
      races between ros2_control_node's YAML auto-load and the spawners,
-     leaving joint_state_broadcaster + pid_wheels_controller stuck
-     ``unconfigured`` (see project_2026_05_21_session_state). We list
-     controllers, call configure_controller on any unconfigured target,
-     then activate the lot via switch_controller. Idempotent: a clean
-     boot finds everything active and returns immediately.
+     leaving the arm + wheels controllers stuck ``unconfigured`` and
+     occasionally dropping ``mirte_base_controller`` /
+     ``mirte_master_gripper_controller`` from the loaded set entirely
+     (see project_2026_05_21_session_state). We list controllers, load
+     any missing ones, configure the unconfigured, then activate all 5
+     via switch_controller. Idempotent: a clean boot finds everything
+     active and returns immediately.
   1. Wait for ``/joint_states`` to publish all 4 arm joints (= arm
      controller is loaded and reading hardware).
   2. Wait for ``/lupin/arm/preset`` service to exist (= arm_preset_server
@@ -79,15 +81,21 @@ REQUIRED_ARM_JOINTS = (
     'elbow_joint',
     'wrist_joint',
 )
-# Controllers that must be active for /joint_states to publish and for
-# wheel + arm commands to take effect. mirte_master_arm_controller is
-# usually fine on first boot (separate launch path); pid_wheels +
-# joint_state_broadcaster lose the vendor's "already loaded" race
-# (see project_2026_05_21_session_state) and stay stuck `unconfigured`.
+# All 5 controllers the vendor stack is supposed to spawn at boot. The
+# vendor's spawner pipeline races ros2_control_node's YAML auto-load: the
+# arm + wheels spawners frequently leave their controllers `unconfigured`,
+# and the spawner-10 invocation that loads both `pid_wheels_controller`
+# and `mirte_base_controller` exits non-zero if the first activation times
+# out, silently dropping `mirte_base_controller` from the loaded set
+# (DEMO_DAY.md step 1; observed 2026-05-21 and again 2026-05-27).
+# `mirte_master_gripper_controller` shares the same load path and is
+# included for symmetry — heal_controllers loads anything missing.
 HEAL_TARGETS = (
     'joint_state_broadcaster',
     'pid_wheels_controller',
     'mirte_master_arm_controller',
+    'mirte_master_gripper_controller',
+    'mirte_base_controller',
 )
 # Generous timeouts — the arm controllers can take a while to load on a
 # cold boot (telemetrix + spawners + hardware init). 30s covers the 95th
