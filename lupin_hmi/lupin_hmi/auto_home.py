@@ -141,7 +141,7 @@ def heal_controllers(
     node: Node,
     service_timeout_s: float = 30.0,
     poll_budget_s: float = 60.0,
-) -> bool:
+) -> bool | None:
     """Bring HEAL_TARGETS to `active`, handling every failure mode the vendor
     first-boot race throws at us.
 
@@ -160,7 +160,18 @@ def heal_controllers(
     needs_activate triggered the "nothing to do" early exit. False-positive
     silenced exactly the wedge case the heal was supposed to catch.
 
-    Returns True only if all HEAL_TARGETS are `active` at the end.
+    Returns:
+      True  — all HEAL_TARGETS are `active` after the heal.
+      False — list_controllers worked at least once, heal ran, but not all
+              targets ended `active`. main() should exit 1 (systemd retries).
+      None  — list_controllers never returned valid data within the poll
+              budget. State is unknown; we can't safely LoadController or
+              SwitchController without knowing what's loaded. main() exits 0
+              so Restart=on-failure doesn't spin. Operator re-triggers via
+              post-boot-sync.sh or restarts mirte-ros (observed 2026-05-27
+              when heal was invoked against an already-active stack — the
+              CLI saw controllers fine, but rclpy-from-auto_home repeatedly
+              got None futures; root cause not yet pinned down).
     """
     list_cli = node.create_client(
         ListControllers, '/controller_manager/list_controllers',
@@ -179,6 +190,7 @@ def heal_controllers(
     # assume done".
     poll_deadline = time.monotonic() + poll_budget_s
     states: dict[str, str] = {}
+    list_succeeded_once = False
     while time.monotonic() < poll_deadline:
         result = _list_controller_states(node, list_cli)
         if result is None:
@@ -186,6 +198,7 @@ def heal_controllers(
                   'retrying')
             time.sleep(2.0)
             continue
+        list_succeeded_once = True
         states = result
         rendered = ', '.join('%s=%s' % (n, s)
                              for n, s in sorted(states.items())) or '(empty)'
@@ -195,6 +208,20 @@ def heal_controllers(
             break
         print('[lupin_auto_home] heal: not yet visible: %s — waiting' % missing)
         time.sleep(2.0)
+
+    # If list_controllers never returned valid data, we have no idea what's
+    # loaded. Blindly LoadController-ing each target then SwitchController-
+    # ing them is what caused the heal-on-already-active retry storm on
+    # 2026-05-27 (every load returned "already loaded" non-ok, then switch
+    # failed activating active controllers, then Restart=on-failure spun).
+    # Bail cleanly here — main() converts None into exit 0 so systemd does
+    # not retry, and post-boot-sync.sh becomes the operator re-trigger.
+    if not list_succeeded_once:
+        print('[lupin_auto_home] heal: list_controllers never returned valid '
+              'data within %.0fs — state unverifiable, aborting heal cleanly. '
+              'Run post-boot-sync.sh or restart mirte-ros to recover.'
+              % poll_budget_s)
+        return None
 
     # Positive done-check: all targets must explicitly be `active`. Anything
     # else (unconfigured / inactive / missing) drops to recovery below.
@@ -300,7 +327,16 @@ def main() -> int:
         #    boot. This is what makes auto_home close the wedge instead of
         #    just being a victim of it. Idempotent — if everything's already
         #    active the function returns quickly.
-        heal_controllers(node)
+        heal_result = heal_controllers(node)
+        if heal_result is None:
+            # State is unverifiable (see heal_controllers docstring). Don't
+            # try to home the arm — the joint_states wait would just time
+            # out and trigger a Restart=on-failure spin. Exit 0 so systemd
+            # marks the unit clean; operator re-triggers via post-boot-sync.
+            print('[lupin_auto_home] state unverifiable — skipping arm home; '
+                  'no systemd retry. Re-run post-boot-sync.sh after recovering '
+                  'the controller stack.')
+            return 0
 
         # 1) /joint_states with all 4 arm joints
         print('[lupin_auto_home] waiting up to %.0fs for /joint_states with arm joints'
