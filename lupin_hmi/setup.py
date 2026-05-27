@@ -39,6 +39,7 @@ setup(
             # the arm controllers + preset service to come up, then moves
             # the arm to the 'home' preset (low-gravity-load rest pose).
             'auto_home = lupin_hmi.auto_home:main',
+            'light_strip_bridge = lupin_hmi.light_strip_bridge:main',
         ],
     },
 )
