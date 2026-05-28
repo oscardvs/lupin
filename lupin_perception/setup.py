@@ -1,4 +1,3 @@
-import os
 from glob import glob
 from setuptools import find_packages, setup
 
@@ -12,7 +11,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/models', ['lupin_perception/best.pt']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -23,7 +23,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'tag_annotator = lupin_perception.tag_annotator:main'
+            'tag_annotator = lupin_perception.tag_annotator:main',
+            'yolo_detector = lupin_perception.yolo_detector_node:main',
         ],
     },
 )

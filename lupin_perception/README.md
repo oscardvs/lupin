@@ -26,6 +26,12 @@ anomaly-detection pipelines.
 ros2 launch lupin_perception perception.launch.py
 ```
 
+To start both the AprilTag and YOLO pipelines together:
+
+```bash
+ros2 launch lupin_perception perception_stack.launch.py
+```
+
 It's also folded into `lupin_bringup hardware.launch.py` behind a
 `perception:=true` (default) flag, so the standard one-shot bringup
 already starts it. Pass `perception:=false` to skip it.
