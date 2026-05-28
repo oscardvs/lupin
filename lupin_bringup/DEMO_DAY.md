@@ -13,23 +13,94 @@ than prose — the goal is "look up this file under pressure and follow it".
 
 ## First-time laptop setup (one-time per laptop)
 
-The `source ~/.config/lupin/ros-env.sh` line in §3 and §4 assumes that file
-exists. It's **not** in the repo — it bakes in your `$HOME` and the robot's
-IP, both of which vary per laptop and per network. Generate it once per
-laptop with:
+Everything in §3 onwards assumes the laptop is already wired to talk to the
+robot. The five things below are **not** included in a fresh `git clone` —
+do them once per laptop and you never look at this section again. The full
+versions live in `lupin_bringup/README.md`; this is the demo-day-only summary.
+
+**1. Clone + build the workspace.** Paths throughout this doc assume
+`~/ros2_ws/src/lupin`:
+
+```bash
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
+git clone -b hardware git@gitlab.tudelft.nl:cor/ro47007/2026/group_14/lupin.git
+cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -r -y   # apt deps for all lupin packages
+cd ~/ros2_ws/src/lupin/lupin_web/web && npm install && npm run build  # T1 (HMI) needs the Vite artefact
+cd ~/ros2_ws && colcon build --symlink-install
+```
+
+Assumes ROS 2 Humble + the standard MIRTE laptop setup (rviz2, Nav2,
+slam_toolbox, rosbridge_suite, joy). If `colcon build` complains about
+missing packages beyond what `rosdep` resolved, install them via apt and
+re-run.
+
+**2. SSH key + `lupin` alias** (needed for §1's `post-boot-sync.sh` to run
+`sudo` non-interactively on the robot, and for §7's `ssh lupin`):
+
+```bash
+[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+ssh-copy-id mirte@192.168.42.1                          # password: ask team — system mirte password
+cat >> ~/.ssh/config <<'EOF'
+
+Host lupin
+    HostName 192.168.42.1
+    User mirte
+    IdentityFile ~/.ssh/id_ed25519
+EOF
+ssh lupin 'echo ok'                                     # smoke test — should not prompt
+```
+
+Update `HostName` if the robot is on a different network (lab WiFi, travel
+router). **Don't** use `~/.ssh/id_rsa` if it exists on the robot — that key
+is image-baked and shared across all MIRTEs (`project_mirte_shared_image_key`).
+
+**3. DDS env (laptop ↔ robot discovery server).** §3 and §4 source
+`~/.config/lupin/ros-env.sh` — that file's not in the repo (it bakes in
+your `$HOME` and the robot IP). Generate it:
 
 ```bash
 cd ~/ros2_ws/src/lupin/lupin_bringup
-./scripts/setup-laptop-dds-env.sh                  # default robot IP 192.168.42.1 (robot AP)
-# or, with a custom IP if the robot is on lab WiFi / travel router:
-./scripts/setup-laptop-dds-env.sh 10.0.0.42
+./scripts/setup-laptop-dds-env.sh                       # default robot IP 192.168.42.1 (robot AP)
+./scripts/setup-laptop-dds-env.sh 10.0.0.42             # custom IP if on lab WiFi / travel router
 ```
 
-The script writes `~/.config/lupin/fastdds_super_client.xml` +
-`~/.config/lupin/ros-env.sh` and appends a source-line to `~/.bashrc`
-(zsh users: add the same line to `~/.zshrc` manually — see
-`lupin_bringup/README.md` "Laptop ↔ robot DDS over WiFi"). Re-run with a
-new IP whenever you swap networks. To back out: `./setup-laptop-dds-env.sh --uninstall`.
+It writes `~/.config/lupin/fastdds_super_client.xml` +
+`~/.config/lupin/ros-env.sh` and appends a source-line to `~/.bashrc`. zsh
+users: append the same line to `~/.zshrc` manually. Re-run with a new IP
+whenever you swap networks. To back out: `--uninstall`.
+
+**4. `post-boot-sync.sh` symlink** (§1 calls it):
+
+```bash
+mkdir -p ~/.config/lupin
+source ~/ros2_ws/install/setup.bash
+ln -s "$(ros2 pkg prefix lupin_bringup)/share/lupin_bringup/scripts/post-boot-sync.sh" \
+      ~/.config/lupin/post-boot-sync.sh
+```
+
+Symlinked (not copied) so a future `colcon build` of `lupin_bringup`
+auto-updates the script in place. Override the target robot at call-time
+with `ROBOT=mirte@<ip> ~/.config/lupin/post-boot-sync.sh`.
+
+**5. Smoke test** — open a fresh terminal so `.bashrc` picks up the DDS
+env, then:
+
+```bash
+source ~/ros2_ws/install/setup.bash
+ros2 daemon start && sleep 5
+ros2 topic list | wc -l                                 # expect 50+, not 2
+~/.config/lupin/post-boot-sync.sh                       # expect drift ≤1s, all services active
+```
+
+If `topic list` returns 2: re-check step 3 (`echo $ROS_DISCOVERY_SERVER` —
+should be `<robot-ip>:11811`). If `post-boot-sync.sh` prompts for a
+password: step 2's `ssh-copy-id` didn't take — re-run it.
+
+> **Xbox controller**: USB-C is the no-drama path (DEMO_DAY assumes this).
+> Only if you must pair over BLE, run
+> `lupin_bringup/scripts/install-bluetooth-xbox-fix.sh` once — without it,
+> BlueZ 5.64 loops the HID descriptor read every ~4 s
+> (`project_xbox_ble_pairing_fix`).
 
 ---
 
