@@ -111,11 +111,19 @@ source ~/ros2_ws/install/setup.bash          # workspace overlays: lupin_*, RViz
 Skip either and the terminal will see 2 topics (DDS) or fail to find
 `lupin_*` packages and RViz meshes (overlay). Both are needed.
 
-### T1 — HMI (Vite preview + rosbridge :9090 + web_video_server :8091)
+### T1 — HMI (Vite preview + rosbridge :9090; video proxied to robot :8091)
 
 ```bash
-ros2 launch lupin_web lupin_web.launch.py mode:=preview tls:=true rosbridge:=true
+ros2 launch lupin_web lupin_web.launch.py \
+  mode:=preview tls:=true rosbridge:=true \
+  video:=false video_target:=http://192.168.42.1:8091
 ```
+
+`video:=false` skips the laptop-side `web_video_server` because
+`lupin-cameras.service` on the robot already exposes one on `0.0.0.0:8091`.
+`video_target` retargets Vite's `/_video` proxy at the robot directly — raw
+camera frames stay on the Pi and only MJPEG crosses WiFi (matches vendor
+`mirte.local/ros-video/` behaviour).
 
 Open `https://localhost:8090` in your browser. Click **Reset** if the e-stop
 banner is visible. If the virtual joystick doesn't drive the robot on first

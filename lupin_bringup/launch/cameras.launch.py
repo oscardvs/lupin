@@ -73,11 +73,13 @@ def generate_launch_description() -> LaunchDescription:
     depth_cfg = cfg.get('depth', {})
     pc_cfg = cfg.get('point_cloud', {})
     gripper_cfg = cfg.get('gripper', {})
+    wvs_cfg = cfg.get('web_video_server', {})
 
     color_on = bool(color_cfg.get('enabled', True))
     depth_on = bool(depth_cfg.get('enabled', False))
     pc_on = bool(pc_cfg.get('enabled', False))
     gripper_on = bool(gripper_cfg.get('enabled', True))
+    wvs_on = bool(wvs_cfg.get('enabled', True))
 
     if color_on or depth_on or pc_on:
         actions.append(_orbbec_launch(color_cfg, depth_cfg, pc_cfg,
@@ -95,6 +97,15 @@ def generate_launch_description() -> LaunchDescription:
         f'[lupin_bringup/cameras] gripper: enabled={gripper_on} '
         f'devices={len(gripper_nodes)}'
     )))
+
+    if wvs_on:
+        actions.append(_web_video_server_node(wvs_cfg))
+        actions.append(LogInfo(msg=(
+            f"[lupin_bringup/cameras] web_video_server: "
+            f"port={int(wvs_cfg.get('port', 8091))} "
+            f"address={wvs_cfg.get('address', '0.0.0.0')} "
+            f"stream_type={wvs_cfg.get('default_stream_type', 'ros_compressed')}"
+        )))
 
     return LaunchDescription(actions)
 
@@ -146,6 +157,49 @@ def _orbbec_launch(color_cfg: dict, depth_cfg: dict, pc_cfg: dict,
             'enable_ir': 'false',
             'enable_soft_filter': str(depth_on).lower(),
         }.items(),
+    )
+
+
+def _web_video_server_node(wvs_cfg: dict) -> Node:
+    """Robot-side web_video_server — the load-bearing latency fix.
+
+    Vendor `mirte_bringup/minimal_master.launch.py` runs a web_video_server
+    bound to `localhost:8181` and reaches the browser via an nginx
+    `/ros-video/` proxy. That keeps the camera-subscriber loop on the same
+    host as the camera publisher, so only the JPEG-encoded MJPEG output
+    crosses the network — not raw RGB.
+
+    Our previous layout ran web_video_server on the laptop (`lupin_web.launch.py`),
+    which forced every raw frame across WiFi at ~220 Mbps offered vs.
+    ~60 Mbps usable on the 2.4 GHz Mirte AP. Result: lag, frame pile-ups,
+    occasional black screen. Run it here on the robot instead.
+
+    Bound to `0.0.0.0` (not vendor's `localhost`) because we don't have
+    nginx in front of it; the laptop reaches us directly at
+    `http://192.168.42.1:8091`, with Vite's `/_video` same-origin proxy
+    forwarding browser requests to that endpoint.
+
+    `default_stream_type: ros_compressed` tells web_video_server to
+    subscribe to `<topic>/compressed` (`sensor_msgs/CompressedImage`,
+    pre-encoded JPEG produced by image_transport) instead of the raw
+    `<topic>` (`sensor_msgs/Image`). On the Pi the gripper usb_cam and
+    orbbec drivers both publish `/compressed` companion topics by default,
+    so this just picks the cheap path — JPEG-in, MJPEG-out, minimal
+    encoder work.
+    """
+    return Node(
+        package='web_video_server',
+        executable='web_video_server',
+        name='lupin_web_video_server',
+        parameters=[{
+            'port': int(wvs_cfg.get('port', 8091)),
+            'address': str(wvs_cfg.get('address', '0.0.0.0')),
+            'default_stream_type': str(wvs_cfg.get('default_stream_type',
+                                                   'ros_compressed')),
+            'default_transport': str(wvs_cfg.get('default_transport',
+                                                 'compressed')),
+        }],
+        output='log',
     )
 
 

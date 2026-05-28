@@ -397,10 +397,16 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('twin')),
     )
 
-    # ── Lupin Web HMI — Vite + rosbridge + web_video_server ───────────
+    # ── Lupin Web HMI — Vite + rosbridge (video proxied to robot) ─────
     # tls:=true + rosbridge:=true mirrors what the old laptop systemd unit
     # ran. Co-located rosbridge so the JSON-encoding load lives on the
     # laptop, not the Pi (Phase-2 split per project_offload_strategy).
+    #
+    # video:=false is the latency fix: web_video_server now runs on the
+    # ROBOT (lupin-cameras.service) so raw frames never cross WiFi —
+    # matching vendor mirte.local/ros-video/ behaviour. The Vite /_video
+    # proxy is retargeted at the robot's 8091 endpoint via video_target.
+    #
     # When you don't want the HMI (headless smoke tests, CI), pass
     # web:=false.
     web = IncludeLaunchDescription(
@@ -411,6 +417,8 @@ def generate_launch_description() -> LaunchDescription:
             ('mode', 'preview'),
             ('tls', 'true'),
             ('rosbridge', 'true'),
+            ('video', 'false'),
+            ('video_target', 'http://192.168.42.1:8091'),
         ],
         condition=IfCondition(LaunchConfiguration('web')),
     )

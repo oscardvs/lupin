@@ -31,9 +31,12 @@ cameras:
   color:
     enabled: true
     # The Astra Mini Pro's color sensor only offers 10/15/30 fps at 640×480
-    # (and 7 fps only at 1280×960). 10 is the lowest supported here — going
-    # lower would need a resolution drop to 320×240 or a smaller format.
-    fps: 10
+    # (and 7 fps only at 1280×960). 30 fps gives the HMI a smooth feed —
+    # at JPEG ≈ 50 kB × 30 fps ≈ 12 Mbps over WiFi, comfortable on the AP,
+    # and the in-process web_video_server avoids touching raw frames so
+    # the Pi cost is mostly USB drain + JPEG encode. Drop to 15 or 10 if
+    # you want to spare CPU for other onboard work.
+    fps: 30
     width: 640
     height: 480
   depth:
@@ -51,3 +54,20 @@ cameras:
     pixel_format: yuyv2rgb
     width: 640
     height: 480
+
+  # web_video_server (HMI camera tab) — runs ON THE ROBOT so the in-process
+  # subscriber gets raw frames over loopback and only MJPEG crosses WiFi.
+  # Mirrors vendor `mirte_bringup/minimal_master.launch.py`'s 8181/localhost
+  # web_video_server (which we don't kill — it stays running but isolated to
+  # localhost behind their nginx). We expose 0.0.0.0:8091 so the laptop's
+  # Vite `/_video` proxy can hit us directly; nginx is not in the picture.
+  # `default_stream_type: ros_compressed` makes the server subscribe to
+  # `<topic>/compressed` (JPEG via image_transport) instead of raw — that's
+  # the load-bearing setting that matches what other groups see at
+  # mirte.local/ros-video/.
+  web_video_server:
+    enabled: true
+    port: 8091
+    address: 0.0.0.0
+    default_stream_type: ros_compressed
+    default_transport: compressed

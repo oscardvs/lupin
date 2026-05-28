@@ -84,6 +84,7 @@ def generate_launch_description():
     port = LaunchConfiguration('port')
     mode = LaunchConfiguration('mode')
     video = LaunchConfiguration('video')
+    video_target = LaunchConfiguration('video_target')
     rosbridge = LaunchConfiguration('rosbridge')
     tls = LaunchConfiguration('tls')
 
@@ -125,7 +126,18 @@ def generate_launch_description():
             'video',
             default_value='true',
             description='Spawn a LAN-reachable web_video_server (0.0.0.0:8091) '
-                        'alongside the UI. Set false if you bring your own.',
+                        'alongside the UI. Set false when the robot already '
+                        'runs one (hardware path — lupin-cameras.service exposes '
+                        '8091 on the Pi so raw frames stay on-host).',
+        ),
+        DeclareLaunchArgument(
+            'video_target',
+            default_value='http://localhost:8091',
+            description='Where Vite forwards /_video proxy requests. Default '
+                        'localhost matches the sim/dev path (laptop also runs '
+                        'web_video_server). On hardware, set this to the robot '
+                        '(http://192.168.42.1:8091) AND pass video:=false so '
+                        'raw frames never cross WiFi.',
         ),
         DeclareLaunchArgument(
             'rosbridge',
@@ -150,10 +162,15 @@ def generate_launch_description():
         # 1. Vite (preview by default, dev with HMR if requested). LUPIN_TLS=1
         # tells vite.config.ts to enable @vitejs/plugin-basic-ssl so the same
         # port serves https (with same-origin /_ros + /_video proxies).
+        # LUPIN_VIDEO_TARGET retargets the /_video proxy at runtime — see the
+        # `video_target` launch arg above.
         ExecuteProcess(
             cmd=['npm', 'run', npm_script, '--', '--port', port, '--host', '0.0.0.0'],
             cwd=_REPO_WEB_DIR,
-            additional_env={'LUPIN_TLS': tls_env},
+            additional_env={
+                'LUPIN_TLS': tls_env,
+                'LUPIN_VIDEO_TARGET': video_target,
+            },
             output='screen',
             shell=False,
             # When this launch goes down (Ctrl-C), kill the npm + child vite cleanly.
