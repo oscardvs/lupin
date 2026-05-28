@@ -151,14 +151,20 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'gripper',
     description:
-      "Open or close the Hiwonder gripper jaw. The mechanical end-stop angles haven't been verified on the live robot yet, so we drive a conservative ±30° window. Use 'open' to release / clear the jaw, 'close' to grasp. The arm joints are unaffected — pair with arm_preset 'pick' or 'place' for full pick-and-place sequences.",
+      "Move the Hiwonder gripper jaw. Use action='open' to release / clear, 'close' to grasp, or 'set' with a percent to drive to a partial opening (0 = fully closed, 100 = fully open). The mechanical end-stop angles haven't been verified yet, so we drive a conservative ±30° window. The arm joints are unaffected — pair with arm_preset 'pick' or 'place' for full pick-and-place sequences.",
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['open', 'close'],
-          description: "Direction. 'open' drives to +30°, 'close' to -30°.",
+          enum: ['open', 'close', 'set'],
+          description:
+            "Which motion to execute. 'open' drives the jaw fully open, 'close' fully closed. 'set' uses the percent argument for a partial opening.",
+        },
+        percent: {
+          type: 'number',
+          description:
+            "Opening percentage in [0, 100]. 0 = fully closed, 100 = fully open. Required when action='set'; ignored for 'open' / 'close'. Clamped to [0, 100].",
         },
       },
       required: ['action'],
@@ -167,11 +173,15 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'arm_preset',
     description:
-      "Move the 4-DOF Hiwonder arm (shoulder pan / lift, elbow, wrist) to a named preset pose ('home', 'tuck', 'pick', 'place'). The gripper jaw is a separate joint and is not driven by this tool. Presets are defined on the robot side.",
+      "Move the 4-DOF Hiwonder arm (shoulder pan / lift, elbow, wrist) to a named preset pose. Known names are 'home' (low-load rest pose, safe long-term park), 'zero' (URDF zero — all four joints at 0), 'tuck' (folded onto chassis), 'pick' (extended forward, wrist level), and 'place' (extended forward, wrist raised). The gripper jaw is a separate joint and is not driven by this tool — use the gripper tool for that. Returns ok=false with a message if the name is unknown.",
     parameters: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Preset name.' },
+        name: {
+          type: 'string',
+          enum: ['home', 'zero', 'tuck', 'pick', 'place'],
+          description: 'Preset name.',
+        },
       },
       required: ['name'],
     },

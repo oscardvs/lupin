@@ -384,15 +384,35 @@ export function useVoiceSession(): VoiceSession {
               )
             }
             const action = String(args.action ?? '').toLowerCase()
-            if (action !== 'open' && action !== 'close') {
-              return finish({ ok: false, error: "action must be 'open' or 'close'" })
+            if (action !== 'open' && action !== 'close' && action !== 'set') {
+              return finish({ ok: false, error: "action must be 'open', 'close', or 'set'" })
             }
             // Conservative ±30° window — matches ArmView's unverified gripper range.
             // Re-tune once the live mechanical limits are recorded; see the
             // verification recipe in ArmView.tsx. Service path is the
             // gripper_action_bridge, NOT the raw Hiwonder service — see the
             // ArmView gripper comment for why.
-            const angle = action === 'open' ? 30 : -30
+            //
+            // On Mirte-247264 the mechanically-open jaw corresponds to NEGATIVE
+            // HMI degrees (URDF gripper_joint < 0). Map 0% closed → +30°,
+            // 100% open → -30°.
+            const OPEN_DEG = -30
+            const CLOSE_DEG = 30
+            let percent: number
+            let angle: number
+            if (action === 'set') {
+              if (typeof args.percent !== 'number' || Number.isNaN(args.percent)) {
+                return finish({
+                  ok: false,
+                  error: "action='set' requires a numeric 'percent' in [0, 100]",
+                })
+              }
+              percent = clampNumber(args.percent, 0, 100, 0)
+              angle = CLOSE_DEG + (percent / 100) * (OPEN_DEG - CLOSE_DEG)
+            } else {
+              percent = action === 'open' ? 100 : 0
+              angle = action === 'open' ? OPEN_DEG : CLOSE_DEG
+            }
             try {
               const res = await ros.callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
                 '/lupin/gripper/set_angle_with_speed',
@@ -403,6 +423,7 @@ export function useVoiceSession(): VoiceSession {
                 ok: true,
                 action: 'gripper',
                 direction: action,
+                percent,
                 angle_deg: angle,
                 note: 'gripper range is unverified — angles capped to ±30°',
                 response: res,
@@ -422,14 +443,23 @@ export function useVoiceSession(): VoiceSession {
                 { blocked: true, error: `e-stop active: ${estop.reason}` },
               )
             }
-            const preset = String(args.name ?? '')
+            const preset = String(args.name ?? '').trim().toLowerCase()
+            if (!preset) {
+              return finish({ ok: false, error: 'arm_preset: name is required' })
+            }
             try {
-              const result = await ros.callService<{ name: string }, Record<string, unknown>>(
-                '/lupin/arm/preset',
-                'lupin_msgs/srv/SetArmPreset',
-                { name: preset },
-              )
-              return finish({ ok: true, action: 'arm_preset', name: preset, response: result })
+              const result = await ros.callService<
+                { name: string },
+                { success: boolean; message: string }
+              >('/lupin/arm/preset', 'lupin_msgs/srv/SetArmPreset', { name: preset })
+              const ok = !!result.success
+              return finish({
+                ok,
+                action: 'arm_preset',
+                name: preset,
+                message: result.message,
+                ...(ok ? {} : { error: result.message }),
+              })
             } catch (e) {
               return finish({
                 ok: false,
