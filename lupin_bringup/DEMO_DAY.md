@@ -11,6 +11,28 @@ than prose — the goal is "look up this file under pressure and follow it".
 
 ---
 
+## First-time laptop setup (one-time per laptop)
+
+The `source ~/.config/lupin/ros-env.sh` line in §3 and §4 assumes that file
+exists. It's **not** in the repo — it bakes in your `$HOME` and the robot's
+IP, both of which vary per laptop and per network. Generate it once per
+laptop with:
+
+```bash
+cd ~/ros2_ws/src/lupin/lupin_bringup
+./scripts/setup-laptop-dds-env.sh                  # default robot IP 192.168.42.1 (robot AP)
+# or, with a custom IP if the robot is on lab WiFi / travel router:
+./scripts/setup-laptop-dds-env.sh 10.0.0.42
+```
+
+The script writes `~/.config/lupin/fastdds_super_client.xml` +
+`~/.config/lupin/ros-env.sh` and appends a source-line to `~/.bashrc`
+(zsh users: add the same line to `~/.zshrc` manually — see
+`lupin_bringup/README.md` "Laptop ↔ robot DDS over WiFi"). Re-run with a
+new IP whenever you swap networks. To back out: `./setup-laptop-dds-env.sh --uninstall`.
+
+---
+
 ## 0. Pre-flight (do this BEFORE the audience walks in)
 
 - [ ] Laptop battery > 60 % AND on charger. Brightness up.
