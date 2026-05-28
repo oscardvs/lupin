@@ -18,17 +18,18 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             'image_topic',
             default_value='/camera/color/image_raw',
-            description='Camera image stream to detect AprilTags on. Vendor '
-                        'Orbbec default (rate set by lupin-cameras.service '
-                        'on the robot); switch to /gripper_camera/image_raw '
-                        'for the wrist cam.',
+            description='Camera image stream to detect AprilTags on. Defaults '
+                        'to the Orbbec /camera/color stream — properly '
+                        'calibrated so tag distance/TF is accurate. Override '
+                        'to /gripper_camera/image_raw for wrist-cam aim '
+                        '(uncalibrated; corners-only overlay).',
         ),
         DeclareLaunchArgument(
             'camera_info_topic',
             default_value='/camera/color/camera_info',
             description='CameraInfo source used to populate the intrinsic '
-                        'matrix K and distortion coefficients. Must be '
-                        'rectified for the chosen image_topic.',
+                        'matrix K and distortion coefficients. Must match '
+                        'the image_topic chosen above.',
         ),
         DeclareLaunchArgument(
             'detections_topic',
@@ -36,8 +37,11 @@ def generate_launch_description() -> LaunchDescription:
             description='Where the HMI subscribes for the overlay JSON.',
         ),
         DeclareLaunchArgument(
-            'tag_size_m', default_value='0.10',
-            description='Physical edge length of the printed tags, in metres.',
+            'tag_size_m', default_value='0.04',
+            description='Physical edge length of the printed tags, in metres. '
+                        '0.04 matches the printed demo tags (4 cm). Wrong size '
+                        'does not break detection — only scales the `dist` '
+                        'output by a constant factor.',
         ),
         DeclareLaunchArgument(
             'tf_frame_prefix', default_value='tag_',

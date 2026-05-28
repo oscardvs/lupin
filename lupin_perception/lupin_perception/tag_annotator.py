@@ -38,6 +38,7 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from rclpy.qos import (
+    DurabilityPolicy,
     HistoryPolicy,
     QoSProfile,
     ReliabilityPolicy,
@@ -59,7 +60,7 @@ class TagAnnotator(Node):
         self.declare_parameter('image_topic', '/camera/color/image_raw')
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
         self.declare_parameter('detections_topic', '/camera/tag_detections_json')
-        self.declare_parameter('tag_size_m', 0.10)
+        self.declare_parameter('tag_size_m', 0.04)
         self.declare_parameter('tf_frame_prefix', 'tag_')
         self.declare_parameter('image_qos', 'sensor_data')
 
@@ -99,12 +100,17 @@ class TagAnnotator(Node):
         self.dist_coeffs: np.ndarray | None = None
 
         # ── ROS plumbing ────────────────────────────────────────────────
-        # CameraInfo: reliable + transient_local matches every common
-        # driver (astra_camera, orbbec_camera). Volatile reliable is also
-        # fine — we just need the first message.
+        # CameraInfo: RELIABLE + VOLATILE. The DDS rule that bit us once:
+        # a TRANSIENT_LOCAL subscriber will REJECT a VOLATILE publisher
+        # (incompatible durability — sub demand > pub offer). Orbbec
+        # publishes VOLATILE camera_info every frame, so VOLATILE sub gets
+        # it within ~1 frame. usb_cam (gripper) latches camera_info and
+        # then republishes per-frame while the camera is running; VOLATILE
+        # sub also matches there. Stick to VOLATILE so we accept both.
         info_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
         )
         self.create_subscription(CameraInfo, info_topic, self._info_cb, info_qos)
@@ -150,14 +156,6 @@ class TagAnnotator(Node):
 
     # ────────────────────────────────────────────────────────────────────
     def image_callback(self, image_msg: Image) -> None:
-        if self.K is None:
-            self.get_logger().warn(
-                'No CameraInfo yet — skipping detection. Check that the camera '
-                'driver is publishing on the configured camera_info_topic.',
-                throttle_duration_sec=5.0,
-            )
-            return
-
         try:
             cv_image = self.bridge.imgmsg_to_cv2(image_msg, 'bgr8')
         except Exception as e:  # cv_bridge raises on encoding mismatches
@@ -165,6 +163,25 @@ class TagAnnotator(Node):
             return
 
         corners, ids, _ = self._detect_markers(cv_image)
+
+        # solvePnP requires a non-degenerate intrinsics matrix. The gripper
+        # cam ships uncalibrated (K all zeros) so we skip pose estimation
+        # in that case and still emit corners + id for the HMI overlay —
+        # the HMI draws the green box from `tag.corners` alone; `dist` is
+        # cosmetic. Once a real calibration lands, pose computation kicks
+        # back in automatically.
+        has_intrinsics = (
+            self.K is not None
+            and float(self.K[0, 0]) > 0.0
+            and float(self.K[1, 1]) > 0.0
+        )
+        if not has_intrinsics:
+            self.get_logger().warn(
+                'CameraInfo missing or uncalibrated (K is zero); publishing '
+                'corner overlays without pose. Calibrate the camera if you '
+                'need accurate tag distances.',
+                throttle_duration_sec=30.0,
+            )
 
         detections: list[dict] = []
         if ids is not None:
@@ -183,17 +200,20 @@ class TagAnnotator(Node):
                 tag_id = int(raw_id[0])
                 c = corners[i].reshape((4, 2)).astype(int)
 
-                ok, rvec, tvec = cv2.solvePnP(
-                    obj_pts, corners[i], self.K, self.dist_coeffs,
-                )
-                if not ok:
-                    continue
+                dist = 0.0
+                if has_intrinsics:
+                    ok, rvec, tvec = cv2.solvePnP(
+                        obj_pts, corners[i], self.K, self.dist_coeffs,
+                    )
+                    if not ok:
+                        continue
+                    self._broadcast_tf(tag_id, rvec, tvec, image_msg.header)
+                    dist = float(tvec[2][0])
 
-                self._broadcast_tf(tag_id, rvec, tvec, image_msg.header)
                 detections.append({
                     'id': tag_id,
                     'corners': c.tolist(),
-                    'dist': float(tvec[2][0]),
+                    'dist': dist,
                 })
 
         msg = String()
