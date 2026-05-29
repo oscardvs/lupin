@@ -1,4 +1,4 @@
-import { Inbox } from 'lucide-react'
+import { Bug, Inbox } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import {
@@ -8,7 +8,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { HEALTH_COLORS, healthLabel, speciesColor, speciesLabel } from '@/lib/flowers'
 import { tagHasPose, useTwinState } from '@/lib/twin'
+import { tagHealthState } from '@/lib/tulip-health'
 import { cn } from '@/lib/utils'
 import { TWIN_SENSORS, type TwinSensor, type TwinTagState } from '@/types/ros'
 
@@ -36,7 +38,7 @@ const SENSOR_UNITS: Record<TwinSensor, string> = {
   soil_moisture: '%',
 }
 
-type SortKey = 'tag' | TwinSensor | 'last_seen'
+type SortKey = 'tag' | 'type' | TwinSensor | 'last_seen'
 interface SortState {
   key: SortKey
   dir: 'asc' | 'desc'
@@ -121,6 +123,7 @@ function Table({
         <thead>
           <tr className="border-b border-hairline text-left text-muted-foreground">
             <Th label="tag"      sortKey="tag"        sort={sort} onSort={onSort} />
+            <Th label="type"     sortKey="type"       sort={sort} onSort={onSort} />
             {TWIN_SENSORS.map((s) => (
               <Th
                 key={s}
@@ -159,6 +162,7 @@ function Row({
     stale < 60 ? 'text-primary'
     : stale < 300 ? 'text-warning'
     : 'text-destructive'
+  const health = tagHealthState(tag)
   return (
     <tr
       onClick={onSelect ? () => onSelect(tag.tag_id) : undefined}
@@ -169,8 +173,30 @@ function Row({
     >
       <td className="px-2 py-1.5 align-middle">
         <span className="font-mono text-foreground">{tag.tag_id}</span>
+        {/* per-tag health dot */}
+        <span
+          className="ml-2 inline-block h-2 w-2 rounded-full align-middle"
+          style={{ background: HEALTH_COLORS[health] }}
+          title={healthLabel(health)}
+        />
         {!tagHasPose(tag) && (
           <span className="ml-2 tag text-muted-foreground">unpinned</span>
+        )}
+      </td>
+      <td className="px-2 py-1.5 align-middle">
+        {tag.species ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ background: speciesColor(tag.species) }}
+            />
+            <span className="text-foreground">{speciesLabel(tag.species)}</span>
+            {tag.anomaly && (
+              <Bug className="h-3.5 w-3.5 text-destructive" aria-label="pest detected" />
+            )}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
         )}
       </td>
       {TWIN_SENSORS.map((s) => {
@@ -232,6 +258,8 @@ function compareTags(a: TwinTagState, b: TwinTagState, sort: SortState): number 
   let cmp = 0
   if (sort.key === 'tag') {
     cmp = numericTagSort(a.tag_id, b.tag_id)
+  } else if (sort.key === 'type') {
+    cmp = (a.species || '~').localeCompare(b.species || '~')  // unclassified last
   } else if (sort.key === 'last_seen') {
     cmp = a.stale_seconds - b.stale_seconds
   } else {

@@ -96,6 +96,13 @@ export function computeTulipHealth(tags: TwinTagState[]): TulipHealth {
   return { state, score: worstDev, driver: worstDriver }
 }
 
+/** Health state for a single tag (the same max-deviation rule, scoped to
+ * one tag's readings). Used for the per-row chip in the Greenhouse table and
+ * the per-tag map tooltip. */
+export function tagHealthState(tag: TwinTagState): TulipState {
+  return computeTulipHealth([tag]).state
+}
+
 export function sensorDeviation(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return 0
   if (value >= min && value <= max) return 0
