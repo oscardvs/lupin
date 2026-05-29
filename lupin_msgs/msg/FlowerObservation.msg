@@ -19,3 +19,9 @@ string species
 
 # Classification confidence [0, 1] for `species`.
 float32 confidence
+
+# True when the YOLO "bug" anomaly class was co-located with this tag. The
+# twin copies this onto TwinTagState.anomaly so the HMI can flag pests. Kept
+# on the flower path (not AnomalyReport) because it's keyed by the same
+# tag_id the twin merges on; standalone anomalies still use KIND_ANOMALY.
+bool anomaly
