@@ -195,6 +195,12 @@ class ArmTeleop(Node):
         # hard-coded [0, -1.56, -1.56, 1.56] caused exactly that bug).
         self.current_positions = [float('nan')] * 4
         self._positions_seeded = False
+        # Latest actual arm-joint positions from /joint_states. Used to
+        # re-seed a joint's commanded value on the idle->active edge so the
+        # first nudge starts from where the arm physically is — not a setpoint
+        # left stale by gravity sag or a prior fast move (which made one tap
+        # jump ~0.3 rad instead of one clean step).
+        self._actual_positions = {}
         self.joy_cmds = [0.0, 0.0, 0.0, 0.0]
 
         self.publisher_ = self.create_publisher(
@@ -323,6 +329,12 @@ class ArmTeleop(Node):
             for name, pos in zip(msg.name, msg.position)
         }
 
+        # Track the latest actual for each arm joint so the timer can re-seed
+        # the commanded value when a joint starts moving (idle->active edge).
+        for n in self.joint_names:
+            if n in positions_by_name:
+                self._actual_positions[n] = positions_by_name[n]
+
         if not self._positions_seeded:
             if all(n in positions_by_name for n in self.joint_names):
                 for i, n in enumerate(self.joint_names):
@@ -410,6 +422,16 @@ class ArmTeleop(Node):
         active = [False, False, False, False]
         for i in range(4):
             if abs(self.joy_cmds[i]) > self._deadzone:
+                # On the idle->active edge, re-seed the commanded value from
+                # the live joint state. Open-loop integration otherwise leaves
+                # current_positions stale after gravity sag or a fast move, so
+                # the first nudge would step from the stale setpoint (one tap
+                # jumping instead of one clean step) and a trajectory send would
+                # yank the joint back toward that stale value.
+                if not self._last_active[i]:
+                    seed = self._actual_positions.get(self.joint_names[i])
+                    if seed is not None:
+                        self.current_positions[i] = seed
                 self.current_positions[i] += self.joy_cmds[i] * self._signs[i] * self._step
                 # URDF clamp — keep the joint inside ±π/2 so JTC doesn't
                 # silently refuse the trajectory point.
