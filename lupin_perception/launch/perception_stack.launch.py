@@ -49,10 +49,12 @@ def generate_launch_description() -> LaunchDescription:
             default_value='false',
             description='use_sim_time forwarded to perception.launch.py.',
         ),
+
+        # YOLO detector side
         DeclareLaunchArgument(
             'yolo_image_topic',
-            default_value='/gripper_camera/image_raw',
-            description='Image topic forwarded to yolo_detector.launch.py.',
+            default_value='/gripper_camera/image_raw/compressed',
+            description='Compressed image topic forwarded to yolo_detector.launch.py.',
         ),
         DeclareLaunchArgument(
             'yolo_annotated_image_topic',

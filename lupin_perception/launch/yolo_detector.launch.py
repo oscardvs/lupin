@@ -12,8 +12,8 @@ def generate_launch_description() -> LaunchDescription:
     args = [
         DeclareLaunchArgument(
             'image_topic',
-            default_value='/gripper_camera/image_raw',
-            description='Camera image stream to run YOLO detections on.',
+            default_value='/gripper_camera/image_raw/compressed',
+            description='Compressed camera image stream to run YOLO detections on.',
         ),
         DeclareLaunchArgument(
             'annotated_image_topic',
@@ -62,9 +62,8 @@ def generate_launch_description() -> LaunchDescription:
             'imgsz': LaunchConfiguration('imgsz'),
         }],
         remappings=[
-            ('/gripper_camera/image_raw', LaunchConfiguration('image_topic')),
-            ('yolo/image_detections',
-             LaunchConfiguration('annotated_image_topic')),
+            ('/gripper_camera/image_raw/compressed', LaunchConfiguration('image_topic')),
+            ('yolo/image_detections', LaunchConfiguration('annotated_image_topic')),
             ('yolo/detections', LaunchConfiguration('detections_topic')),
         ],
     )
