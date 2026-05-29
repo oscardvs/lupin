@@ -36,19 +36,29 @@ def _top_level_spec() -> dict:
     """Flat lifecycle — PREPARE/INSPECTING are leaf names so the diagram
     doesn't unfold their children. Mirrors the spec's lifecycle picture."""
     return {
-        'states': ['BOOT', 'READY', 'PREPARE', 'INSPECTING', 'RETURNING', 'DONE', 'FAULT'],
+        'states': ['BOOT', 'READY', 'PREPARE', 'EXPLORING', 'INSPECTING',
+                   'MONITORING', 'RETURNING', 'DONE', 'FAULT'],
         'initial': 'BOOT',
         'transitions': [
             {'trigger': 'deps_up', 'source': 'BOOT', 'dest': 'READY'},
             {'trigger': 'start_mission', 'source': 'READY', 'dest': 'PREPARE'},
+            # PREPARE branches by mission type (condition shown opaque here).
             {'trigger': 'localized', 'source': 'PREPARE', 'dest': 'INSPECTING'},
+            {'trigger': 'localized', 'source': 'PREPARE', 'dest': 'EXPLORING'},
+            # ExplorationMission: explore → monitor (or home if nothing found).
+            {'trigger': 'tags_discovered', 'source': 'EXPLORING', 'dest': 'MONITORING'},
+            {'trigger': 'no_frontiers', 'source': 'EXPLORING', 'dest': 'MONITORING'},
+            {'trigger': 'no_frontiers', 'source': 'EXPLORING', 'dest': 'RETURNING'},
             {'trigger': 'inspection_complete', 'source': 'INSPECTING', 'dest': 'RETURNING'},
             {'trigger': 'abort_to_return', 'source': 'INSPECTING', 'dest': 'RETURNING'},
+            {'trigger': 'abort_to_return', 'source': 'EXPLORING', 'dest': 'RETURNING'},
+            {'trigger': 'abort_to_return', 'source': 'MONITORING', 'dest': 'RETURNING'},
             {'trigger': 'returned', 'source': 'RETURNING', 'dest': 'DONE'},
             {'trigger': 'reset_for_next', 'source': 'DONE', 'dest': 'READY'},
             {
                 'trigger': 'fault',
-                'source': ['BOOT', 'READY', 'PREPARE', 'INSPECTING', 'RETURNING'],
+                'source': ['BOOT', 'READY', 'PREPARE', 'EXPLORING', 'INSPECTING',
+                           'MONITORING', 'RETURNING'],
                 'dest': 'FAULT',
             },
         ],

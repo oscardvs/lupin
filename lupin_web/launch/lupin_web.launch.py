@@ -108,6 +108,36 @@ def generate_launch_description():
 
     pkg_rosbridge = get_package_share_directory('rosbridge_server')
 
+    # DDS-mode banner. The #1 "HMI is LIVE but shows no robot data" cause is
+    # launching this from a terminal that never sourced ros-env.sh: the
+    # co-located rosbridge then runs default-multicast and never joins the
+    # robot's FastDDS discovery-server graph (MIRTE_FASTDDS=true), so battery,
+    # telemetry and teleop all silently no-op. The env is per *process*, so a
+    # `ros2 topic list` in some other (correctly-sourced) terminal looks fine
+    # and hides it. Report the mode rosbridge will actually inherit, loudly.
+    _ds = os.environ.get('ROS_DISCOVERY_SERVER')
+    _rmw = os.environ.get('RMW_IMPLEMENTATION') or '(rmw default)'
+    if _ds:
+        _dds_banner = (
+            '\n────────────────────────────────────────────────────────────\n'
+            f'  rosbridge DDS mode: DISCOVERY-SERVER  {_ds}   [{_rmw}]\n'
+            '────────────────────────────────────────────────────────────'
+        )
+    else:
+        _dds_banner = (
+            '\n════════════════════════════════════════════════════════════\n'
+            '  rosbridge DDS mode: MULTICAST — ROS_DISCOVERY_SERVER is UNSET\n'
+            '  ⚠  HARDWARE DEMO: the robot runs a FastDDS discovery server, so\n'
+            '     the HMI will show LIVE but NO robot data (no battery / no\n'
+            '     telemetry / cannot drive). This terminal did not source\n'
+            '     ros-env.sh. Ctrl-C, then:\n'
+            '         source ~/.config/lupin/ros-env.sh\n'
+            '         source ~/ros2_ws/install/setup.bash\n'
+            '     and relaunch. (SIM / dev on localhost: multicast is correct —\n'
+            '     ignore this banner.)\n'
+            '════════════════════════════════════════════════════════════'
+        )
+
     return LaunchDescription([
         DeclareLaunchArgument(
             'port',
@@ -158,6 +188,10 @@ def generate_launch_description():
         ),
 
         LogInfo(msg=['Lupin Web HMI · serving from ', _REPO_WEB_DIR, ' on :', port]),
+
+        # Loud at startup so a terminal that forgot ros-env.sh is caught
+        # immediately, not after the operator wonders why the HMI is blank.
+        LogInfo(msg=_dds_banner, condition=IfCondition(spawn_rosbridge)),
 
         # 1. Vite (preview by default, dev with HMR if requested). LUPIN_TLS=1
         # tells vite.config.ts to enable @vitejs/plugin-basic-ssl so the same

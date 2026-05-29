@@ -551,12 +551,12 @@ expand once the chain is proven.
 | --- | --- |
 | `lupin_bringup` | Top-level launch files (`sim_full.launch.py`, `greenhouse_sim.launch.py`), the greenhouse SDF + generator, RViz config, and small system-glue helpers (`seed_amcl_pose`). |
 | `lupin_navigation` | Nav2 params + slam_toolbox config; saved KRR-house map; planned home for AprilTag pose corrections. |
-| `lupin_mission` | Mission orchestrator (v2). Hierarchical state machine via `transitions`: `BOOT → READY → PREPARE → INSPECTING → RETURNING → DONE / FAULT`. Polymorphic observation publisher on `/floranova/observations`, status on `/mission/state` (5 Hz), operator services `/mission/{start,pause,resume,abort,skip_current}`, cross-cutting `/e_stop_state` monitor. See `lupin_mission/README.md`. |
-| `lupin_msgs` | Custom messages and services: `Observation`, `MissionState`, `TagReading`, `SensorReading`, `FlowerObservation`, `AnomalyReport`; `GetTagReading`, `StartMission`. |
+| `lupin_mission` | Mission orchestrator (v2). Hierarchical state machine via `transitions`: `BOOT → READY → PREPARE → {INSPECTING \| EXPLORING → MONITORING} → RETURNING → DONE / FAULT`. Two mission types: `InspectionMission` (fixed tag list, once) and `ExplorationMission` (frontier-discover N tags, then monitor them in a loop). Polymorphic observation publisher on `/floranova/observations`, status on `/mission/state` (5 Hz), operator services `/mission/{start,pause,resume,abort,skip_current}`, `/e_stop_state` monitor. See `lupin_mission/README.md`. |
+| `lupin_msgs` | Custom messages and services: `Observation`, `MissionState`, `TagReading`, `SensorReading`, `FlowerObservation`, `AnomalyReport`, `TwinState`/`TwinTagState`, `DiscoveredTag`/`DiscoveredTags`; `GetTagReading`, `StartMission`, `ConfirmTag`, `GetField`. |
 | `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator. Single `~/get_tag_reading` service. Open-sourced separately at `lupin_greenhouse_ros/`. |
 | `lupin_hmi` | PS4 + keyboard teleop, `cmd_vel_mux` for arbitration between manual override / Nav2 / web. |
 | `lupin_web` | Browser HMI on `:8090` — Vite + React + shadcn/ui. Tabs: Teleop, Arm, Voice, Cameras, Telemetry, Logs, Map. Talks to rosbridge on `:9090`. The Voice tab is a Gemini Live agent with a 14-tool surface (`drive`, `nav_goto`, `nav_forward`, `rotate`, `arm_preset`, `query_state`, `engage_estop`, …) that drives the robot in natural language. |
-| `lupin_perception` | Vision package: `tag_annotator` (OpenCV ArUco) for AprilTag detection on the Orbbec RGB stream, TF broadcasts, and overlay JSON for the HMI. Future home for flower / anomaly detection. |
+| `lupin_perception` | Vision: `tag_annotator` (OpenCV ArUco) for AprilTag detection on the Orbbec stream; `yolo_detector` (Ultralytics) for tulip species + `bug` anomaly on the gripper cam; `perception_aggregator` fuses them into `/perception/discovered_tags`, `KIND_FLOWER` observations, and the `/perception/confirm_tag` service. See `lupin_perception/README.md`. |
 | `docs/` | Architecture diagrams, design notes. |
 
 ## Contributing

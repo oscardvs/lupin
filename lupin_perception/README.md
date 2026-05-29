@@ -1,10 +1,16 @@
 # lupin_perception
 
-Vision package for Team Lupin on the **real MIRTE Master**. Today it
-ships one node — `tag_annotator` — which detects AprilTags in the
-Orbbec RGB stream, broadcasts a TF for every detection, and publishes
-overlay JSON for the web HMI. It's the home for future flower- and
-anomaly-detection pipelines.
+Vision package for Team Lupin on the **real MIRTE Master**. It ships three
+nodes:
+
+- **`tag_annotator`** — detects AprilTags in the Orbbec RGB stream, broadcasts
+  a TF per detection, publishes overlay JSON for the web HMI.
+- **`yolo_detector`** — Ultralytics YOLO on the gripper cam, classifies tulip
+  species (`tulip_red`/`tulip_white`/`tulip_pink`) + a `bug` anomaly class.
+- **`perception_aggregator`** — fuses the two: TF-projects discovered tags into
+  the `map` frame, co-locates the YOLO flower class with each tag, and exposes
+  the result to the mission (discovery feed + `/perception/confirm_tag`) and the
+  twin/HMI (`KIND_FLOWER` observations). See "Perception aggregator" below.
 
 ## What it does
 
@@ -32,9 +38,44 @@ To start both the AprilTag and YOLO pipelines together:
 ros2 launch lupin_perception perception_stack.launch.py
 ```
 
-It's also folded into `lupin_bringup hardware.launch.py` behind a
-`perception:=true` (default) flag, so the standard one-shot bringup
-already starts it. Pass `perception:=false` to skip it.
+It's also folded into `lupin_bringup hardware.launch.py`: `perception:=true`
+(default) starts `tag_annotator` **and** `perception_aggregator` (both light);
+`yolo:=true` (default) starts the heavy YOLO detector laptop-side. Pass
+`perception:=false` / `yolo:=false` to skip.
+
+## Perception aggregator
+
+`perception_aggregator` is the fusion + discovery node the mission and twin
+depend on. It:
+
+1. Subscribes `/camera/tag_detections_json` and looks the per-tag `tag_<id>` TF
+   up into the `map` frame (only the **calibrated Orbbec** stream yields a TF;
+   the uncalibrated gripper cam doesn't). A tag is "discovered" after a few
+   confident sightings (debounce).
+2. Subscribes `/yolo/detections` and attributes the dominant tulip class — and
+   the `bug` anomaly — to the tag the robot is currently SCANNING (read from
+   `/mission/state`), falling back to the nearest detected tag when run
+   standalone. This is **temporal co-location**, not 3-D overlap (v1 limitation
+   — the two detectors are on different, differently-calibrated cameras).
+3. Publishes:
+   - `/perception/discovered_tags` (`lupin_msgs/DiscoveredTags`, latched) — the
+     orchestrator counts these against `discovery_goal` and uses the poses for
+     monitoring approach goals.
+   - `KIND_FLOWER` Observations on `/floranova/observations` — the twin merges
+     species/anomaly onto the tag and the HMI map renders them.
+   - `/perception/confirm_tag` (`lupin_msgs/srv/ConfirmTag`) — the orchestrator's
+     hardware visual-confirmation gate.
+
+```bash
+ros2 launch lupin_perception perception_aggregator.launch.py
+# inspect the discovery registry as the robot explores:
+ros2 topic echo /perception/discovered_tags
+```
+
+> **Compute:** keep `yolo_detector` + `perception_aggregator` off the Orange Pi.
+> YOLO needs torch, and `pip install ultralytics` drags numpy 2 / opencv-python
+> that break `cv_bridge` — run them laptop/Jetson-side with `numpy<2` and
+> without `opencv-python` (see `project_ultralytics_install_gotcha`).
 
 ## Configuration
 
@@ -45,7 +86,7 @@ Launch arguments (with defaults):
 | `image_topic` | `/camera/color/image_raw` | Vendor Orbbec RGB. On hardware this is served by `lupin-cameras.service` at a config-driven low FPS — the detection rate is capped to that setting and the HMI overlay stays in sync automatically. Switch to `/gripper_camera/image_raw` for the wrist cam. |
 | `camera_info_topic` | `/camera/color/camera_info` | Must be the matching rectified intrinsics for `image_topic`. |
 | `detections_topic` | `/camera/tag_detections_json` | What the HMI subscribes to. Don't change unless you also reconfigure the HMI. |
-| `tag_size_m` | `0.10` | Physical edge length of the printed tags. |
+| `tag_size_m` | `0.04` | Physical edge length of the printed tags. |
 | `tf_frame_prefix` | `tag_` | Child frame id = `f"{prefix}{id}"`. |
 | `image_qos` | `sensor_data` | BEST_EFFORT (KEEP_LAST 5). Matches the vendor driver. Set to `reliable` for sim-style profiles. |
 | `use_sim_time` | `false` | Real robot has no `/clock`. |
@@ -108,8 +149,12 @@ If the HMI shows the camera feed but never any boxes:
 
 ## Future work
 
-- `/perception/confirm_tag` service for the mission-orchestrator's
-  per-leg confirmation hook (see `project_approach_pose_pipeline`).
-- Flower detection + anomaly classification pipelines.
+- Per-detection 3-D flower localization (project YOLO boxes via the Orbbec
+  depth stream) to replace the v1 temporal co-location with the AprilTag pose.
+- Aim the arm/gripper cam at the table during SCANNING so the flower is framed
+  reliably (today fusion trusts whatever the gripper sees while parked).
 - Move intrinsics latching to a one-shot `wait_for_message` so the
   first frame after startup actually processes instead of being dropped.
+
+Done since the first cut: `/perception/confirm_tag` (now served by
+`perception_aggregator`) and the YOLO flower/anomaly classifier.

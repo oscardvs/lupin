@@ -12,13 +12,68 @@ import textwrap
 
 import pytest
 
+from types import SimpleNamespace
+
 from lupin_mission.approach import (
     MAX_STANDOFF_M,
     MIN_STANDOFF_M,
     TagApproach,
     compute_approach,
+    compute_discovered_approach,
     load_approach_overrides,
 )
+
+
+def _pose(x, y, *, qx=0.0, qy=0.0, qz=0.0, qw=1.0):
+    return SimpleNamespace(
+        position=SimpleNamespace(x=x, y=y, z=0.0),
+        orientation=SimpleNamespace(x=qx, y=qy, z=qz, w=qw),
+    )
+
+
+def test_discovered_uses_tag_normal():
+    # Quaternion rotating +Z onto +X (90° about Y): tag faces +X, so the
+    # robot parks standoff metres east of the tag, yaw pointing back (−X = π).
+    pose = _pose(2.0, 0.0, qy=0.70710678, qw=0.70710678)
+    a = compute_discovered_approach(
+        '7', pose, standoff_m=0.5, fallback_yaw=0.0, robot_xy=(0.0, 0.0),
+    )
+    assert a.derived_from == 'discovered_normal'
+    assert a.goal_x == pytest.approx(2.5, abs=1e-6)
+    assert a.goal_y == pytest.approx(0.0, abs=1e-6)
+    assert _approx_yaw(a.goal_yaw, math.pi)
+
+
+def test_discovered_degenerate_normal_falls_back_to_robot_vector():
+    # Identity orientation → +Z is vertical → degenerate; approach from the
+    # robot's side. Robot at origin, tag at (2,0) → park at (1.5, 0) facing +X.
+    pose = _pose(2.0, 0.0)
+    a = compute_discovered_approach(
+        '7', pose, standoff_m=0.5, fallback_yaw=1.23, robot_xy=(0.0, 0.0),
+    )
+    assert a.derived_from == 'discovered_robot'
+    assert a.goal_x == pytest.approx(1.5, abs=1e-6)
+    assert a.goal_y == pytest.approx(0.0, abs=1e-6)
+    assert _approx_yaw(a.goal_yaw, 0.0)
+
+
+def test_discovered_degenerate_no_robot_uses_fallback_yaw():
+    pose = _pose(2.0, 0.0)
+    a = compute_discovered_approach(
+        '7', pose, standoff_m=0.5, fallback_yaw=1.23, robot_xy=None,
+    )
+    assert a.derived_from == 'fallback'
+    assert a.goal_x == pytest.approx(2.0)
+    assert a.goal_y == pytest.approx(0.0)
+    assert a.goal_yaw == pytest.approx(1.23)
+
+
+def test_discovered_clamps_standoff():
+    pose = _pose(2.0, 0.0, qy=0.70710678, qw=0.70710678)
+    a = compute_discovered_approach(
+        '7', pose, standoff_m=99.0, fallback_yaw=0.0, robot_xy=(0.0, 0.0),
+    )
+    assert a.standoff_m == pytest.approx(MAX_STANDOFF_M)
 
 
 # A single 1m × 0.2m table centred at (1.0, 0.0). Tags placed on each

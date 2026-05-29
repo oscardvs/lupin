@@ -4,12 +4,14 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { HEALTH_COLORS, healthLabel, speciesColor, speciesLabel } from '@/lib/flowers'
 import {
   paintFieldToCanvas,
   rampGradientCss,
   rampCssColor,
   SENSOR_RAMPS,
 } from '@/lib/heatmap'
+import { tagHealthState } from '@/lib/tulip-health'
 import { useMapPose, useTopic, usePublisher, useService } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useAnimationLoop, useThrottledRender } from '@/lib/throttle'
@@ -46,6 +48,7 @@ export function MapCanvas() {
     heatmap: true,
     trajectory: true,
     pins: true,
+    flowers: true,
   })
 
   // Twin live snapshot — pin positions + readings + staleness.
@@ -575,6 +578,33 @@ export function MapCanvas() {
       }
     }
 
+    // Flower markers — a species-coloured ring around each classified tag,
+    // with a red dashed alert ring when the YOLO "bug" anomaly is present.
+    // Drawn over the sensor pin so the species reads at a glance without
+    // hiding the abiotic-sensor fill underneath.
+    if (layers.flowers) {
+      for (const t of tagsRef.current) {
+        if (!tagHasPose(t) || !t.species) continue
+        const c = proj.worldToCanvas(t.pose.position.x, t.pose.position.y)
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(c.x, c.y, 8, 0, Math.PI * 2)
+        ctx.lineWidth = 2
+        ctx.strokeStyle = speciesColor(t.species)
+        ctx.stroke()
+        if (t.anomaly) {
+          ctx.beginPath()
+          ctx.arc(c.x, c.y, 11, 0, Math.PI * 2)
+          ctx.setLineDash([3, 3])
+          ctx.lineWidth = 1.5
+          ctx.strokeStyle = '#e23a3a'
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+        ctx.restore()
+      }
+    }
+
     // Pulse ring — drawn over pins so the highlight sits on top, but
     // under the chevron so the robot itself is never obscured. Fades over
     // ~1.5 s and clears the ref when done.
@@ -768,6 +798,7 @@ interface LayerState {
   heatmap: boolean
   trajectory: boolean
   pins: boolean
+  flowers: boolean
 }
 
 function LayerToggles({
@@ -777,6 +808,7 @@ function LayerToggles({
     { key: 'heatmap',    label: 'heat' },
     { key: 'trajectory', label: 'tail' },
     { key: 'pins',       label: 'pins' },
+    { key: 'flowers',    label: 'flowers' },
   ]
   return (
     <div className="flex items-center gap-1">
@@ -954,6 +986,29 @@ function TagTooltip({
           {formatStaleness(tag.stale_seconds)}
         </span>
       </div>
+      {tag.species && (
+        <div className="mt-1 flex items-center gap-1.5">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{ background: speciesColor(tag.species) }}
+          />
+          <span className="text-foreground">{speciesLabel(tag.species)}</span>
+          {tag.species_confidence > 0 && (
+            <span className="text-muted-foreground">
+              {(tag.species_confidence * 100).toFixed(0)}%
+            </span>
+          )}
+          <span
+            className="ml-auto rounded-sm px-1 text-[10px]"
+            style={{ color: HEALTH_COLORS[tagHealthState(tag)] }}
+          >
+            {healthLabel(tagHealthState(tag))}
+          </span>
+        </div>
+      )}
+      {tag.anomaly && (
+        <div className="mt-1 font-mono text-[10px] text-destructive">⚠ pest detected (bug)</div>
+      )}
       <div className="mt-1 space-y-0.5">
         {tag.readings.length === 0 ? (
           <div className="text-muted-foreground">no readings yet</div>

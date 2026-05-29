@@ -41,7 +41,13 @@ gear · permanent E-STOP) wraps seven tabs:
 - **Map** — live SLAM occupancy grid (subscribes `/map`), robot pose via
   `ROSLIB.TFClient` against the `map → base_link` transform, latest Nav2
   plan (`/plan`) as a chartreuse polyline, and click-and-drag to publish a
-  `geometry_msgs/PoseStamped` to `/goal_pose`. AprilTag overlay on the map view still TODO.
+  `geometry_msgs/PoseStamped` to `/goal_pose`. Twin-driven tag pins coloured by
+  the active sensor, plus a **flowers** layer: a species-coloured ring per
+  classified tag with a red dashed ring on the YOLO `bug` anomaly; the hover
+  tooltip and the Greenhouse State table show species + health + pest. Mission
+  Control has a **Start exploration** button (discover N tags → monitor), and
+  the mission strip shows the `EXPLORE k/N` → `MONITOR` phase. All demoable in
+  `?mock=1`.
 
 ## Engineering notes
 
@@ -254,11 +260,11 @@ already has a code seam to swap in the token-fetching client.
 
 ## What's not in here yet
 
-- AprilTag overlay on the in-app Map view
 - Voice agent: ephemeral-token broker, persona / wake-word, multi-turn memory
 - Voice tool gaps awaiting backend: `scan_apriltags`, `detect_flowers`,
   `get_camera_frame`, `record_observation` — deliberately not stubbed; see
-  `lib/voice/tools.ts` to add once the perception/mission node lands.
+  `lib/voice/tools.ts`. (Flower data now flows via the twin's `TwinTagState`
+  species/anomaly fields, so a `detect_flowers` voice tool can read those.)
 - `nav_pause` / `nav_resume` — Nav2 has no real pause primitive; deferred
   unless we want to fake it as cancel + remembered goal.
 - Authentication, PWA / service worker, multi-user awareness — all deferred

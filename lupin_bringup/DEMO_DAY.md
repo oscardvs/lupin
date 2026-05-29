@@ -218,6 +218,12 @@ ros2 launch lupin_web lupin_web.launch.py \
 camera frames stay on the Pi and only MJPEG crosses WiFi (matches vendor
 `mirte.local/ros-video/` behaviour).
 
+**Check the startup banner** the launch prints: it must say `rosbridge DDS
+mode: DISCOVERY-SERVER 192.168.42.1:11811`. If it instead says `MULTICAST —
+ROS_DISCOVERY_SERVER is UNSET`, this terminal skipped §4's `source` lines —
+Ctrl-C and relaunch with them, or the HMI will show LIVE but no battery /
+telemetry and won't drive (see §6).
+
 Open `https://localhost:8090` in your browser. Click **Reset** if the e-stop
 banner is visible. If the virtual joystick doesn't drive the robot on first
 try, **reload the page once** — known startup-state flap, not a real failure.
@@ -364,6 +370,7 @@ Shoulder pan/lift are gated off while LB is held — don't expect Y/A/B/X to mov
 - **`/rosapi/get_time` errors** in the HMI/log every ~2 s — node-name collision between vendor rosbridge and laptop rosbridge. Cosmetic; latency pill won't populate.
 - **`controllers (should show 5 active)`** in `post-boot-sync.sh` *always* fails with `rcl node's context is invalid`. CLI bug, not real failure.
 - **`Message Filter dropping ... earlier than transform cache`** once at SLAM startup is normal. Repeated occurrences = clock drift.
+- **HMI shows LIVE but no battery / no telemetry / can't drive — *yet* `ros2 topic list` in a fresh terminal shows the robot's topics.** The HMI's rosbridge was launched from a terminal that never sourced `ros-env.sh`, so it's on default-multicast and can't join the robot's discovery-server graph. The DDS env is per-*process*, so a CLI check in a different (correctly-sourced) terminal looks fine and hides it. T1's launch now prints a `rosbridge DDS mode:` banner at startup — if it says `MULTICAST`, that's the bug. Confirm on a running HMI with `tr '\0' '\n' </proc/$(pgrep -f rosbridge_websocket)/environ | grep ROS_DISCOVERY_SERVER` (empty = bug). Fix: Ctrl-C T1, re-source both `source` lines from §4, relaunch, reload the browser. (Diagnosed live 2026-05-29.)
 
 ---
 
