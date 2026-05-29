@@ -21,6 +21,8 @@ set(msg_files
   "msg/MissionState.msg"
   "msg/TwinTagState.msg"
   "msg/TwinState.msg"
+  "msg/DiscoveredTag.msg"
+  "msg/DiscoveredTags.msg"
 )
 set(srv_files
   "srv/GetTagReading.srv"
