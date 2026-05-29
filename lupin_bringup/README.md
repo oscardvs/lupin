@@ -179,6 +179,7 @@ never relearn them:
 | `ros2 topic list` returns only `/parameter_events` and `/rosout` from the laptop, but `ssh` and `ping` to the robot work | DDS over WiFi — run the setup script. |
 | HMI loads and shows "LIVE" but every panel is blank (no battery, no IMU, no lidar) | Same — laptop's rosbridge can't subscribe to anything via DDS. |
 | Battery was working, then stopped after a launch Ctrl-C | Zombie ROS process from the killed launch. Sweep PIDs (see above) and re-launch. |
+| HMI blank, but `ros2 topic list` in a *fresh* terminal DOES show robot topics | The DDS env is per-process: the HMI's rosbridge was launched from a terminal that never sourced `ros-env.sh`, so only *it* is on multicast. Check `tr '\0' '\n' </proc/$(pgrep -f rosbridge_websocket)/environ \| grep ROS_DISCOVERY_SERVER` — empty confirms it. Relaunch the HMI from a fresh shell. The `lupin_web` launch prints a `rosbridge DDS mode:` banner to catch this. |
 | Topic count was 50+ then dropped to 2 after switching WiFi | Network changed, but daemon still has the old config. Re-run the setup script with the new robot IP, open a fresh shell. |
 | Setup script ran fine, fresh shell, still 2 topics | Robot's discovery server isn't actually listening. SSH in and `sudo ss -lnup \| grep 11811` — if empty, `MIRTE_FASTDDS=true` wasn't picked up (check `~/.mirte_settings.sh`, then `sudo systemctl restart mirte-ros.service`). |
 
