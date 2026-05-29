@@ -114,3 +114,59 @@ def test_tag_ids_preserve_insertion_order():
     for tid in ['a', 'b', 'c']:
         store.record(_obs(tid, 0.0, pose=(0, 0), readings=[('temperature', 1.0)]))
     assert store.tag_ids() == ['a', 'b', 'c']
+
+
+# ── flower ingestion (KIND_FLOWER) ─────────────────────────────────────────
+
+def _flower(tag_id, t, *, species='', conf=0.0, anomaly=False, pose=None):
+    from lupin_twin.state import FlowerUpdate
+    return FlowerUpdate(
+        tag_id=tag_id,
+        monotonic_at=t,
+        species=species,
+        species_confidence=conf,
+        anomaly=anomaly,
+        pose_x=pose[0] if pose else None,
+        pose_y=pose[1] if pose else None,
+        pose_qz=pose[2] if pose and len(pose) >= 3 else None,
+        pose_qw=pose[3] if pose and len(pose) >= 4 else None,
+    )
+
+
+def test_record_flower_merges_species_onto_tag():
+    store = TwinStateStore()
+    store.record(_obs('5', 0.0, pose=(1.0, 2.0), readings=[('temperature', 21.0)]))
+    assert store.record_flower(
+        _flower('5', 1.0, species='tulip_red', conf=0.9)
+    ) is True
+    buf = store.tag('5')
+    assert buf.species == 'tulip_red'
+    assert buf.species_confidence == pytest.approx(0.9)
+    assert buf.anomaly is False
+    # Sensor readings untouched by the flower update.
+    assert buf.latest_readings['temperature'] == pytest.approx(21.0)
+
+
+def test_record_flower_pins_unpinned_tag():
+    store = TwinStateStore()
+    # Flower arrives before any sensor reading → it should pin the tag.
+    store.record_flower(_flower('7', 0.0, species='tulip_pink', conf=0.8,
+                                pose=(3.0, 4.0, 0.0, 1.0)))
+    buf = store.tag('7')
+    assert buf.has_pose()
+    assert (buf.pose_x, buf.pose_y) == (3.0, 4.0)
+    assert buf.species == 'tulip_pink'
+
+
+def test_record_flower_latest_wins_and_clears_anomaly():
+    store = TwinStateStore()
+    store.record_flower(_flower('1', 0.0, species='tulip_white', conf=0.7, anomaly=True))
+    assert store.tag('1').anomaly is True
+    # A clean re-scan clears the anomaly (latest-wins).
+    store.record_flower(_flower('1', 1.0, species='tulip_white', conf=0.7, anomaly=False))
+    assert store.tag('1').anomaly is False
+
+
+def test_record_flower_empty_tag_rejected():
+    store = TwinStateStore()
+    assert store.record_flower(_flower('', 0.0, species='tulip_red')) is False
