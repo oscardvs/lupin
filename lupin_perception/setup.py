@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             'tag_annotator = lupin_perception.tag_annotator:main',
             'yolo_detector = lupin_perception.yolo_detector_node:main',
+            'perception_aggregator = lupin_perception.perception_aggregator:main',
         ],
     },
 )

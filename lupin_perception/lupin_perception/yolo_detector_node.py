@@ -32,7 +32,12 @@ class YoloDetectorNode(Node):
     def __init__(self):
         super().__init__('yolo_detector')
 
-        default_model_path = Path(get_package_share_directory('lupin_perception')) / 'best.pt'
+        # setup.py installs best.pt under share/lupin_perception/models/, so
+        # the bare-`ros2 run` default must point there too (the launch files
+        # already override to the same path).
+        default_model_path = (
+            Path(get_package_share_directory('lupin_perception')) / 'models' / 'best.pt'
+        )
         self.declare_parameter('model_path', str(default_model_path))
         self.declare_parameter('conf', 0.25)
         self.declare_parameter('imgsz', 640)

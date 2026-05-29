@@ -7,8 +7,10 @@ detector together.
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -85,8 +87,24 @@ def generate_launch_description() -> LaunchDescription:
         ),
         DeclareLaunchArgument(
             'yolo_start_viewer',
+            default_value='false',
+            description='Viewer toggle forwarded to yolo_detector.launch.py. '
+                        'Off by default in the combined stack — set true for debugging.',
+        ),
+        DeclareLaunchArgument(
+            'enable_aggregator',
             default_value='true',
-            description='Viewer toggle forwarded to yolo_detector.launch.py.',
+            description='Start perception_aggregator (tag discovery + flower fusion).',
+        ),
+        DeclareLaunchArgument(
+            'map_frame',
+            default_value='map',
+            description='Map frame the aggregator localises discovered tags into.',
+        ),
+        DeclareLaunchArgument(
+            'min_sightings',
+            default_value='3',
+            description='Sightings before a tag counts as discovered (debounce).',
         ),
     ]
 
@@ -128,4 +146,19 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
-    return LaunchDescription([*args, tag_annotator, yolo_detector])
+    aggregator = Node(
+        package='lupin_perception',
+        executable='perception_aggregator',
+        name='perception_aggregator',
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('enable_aggregator')),
+        parameters=[{
+            'tag_detections_topic': LaunchConfiguration('tag_detections_topic'),
+            'yolo_detections_topic': LaunchConfiguration('yolo_detections_topic'),
+            'map_frame': LaunchConfiguration('map_frame'),
+            'tf_frame_prefix': LaunchConfiguration('tag_tf_frame_prefix'),
+            'min_sightings': LaunchConfiguration('min_sightings'),
+        }],
+    )
+
+    return LaunchDescription([*args, tag_annotator, yolo_detector, aggregator])
