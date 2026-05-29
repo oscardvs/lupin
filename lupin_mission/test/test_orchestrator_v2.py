@@ -46,8 +46,11 @@ from rclpy.qos import (  # noqa: E402
 from std_msgs.msg import Bool  # noqa: E402
 from std_srvs.srv import Trigger  # noqa: E402
 
+from geometry_msgs.msg import Pose  # noqa: E402
+
 from lupin_msgs.msg import (  # noqa: E402
-    MissionState, Observation, SensorReading, TagReading,
+    DiscoveredTag, DiscoveredTags, MissionState, Observation, SensorReading,
+    TagReading,
 )
 from lupin_msgs.srv import GetTagReading, StartMission  # noqa: E402
 
@@ -209,6 +212,38 @@ class EStopPub(Node):
         self._pub.publish(msg)
 
 
+class DiscoveredPub(Node):
+    """Latched publisher of /perception/discovered_tags (fakes the aggregator)."""
+
+    def __init__(self):
+        super().__init__('discovered_pub')
+        qos = QoSProfile(
+            depth=1,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._pub = self.create_publisher(
+            DiscoveredTags, '/perception/discovered_tags', qos
+        )
+
+    def publish(self, tag_ids) -> None:
+        msg = DiscoveredTags()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        for i, tid in enumerate(tag_ids):
+            t = DiscoveredTag()
+            t.tag_id = str(tid)
+            p = Pose()
+            p.position.x = float(i)
+            p.position.y = 0.0
+            p.orientation.w = 1.0
+            t.pose_in_map = p
+            t.sightings = 5
+            msg.tags.append(t)
+        self._pub.publish(msg)
+
+
 class StateCollector(Node):
     """Subscribes to /mission/state and /floranova/observations."""
 
@@ -304,12 +339,13 @@ def _orchestrator(*, tag_sequence=None, **overrides) -> MissionOrchestratorNode:
 
 
 def _call_start(client_node: Node, *, mission_type='InspectionMission',
-                tag_sequence=None, timeout=5.0):
+                tag_sequence=None, discovery_goal=0, timeout=5.0):
     client = client_node.create_client(StartMission, '/mission/start')
     assert client.wait_for_service(timeout_sec=timeout), '/mission/start did not appear'
     req = StartMission.Request()
     req.mission_type = mission_type
     req.tag_sequence = list(tag_sequence) if tag_sequence else []
+    req.discovery_goal = int(discovery_goal)
     future = client.call_async(req)
     deadline = time.monotonic() + timeout
     while not future.done() and time.monotonic() < deadline:
@@ -370,10 +406,11 @@ class TestOrchestratorV2(unittest.TestCase):
         nav_delay_s=0.0,
         bridge_behaviour=None,
         tag_sequence=None,
+        **orch_overrides,
     ):
         self.nav = FakeNavServer(outcomes=nav_outcomes, delay_s=nav_delay_s)
         self.bridge = FakeBridge(behaviour=bridge_behaviour)
-        self.orch = _orchestrator(tag_sequence=tag_sequence)
+        self.orch = _orchestrator(tag_sequence=tag_sequence, **orch_overrides)
         self.harness.add(self.nav)
         self.harness.add(self.bridge)
         self.harness.add(self.orch)
@@ -635,6 +672,74 @@ class TestOrchestratorV2(unittest.TestCase):
         self.assertEqual(len(new_obs), 1)
         self.assertEqual(new_obs[0].mission_id, r2.mission_id)
         self.assertEqual(new_obs[0].status, Observation.STATUS_OK)
+
+    # ── 9. exploration → monitoring → abort ────────────────────────────
+    def test_exploration_discovers_then_monitors(self):
+        # No /map is published, so EXPLORING just waits on frontiers; the
+        # discovery feed (faked) drives the EXPLORING→MONITORING switch.
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50)
+
+        resp = _call_start(
+            self.collector, mission_type='ExplorationMission', discovery_goal=2,
+        )
+        self.assertTrue(resp.accepted, resp.error_message)
+
+        # Reaches EXPLORING (PREPARE localizes off the seeded AMCL pose).
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0),
+                        f'state={self.orch.state}')
+
+        # Publish the discovered tags meeting the goal → switch to MONITORING.
+        self.discovered.publish(['1', '2'])
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state.startswith('MONITORING'), 10.0,
+        ), f'state={self.orch.state}')
+
+        # The monitoring loop re-scans the discovered tags: OK observations
+        # accumulate beyond the 2 tags (it loops), proving it doesn't complete.
+        self.assertTrue(_wait_until(
+            lambda: sum(1 for o in self.collector.observations
+                        if o.status == Observation.STATUS_OK) >= 3,
+            15.0,
+        ), 'monitoring loop did not re-scan tags')
+
+        # mission_type stays ExplorationMission across the model swap.
+        self.assertTrue(_wait_until(
+            lambda: self.collector.latest_state
+            and self.collector.latest_state.mission_type == 'ExplorationMission',
+            2.0,
+        ))
+        st = self.collector.latest_state
+        self.assertEqual(st.lifecycle_state, 'MONITORING')
+        self.assertEqual(st.discovery_goal, 2)
+        self.assertEqual(st.tags_discovered, 2)
+
+        # Abort stops the loop and returns home.
+        abort = _call_trigger(self.collector, '/mission/abort')
+        self.assertTrue(abort.success, abort.message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'DONE', 15.0),
+                        f'state={self.orch.state}')
+
+    def test_exploration_no_tags_returns_home(self):
+        # Goal never met and no map → exploration times out, and with nothing
+        # discovered it goes straight to RETURNING (not MONITORING).
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        self._bringup(
+            nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 4,
+            exploration_timeout_s=1.0,
+        )
+        resp = _call_start(
+            self.collector, mission_type='ExplorationMission', discovery_goal=3,
+        )
+        self.assertTrue(resp.accepted, resp.error_message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'DONE', 15.0),
+                        f'state={self.orch.state}')
+        # Never entered MONITORING — nothing was discovered.
+        seen = {s.lifecycle_state for s in self.collector.states}
+        self.assertIn('EXPLORING', seen)
+        self.assertNotIn('MONITORING', seen)
 
 
 if __name__ == '__main__':
