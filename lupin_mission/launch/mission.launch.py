@@ -42,6 +42,11 @@ def generate_launch_description():
             'nav_localization_cov_threshold', default_value='0.25',
         ),
         DeclareLaunchArgument('scan_timeout_s', default_value='5.0'),
+        # Exploration / monitoring (ExplorationMission)
+        DeclareLaunchArgument('discovery_goal', default_value='5'),
+        DeclareLaunchArgument('exploration_timeout_s', default_value='180.0'),
+        DeclareLaunchArgument('map_topic', default_value='/map'),
+        DeclareLaunchArgument('base_frame', default_value='base_link'),
         DeclareLaunchArgument('require_visual_confirmation', default_value='false'),
         DeclareLaunchArgument(
             'visual_confirmation_service', default_value='/perception/confirm_tag',
@@ -86,6 +91,10 @@ def generate_launch_description():
                 'nav_localization_cov_threshold',
             ),
             'scan_timeout_s': LaunchConfiguration('scan_timeout_s'),
+            'discovery_goal': LaunchConfiguration('discovery_goal'),
+            'exploration_timeout_s': LaunchConfiguration('exploration_timeout_s'),
+            'map_topic': LaunchConfiguration('map_topic'),
+            'base_frame': LaunchConfiguration('base_frame'),
             'require_visual_confirmation': LaunchConfiguration(
                 'require_visual_confirmation',
             ),

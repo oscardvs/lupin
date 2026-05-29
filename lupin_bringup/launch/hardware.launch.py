@@ -36,6 +36,9 @@ Topology after launch (defaults):
         seed_amcl_pose      → one-shot /amcl_pose            (mission:=true)
         xbox_teleop         → /cmd_vel_joy + arm_teleop      (joystick:=true)
         tag_annotator       → tag_<id> TFs + overlay JSON    (perception:=true)
+        perception_aggregator → /perception/discovered_tags,
+                              KIND_FLOWER obs, confirm_tag    (perception:=true)
+        yolo_detector       → /yolo/detections (flowers/bug) (yolo:=true)
         rviz2               → interactive UI                 (rviz:=true)
 
 Flags (all booleans, default in parens):
@@ -194,11 +197,29 @@ def generate_launch_description() -> LaunchDescription:
         ),
         DeclareLaunchArgument(
             'perception', default_value='true',
-            description='Bring up lupin_perception (tag_annotator) — '
-                        'subscribes to the vendor Orbbec /camera/color/* '
-                        'stream, broadcasts tag_<id> TFs, and publishes '
-                        'overlay JSON for the HMI Cameras view. Cheap; '
-                        'turn off if the camera driver is down.',
+            description='Bring up lupin_perception: tag_annotator (Orbbec '
+                        'AprilTag detection → tag_<id> TFs + overlay JSON) '
+                        'AND perception_aggregator (TF-projects discovered '
+                        'tags into /perception/discovered_tags, emits '
+                        'KIND_FLOWER observations, serves /perception/'
+                        'confirm_tag). Both are light. Turn off if the '
+                        'camera driver is down.',
+        ),
+        DeclareLaunchArgument(
+            'yolo', default_value='true',
+            description='Bring up the YOLO flower/anomaly detector '
+                        '(lupin_perception/yolo_detector) on the gripper cam. '
+                        'Heavy (torch) — runs laptop-side here, not on the '
+                        'Pi. Requires ultralytics + numpy<2 in this env '
+                        '(see project_ultralytics_install_gotcha). Set false '
+                        'if ultralytics is not installed; discovery still '
+                        'works, flowers just stay unclassified.',
+        ),
+        DeclareLaunchArgument(
+            'discovery_goal', default_value='5',
+            description='ExplorationMission default: number of distinct tags '
+                        'to discover before switching to the monitoring loop. '
+                        'Overridable per /mission/start request.',
         ),
         DeclareLaunchArgument(
             'joystick', default_value='true',
@@ -376,6 +397,7 @@ def generate_launch_description() -> LaunchDescription:
             ('dependency_timeout_s', LaunchConfiguration('dependency_timeout_s')),
             ('tag_locations_file', tag_locations),
             ('approach_overrides_file', approach_overrides),
+            ('discovery_goal', LaunchConfiguration('discovery_goal')),
         ],
         condition=IfCondition(LaunchConfiguration('mission')),
     )
@@ -442,6 +464,28 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('perception')),
     )
 
+    # Perception aggregator — tag discovery (→ /perception/discovered_tags),
+    # KIND_FLOWER observations, and the /perception/confirm_tag service.
+    # Light (no torch); gated with tag_annotator under `perception`.
+    perception_aggregator = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_perception, 'launch', 'perception_aggregator.launch.py'),
+        ),
+        launch_arguments=[('use_sim_time', 'false')],
+        condition=IfCondition(LaunchConfiguration('perception')),
+    )
+
+    # YOLO flower/anomaly detector on the gripper cam. Heavy (torch) — runs
+    # here laptop-side, not on the Pi. start_viewer=false so no rqt window
+    # pops up during a mission.
+    yolo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_perception, 'launch', 'yolo_detector.launch.py'),
+        ),
+        launch_arguments=[('start_viewer', 'false')],
+        condition=IfCondition(LaunchConfiguration('yolo')),
+    )
+
     # ── RViz with persistent source-tree config ────────────────────────
     rviz_config = _resolve_rviz_config()
     rviz = Node(
@@ -497,7 +541,8 @@ def generate_launch_description() -> LaunchDescription:
                      ' mission=', LaunchConfiguration('mission'),
                      ' rviz=', LaunchConfiguration('rviz'),
                      ' joystick=', LaunchConfiguration('joystick'),
-                     ' perception=', LaunchConfiguration('perception')]),
+                     ' perception=', LaunchConfiguration('perception'),
+                     ' yolo=', LaunchConfiguration('yolo')]),
         # Phase 1 — fire-and-forget at t=0 (each gated by its own flag):
         web,
         slam_reset_node,
@@ -507,6 +552,8 @@ def generate_launch_description() -> LaunchDescription:
         seed,
         xbox_teleop,
         perception,
+        perception_aggregator,
+        yolo,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.
