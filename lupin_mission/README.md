@@ -13,28 +13,45 @@ Hierarchical state machine via the
 top-level lifecycle plus a sub-machine for each mission type.
 
 ```
-BOOT ──► READY ──► PREPARE ──► INSPECTING ──► RETURNING ──► DONE
-                       │                                      │
-                       └──────► (FAULT) ◄─────────────────────┘
-                                                              │
-                                                              └──► READY
-                                                                   (next mission)
+                          ┌─ (InspectionMission) ─► INSPECTING ─┐
+BOOT ─► READY ─► PREPARE ──┤                                     ├─► RETURNING ─► DONE
+                          └─ (ExplorationMission) ► EXPLORING    │
+                                                       └─► MONITORING ◄┘ (loops)
+                       │                                          │
+                       └──────────► (FAULT) ◄────────────────────┘
+                                                                  │
+                                                                  └──► READY (next)
 
 PREPARE:    LOCALIZING  (covariance gate; map loading is a TODO)
-INSPECTING: NAVIGATING → SCANNING → PUBLISHING (per tag, in sequence)
+INSPECTING: NAVIGATING → SCANNING → PUBLISHING (per tag, once through)
+EXPLORING:  frontier search until N tags discovered (no sub-machine)
+MONITORING: NAVIGATING → SCANNING → PUBLISHING (discovered tags, loops forever)
 ```
 
 ![Top-level lifecycle](docs/state_machine.png)
 
-- `INSPECTING` is the per-tag flow. NAVIGATING issues NavigateToPose,
-  SCANNING calls the greenhouse bridge, PUBLISHING is the named gate
-  (the `Observation` is actually published from SCANNING / nav-failure
-  paths — PUBLISHING is the single hook for future digital-twin work).
+- Two mission types share the same NAVIGATING/SCANNING/PUBLISHING sub-machine;
+  `/mission/start` picks one via `mission_type`:
+  - **`InspectionMission`** (default) — visits a fixed `tag_sequence`
+    (a-priori from `tag_locations.json`) once, then returns.
+  - **`ExplorationMission`** — `PREPARE` branches to `EXPLORING`: a frontier
+    planner (`frontier.py`) reads the live SLAM `/map`'s unknown space and
+    drives there via the same NavigateToPose client until
+    `/perception/discovered_tags` reports `discovery_goal` distinct tags;
+    then `MONITORING` continuously re-scans those tags (wrap-around cursor,
+    never completes) until the operator pauses/aborts.
+- `INSPECTING`/`MONITORING` are the per-tag flow. NAVIGATING issues
+  NavigateToPose (table-geometry approach for inspection, the discovered
+  tag's own pose normal for monitoring), SCANNING calls the greenhouse
+  bridge (and, on hardware, `/perception/confirm_tag`), PUBLISHING is the
+  named advance gate.
 
   ![INSPECTING sub-machine](docs/state_machine_inspection.png)
 
-- `PREPARE` is currently `LOCALIZING` only. A future `MappingMission`
-  will add an exploration child.
+- In SLAM mode `/amcl_pose` is a static seed, so exploration/monitoring use a
+  **presence-only** localization gate (InspectionMission keeps the tight
+  per-leg covariance gate). The live robot pose for frontier scoring comes
+  from the `map→base_link` TF.
 - **Pause** and **E-stop** are *flags*, not states — they freeze the
   active sub-state without altering the lifecycle. `/mission/resume`
   is the only thing that unblocks. E-stop release does NOT auto-resume.
@@ -81,6 +98,17 @@ numeric-string order. Pass an explicit list to visit a subset:
 ```bash
 ros2 service call /mission/start lupin_msgs/srv/StartMission \
   "{mission_type: 'InspectionMission', tag_sequence: ['1','5','12']}"
+```
+
+**Autonomous exploration** — discover N tags via frontier search, then
+monitor them continuously (needs the perception aggregator publishing
+`/perception/discovered_tags`, and live SLAM `/map`):
+
+```bash
+ros2 service call /mission/start lupin_msgs/srv/StartMission \
+  "{mission_type: 'ExplorationMission', discovery_goal: 5}"
+# EXPLORING (drives to frontiers) → MONITORING (loops over the 5 found tags)
+# /mission/abort stops the loop and returns home.
 ```
 
 Watch the mission live:
