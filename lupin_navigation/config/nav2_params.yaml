@@ -296,7 +296,7 @@ local_costmap:
         # clearance past the footprint, and the steeper cost_scaling_factor
         # keeps the halo thin so MPPI still has drivable space mid-aisle.
         cost_scaling_factor: 5.0
-        inflation_radius: 0.30
+        inflation_radius: 0.25
       # Was True — sent the full costmap grid every publish, even unchanged
       # cells. Nav2 supports incremental updates and downstream consumers
       # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on
@@ -340,7 +340,7 @@ global_costmap:
         # Match local costmap — see comment above. Same rationale: greenhouse
         # aisle width forces a thinner halo than KRR house's open rooms.
         cost_scaling_factor: 5.0
-        inflation_radius: 0.30
+        inflation_radius: 0.25
       # Was True — sent the full costmap grid every publish, even unchanged
       # cells. Nav2 supports incremental updates and downstream consumers
       # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on
