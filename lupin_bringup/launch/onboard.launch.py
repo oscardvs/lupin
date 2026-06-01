@@ -78,6 +78,21 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── light_strip_bridge ─────────────────────────────────────────────
+    # Mirrors the latched /mission/state snapshot onto the robot's status
+    # neopixel strip via the MIRTE LED service. Keep robot-local so the
+    # status indication works without any laptop-side launch.
+    light_strip_bridge = Node(
+        package='lupin_hmi', executable='light_strip_bridge',
+        name='light_strip_bridge',
+        parameters=[{
+            'use_sim_time': False,
+            'mission_state_topic': '/mission/state',
+            'led_service': '/io/leds/leds/set_color',
+        }],
+        output='log',
+    )
+
     # ── gripper_action_bridge ──────────────────────────────────────────
     # HMI gripper goes /lupin/gripper/set_angle_with_speed → this bridge →
     # mirte_master_gripper_controller/gripper_cmd. See
@@ -92,11 +107,12 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription([
         LogInfo(msg='[lupin_bringup] onboard: twist_mux + arm_preset_server '
-                    '+ arm_calibrate_server + gripper_action_bridge — '
+                    '+ arm_calibrate_server + light_strip_bridge + gripper_action_bridge — '
                     'operator drives via web HMI (laptop-side joystick lives '
                     'in hardware.launch.py joystick:=true)'),
         twist_mux,
         arm_preset_server,
         arm_calibrate_server,
+        light_strip_bridge,
         gripper_action_bridge,
     ])
