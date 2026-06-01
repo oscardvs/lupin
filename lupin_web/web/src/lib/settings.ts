@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
-// v3 adds voice-assistant fields (Gemini Live). v2 keys are migrated forward —
-// rosbridge URL and topic overrides are preserved; new voice fields fall back
-// to defaults.
-const STORAGE_KEY = 'lupin-hmi-settings/v3'
-const LEGACY_STORAGE_KEYS = ['lupin-hmi-settings/v2']
+// v4: the Mirte-247264 drive inversion is fixed at the source (telemetrix
+// motor p1/p2 + encoder A/B pin-swap), so the HMI no longer compensates —
+// polarityInvertHmi defaults false and any persisted `true` is dropped on
+// migration (see readStored). v3 added voice-assistant fields; v2/v3 keys are
+// migrated forward (rosbridge URL, topic overrides, voice + Gemini key kept).
+const STORAGE_KEY = 'lupin-hmi-settings/v4'
+const LEGACY_STORAGE_KEYS = ['lupin-hmi-settings/v3', 'lupin-hmi-settings/v2']
 
 export interface VoiceNamedLocation {
   x: number
@@ -82,7 +84,8 @@ export interface Settings {
    * publishing, and the rendered map view is rotated 180° to match physical
    * orientation. The internal Nav2 / SLAM frame is left untouched (it's
    * already self-consistent — see project_hardware_axis_inversion). Default
-   * true on hardware; sim sets false.
+   * false since the drive inversion was fixed at the source (telemetrix
+   * pin-swap, 2026-06-01); set true only against an uncorrected robot.
    */
   polarityInvertHmi: boolean
 }
@@ -157,7 +160,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   debugPublish: false,
   estopAutoOnFocusLoss: true,
-  polarityInvertHmi: true,
+  polarityInvertHmi: false,
 }
 
 function defaultRosUrl(): string {
@@ -208,7 +211,14 @@ function readStored(): Partial<Settings> {
     if (raw) return JSON.parse(raw) as Partial<Settings>
     for (const legacy of LEGACY_STORAGE_KEYS) {
       const old = localStorage.getItem(legacy)
-      if (old) return JSON.parse(old) as Partial<Settings>
+      if (old) {
+        const parsed = JSON.parse(old) as Partial<Settings>
+        // v4 migration: drive inversion is now fixed at the source, so a
+        // persisted polarityInvertHmi (true on old hardware installs) must not
+        // carry forward — drop it so the v4 default (false) applies.
+        delete parsed.polarityInvertHmi
+        return parsed
+      }
     }
     return {}
   } catch {
