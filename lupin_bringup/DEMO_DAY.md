@@ -206,7 +206,14 @@ Skip either and the terminal will see 2 topics (DDS) or fail to find
 
 ### T1 — HMI (Vite preview + rosbridge :9090; video proxied to robot :8091)
 
+Source the two §4 lines **in this terminal first** — they're repeated in the
+block below because T1 fails *silently* if you skip them: the HMI comes up `LIVE`
+but with no battery / no telemetry and can't drive (the §6 MULTICAST bug),
+unlike T2+ which fail loudly. The launch's `rosbridge DDS mode:` banner is the tell.
+
 ```bash
+source ~/.config/lupin/ros-env.sh            # DDS env — skip this → §6 MULTICAST bug (HMI LIVE but dead)
+source ~/ros2_ws/install/setup.bash
 ros2 launch lupin_web lupin_web.launch.py \
   mode:=preview tls:=true rosbridge:=true \
   video:=false video_target:=http://192.168.42.1:8091
@@ -285,8 +292,29 @@ map_server isn't instantiated. `RewrittenYaml` just needs a valid path.
 ```
 
 **If you see `Server controller_server was unable to be reached after 4.00s by bond`:**
-clock drift or SHM contention. Ctrl-C only T5, redo step 2 (laptop hygiene)
-and step 1 (clock sync), then retry T5.
+clock drift or SHM contention. Ctrl-C only T5, then use the targeted restart
+below — **not** step 2's full SHM wipe, which would also break slam/RViz/HMI.
+
+#### Restart just Nav2 (leaves slam / RViz / HMI / robot untouched)
+
+Ctrl-C the T5 terminal first. If a node survives (a *ghost* → duplicate node
+name + stale DDS/bond state → errors or stalls on the next launch), sweep only
+the Nav2 executables. This is laptop-side and matches *only* Nav2:
+
+```bash
+NAV2='controller_server|planner_server|behavior_server|bt_navigator|waypoint_follower|velocity_smoother|lifecycle_manager|nav2\.launch'
+pkill -f "$NAV2"; sleep 2          # SIGTERM first → nodes release DDS/SHM cleanly
+pkill -9 -f "$NAV2" 2>/dev/null    # force-kill any ghost that ignored SIGTERM
+pgrep -af "$NAV2" && echo "⚠ still alive — re-run" || echo "Nav2 clean ✓"
+```
+
+Then relaunch T5 (with **both** `source` lines). **Do NOT `rm /dev/shm/fastrtps_*`
+here** — that wipes the SHM of the still-running slam/RViz/HMI participants and
+breaks them; the full wipe (step 2) is for an all-down reset only.
+
+If a *clean* relaunch still stalls at `Configuring planner_server`, that's the
+cold-start discovery-server lag (not a ghost) — a second relaunch usually wins;
+the real fix is bumping the lifecycle-manager timeouts / going wired.
 
 ### T6 — Digital twin
 
@@ -349,14 +377,14 @@ Shoulder pan/lift are gated off while LB is held — don't expect Y/A/B/X to mov
 
 | Test | How | Pass criterion |
 |---|---|---|
-| **Xbox drive** | Hold **LB**, push left stick forward | Robot moves **forward** physically (negative scales in `xbox_config.yaml` compensate for Mirte-247264 polarity) |
+| **Xbox drive** | Hold **LB**, push left stick forward | Robot moves **forward** physically (drive fixed at the source — `xbox_config.yaml` scales are positive) |
 | **Xbox arm** | Release LB. Press/hold **Y/A** → lift up/down. **B/X** → pan right/left. D-pad → wrist/elbow | Arm joints move at ~1.5 rad/s while held; quick taps step 0.15 rad. Watch `arm joints active:` log to confirm input is reaching `arm_teleop` |
 | **Xbox gripper** | Release LB. Pull **RT** (open) or **LT** (close) | Gripper opens/closes between [−0.20, 0.25] rad |
-| **HMI joystick** | HMI Teleop view, click Reset on e-stop banner, wiggle virtual stick | Robot drives in operator-expected direction (HMI applies `polarityInvertHmi`) |
+| **HMI joystick** | HMI Teleop view, click Reset on e-stop banner, wiggle virtual stick | Robot drives in operator-expected direction (`polarityInvertHmi` now false — no flip needed) |
 | **Lidar visible in HMI** | HMI Lidar view | Live scan paints at ~10 Hz |
 | **Map visible in HMI** | HMI Map view | OccupancyGrid renders, rotates with robot |
 | **Nav2 goal** | RViz "2D Goal Pose" tool, click+drag a goal 1–2 m ahead | Robot plans + drives to goal |
-| **HMI map-click goal** | HMI Map view, click destination | Same as above; HMI auto-flips coords per `polarityInvertHmi` |
+| **HMI map-click goal** | HMI Map view, click destination | Same as above; map renders in the true frame, goal lands where you click |
 | **AprilTag overlay** | HMI Cameras view, point camera at a printed tag | Bounding box + tag ID overlay |
 | **E-stop** | HMI e-stop button | Robot stops immediately, banner shows "user" reason |
 | **Map erase** | HMI menu → "Erase map" | /map clears and slam_toolbox respawns blank |
@@ -365,7 +393,7 @@ Shoulder pan/lift are gated off while LB is held — don't expect Y/A/B/X to mov
 
 ## 6. Known quirks (so you don't panic mid-demo)
 
-- **RViz odometry direction is "wrong"** vs physical motion — *expected*. Mirte-247264 has the mecanum drive wired with motor + encoder leads reversed in pairs, so the vendor frame is rotated 180° relative to physical chassis. Internally consistent, just rotated. See `lupin_web/web/src/lib/polarity.ts:3-9`.
+- **Drive direction is physically correct** (forward cmd → forward, odom == physical). The old 180° base-frame inversion was fixed at the source on 2026-06-02 via a telemetrix motor/encoder pin-swap (`lupin_bringup/scripts/apply-drive-pinswap.py`, `project_hardware_axis_inversion`); `polarityInvertHmi` now defaults false and the Xbox scales are positive. If a *different* robot ever drives backward, that's an uncorrected unit — fix its pins, don't re-enable the HMI flip.
 - **HMI joystick needs a page reload on first load** sometimes. Reason='startup' e-stop + rosbridge status flap. One reload fixes it.
 - **`/rosapi/get_time` errors** in the HMI/log every ~2 s — node-name collision between vendor rosbridge and laptop rosbridge. Cosmetic; latency pill won't populate.
 - **`controllers (should show 5 active)`** in `post-boot-sync.sh` *always* fails with `rcl node's context is invalid`. CLI bug, not real failure.
