@@ -5,7 +5,7 @@
 @layer base {
   :root {
     /* Greenhouse mission console — deep botanical ink, lichen primary, signal cyan. */
-    --background: 120 12% 5%;
+    --background: 120 14% 4.5%;
     --foreground: 60 18% 92%;
     --card: 120 10% 7%;
     --card-foreground: 60 18% 92%;
@@ -29,8 +29,45 @@
     /* Custom palette tokens (used directly via arbitrary-value classes) */
     --hairline: 120 6% 18%;
     --signal: 192 90% 60%;             /* cyan data stream */
+    --signal-soft: 192 80% 70%;
     --warning: 38 95% 60%;             /* amber */
+    --bloom: 78 90% 50%;               /* glow source for the aurora + halos */
     --serif-shift: 0.04em;
+
+    /* Ink ramp — z-elevation surfaces (darkest well → raised tile). */
+    --ink-0: 120 14% 3.5%;             /* below-base wells (3D letterbox)  */
+    --ink-1: 120 14% 4.5%;             /* = background, base canvas        */
+    --ink-2: 120 10% 7%;               /* = card, base panels             */
+    --ink-3: 120 10% 9%;               /* raised / hovered tile           */
+    --ink-4: 120 12% 11%;              /* overlay opaque backing plate     */
+
+    /* Glass — frosted FLOATING overlays only (Radix portals), never tiles. */
+    --glass-bg: 120 12% 8%;
+    --glass-blur: 14px;                /* 8–15 sweet spot; never animate   */
+    --glass-saturate: 1.4;
+    --glass-edge: 60 30% 88%;          /* top inner highlight hue          */
+    --glass-plate: 120 12% 6.5%;       /* near-opaque text backing plate   */
+
+    /* Status semantics — disjoint lanes, never overlap. */
+    --status-nominal: 78 90% 58%;      /* chartreuse = system speaking     */
+    --status-data: 192 90% 60%;        /* cyan = data flowing              */
+    --status-caution: 38 95% 60%;      /* amber = caution only             */
+    --status-critical: 8 92% 55%;      /* red = critical only              */
+
+    /* Reactive motion channels — written by JS/CSS (see @property below). */
+    --glow: 0;                         /* 0..1 telemetry glow intensity    */
+    --signal-hue: 78;                  /* lichen→amber as battery drains    */
+    --pulse-rate: 1;                   /* proximity speeds reticle pulse    */
+    --flash: 0;                        /* one-shot value-change flash 1→0   */
+
+    /* Motion vocabulary (mirrors src/lib/motion.ts for CSS-driven effects). */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in-out-circ: cubic-bezier(0.85, 0, 0.15, 1);
+    --dur-1: 140ms;
+    --dur-2: 240ms;
+    --dur-3: 420ms;
+    --dur-4: 720ms;
   }
 
   .light {
@@ -55,7 +92,23 @@
     --ring: 88 80% 32%;
     --hairline: 60 8% 80%;
     --signal: 195 80% 38%;
+    --signal-soft: 195 70% 48%;
     --warning: 32 90% 45%;
+    --bloom: 88 80% 45%;
+    --glass-bg: 60 30% 100%;
+    --glass-blur: 16px;
+    --glass-saturate: 1.3;
+    --glass-edge: 0 0% 100%;
+    --glass-plate: 0 0% 100%;
+    --ink-0: 60 20% 90%;
+    --ink-1: 60 25% 97%;
+    --ink-2: 0 0% 100%;
+    --ink-3: 60 20% 99%;
+    --ink-4: 0 0% 100%;
+    --status-nominal: 88 80% 32%;
+    --status-data: 195 80% 38%;
+    --status-caution: 32 90% 45%;
+    --status-critical: 8 80% 45%;
   }
 }
 
@@ -80,28 +133,17 @@
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
 
-    /* Atmospheric base: hex-grid + soft chartreuse bloom from top-left. */
+    /* Atmospheric base sits BEHIND the WebGL aurora as a graceful fallback for
+       reduced-motion / no-WebGL: hex bloom from the corners + a floor vignette. */
     background-color: hsl(var(--background));
     background-image:
-      radial-gradient(
-        1100px 700px at -10% -10%,
-        hsla(78, 90%, 45%, 0.08),
-        transparent 60%
-      ),
-      radial-gradient(
-        900px 600px at 110% 0%,
-        hsla(192, 90%, 50%, 0.05),
-        transparent 60%
-      ),
-      linear-gradient(
-        to bottom,
-        hsla(0, 0%, 0%, 0) 0%,
-        hsla(0, 0%, 0%, 0.45) 100%
-      );
+      radial-gradient(1100px 700px at -10% -10%, hsla(78, 90%, 45%, 0.07), transparent 60%),
+      radial-gradient(900px 600px at 110% 0%, hsla(192, 90%, 50%, 0.05), transparent 60%),
+      linear-gradient(to bottom, hsla(0, 0%, 0%, 0) 0%, hsla(0, 0%, 0%, 0.5) 100%);
     background-attachment: fixed;
   }
 
-  /* Layered grid texture sits behind everything. */
+  /* Layered grid texture — drifts very slowly so the surface feels alive. */
   body::before {
     content: '';
     position: fixed;
@@ -115,29 +157,27 @@
     background-position: -1px -1px;
     mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
     -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
+    animation: grid-drift 60s linear infinite;
   }
 
   #root {
     position: relative;
     z-index: 1;
+    isolation: isolate;
   }
 
   .light body {
     background-image:
-      radial-gradient(
-        1100px 700px at -10% -10%,
-        hsla(88, 80%, 60%, 0.18),
-        transparent 60%
-      ),
-      radial-gradient(
-        900px 600px at 110% 0%,
-        hsla(195, 70%, 60%, 0.12),
-        transparent 60%
-      );
+      radial-gradient(1100px 700px at -10% -10%, hsla(88, 80%, 60%, 0.18), transparent 60%),
+      radial-gradient(900px 600px at 110% 0%, hsla(195, 70%, 60%, 0.12), transparent 60%);
   }
 
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: none;
   }
 }
 
@@ -189,6 +229,61 @@
       linear-gradient(90deg, hsla(120, 8%, 30%, 0.10) 1px, transparent 1px);
     background-size: 24px 24px;
   }
+
+  /* ── Glass system ─────────────────────────────────────────────────────── */
+  /* Frosted instrument panel. Sits over the living aurora; blur+saturate pulls
+     colour through so panels feel like physical glass on a lightfield. */
+  .glass {
+    background-color: hsl(var(--glass-bg) / 0.55);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid hsl(var(--foreground) / 0.08);
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--glass-edge) / 0.06),
+      0 10px 34px -16px rgba(0, 0, 0, 0.7);
+  }
+  /* Heavier frost for foreground surfaces (drawers, dialogs, the top rail). */
+  .glass-strong {
+    background-color: hsl(var(--glass-bg) / 0.72);
+    backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(calc(var(--glass-saturate) * 1.1));
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(calc(var(--glass-saturate) * 1.1));
+    border: 1px solid hsl(var(--foreground) / 0.10);
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--glass-edge) / 0.08),
+      0 16px 48px -20px rgba(0, 0, 0, 0.8);
+  }
+  /* A bright top edge-light, dropped on any positioned glass element. */
+  .edge-light {
+    position: relative;
+  }
+  .edge-light::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--glass-edge) / 0.28) 30%,
+      hsl(var(--primary) / 0.35) 50%,
+      hsl(var(--glass-edge) / 0.28) 70%,
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  /* Faint film grain — kills banding on the gradients, adds a tactile sheen. */
+  .noise::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
   /* Subtle scan-line that pulses across connected panels. */
   .scanline {
     position: relative;
@@ -232,6 +327,7 @@
     border-color: hsl(var(--primary) / 0.7);
     border-style: solid;
     pointer-events: none;
+    transition: border-color var(--dur-2) var(--ease-out-expo);
   }
   .reticle::before {
     top: -1px; left: -1px;
@@ -256,6 +352,11 @@
       0 0 0 1px hsl(var(--primary) / 0.35),
       0 0 32px -8px hsl(var(--primary) / 0.45);
   }
+  .glow-signal {
+    box-shadow:
+      0 0 0 1px hsl(var(--signal) / 0.35),
+      0 0 28px -8px hsl(var(--signal) / 0.5);
+  }
 
   /* Number tickers — slight warmth, used for live telemetry. */
   .ticker {
@@ -263,4 +364,107 @@
     font-variant-numeric: tabular-nums;
     font-weight: 500;
   }
+
+  /* ── Ambient keyframe utilities (cheap, compositor-friendly) ──────────── */
+  .animate-float { animation: float 7s var(--ease-in-out-circ) infinite; }
+  .animate-glow-pulse { animation: glow-pulse 3.2s var(--ease-in-out-circ) infinite; }
+  .animate-sheen { position: relative; overflow: hidden; }
+  .animate-sheen::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 30%, hsl(var(--glass-edge) / 0.10) 48%, transparent 60%);
+    transform: translateX(-120%);
+    animation: sheen 7s var(--ease-out-expo) infinite;
+    pointer-events: none;
+  }
+  .spin-slow { animation: spin 18s linear infinite; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes sheen {
+  0%, 18% { transform: translateX(-120%); }
+  38%, 100% { transform: translateX(120%); }
+}
+@keyframes grid-drift {
+  0% { background-position: -1px -1px; }
+  100% { background-position: 55px 55px; }
+}
+@keyframes value-flash {
+  0% { color: hsl(var(--primary)); text-shadow: 0 0 12px hsl(var(--primary) / 0.6); }
+  100% { color: inherit; text-shadow: none; }
+}
+@keyframes dash-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Accessibility + capability fallbacks ───────────────────────────────── */
+
+/* Respect prefers-reduced-motion: kill ambient loops + long transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  body::before { animation: none !important; }
+}
+
+/* When backdrop-filter is unsupported, raise panel opacity so glass stays legible. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background-color: hsl(var(--glass-bg) / 0.92); }
+  .glass-strong { background-color: hsl(var(--glass-bg) / 0.96); }
+}
+
+/* prefers-reduced-transparency → drop glass to a solid plate (still elevated). */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong {
+    background-color: hsl(var(--ink-4)) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 12px 32px -16px hsl(var(--ink-0) / 0.8) !important;
+  }
+}
+
+/* prefers-contrast: more → firmer borders + fills for low-vision operators. */
+@media (prefers-contrast: more) {
+  .glass { background-color: hsl(var(--glass-bg) / 0.85); border-color: hsl(var(--foreground) / 0.2); }
+  .tag { color: hsl(var(--foreground) / 0.85); }
+  .border-hairline { border-color: hsl(var(--foreground) / 0.25); }
+}
+
+/* Registered animatable channels — GPU-tweenable + interpolate in keyframes.
+   Progressive enhancement: where unsupported the target value still applies
+   (it just snaps instead of tweening). */
+@supports (background: paint(id)) {}
+@property --glow {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+@property --pulse-rate {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+@property --flash {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+@property --signal-hue {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 78;
 }

@@ -24,6 +24,7 @@
     "@react-three/fiber": "^8.18.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "framer-motion": "^11.18.2",
     "lucide-react": "^0.468.0",
     "nipplejs": "^0.10.2",
     "react": "^18.3.1",
