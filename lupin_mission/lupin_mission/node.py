@@ -198,11 +198,24 @@ def build_hsm_spec() -> dict:
         },
         # RETURNING → DONE
         {"trigger": "returned", "source": "RETURNING", "dest": "DONE"},
-        # Battery-docked resume: go back to inspection without going through DONE
+        # Battery/dock resume: go back to the mission family we left, without
+        # passing through DONE. The trigger is chosen from _return_origin in
+        # _handle_resume so a MONITORING/EXPLORING run doesn't fall into the
+        # INSPECTING sub-machine (which would end a monitoring loop early).
         {
             "trigger": "resume_inspection",
             "source": "RETURNING",
             "dest": "INSPECTING",
+        },
+        {
+            "trigger": "resume_monitoring",
+            "source": "RETURNING",
+            "dest": "MONITORING",
+        },
+        {
+            "trigger": "resume_exploration",
+            "source": "RETURNING",
+            "dest": "EXPLORING",
         },
         # DONE → READY for next mission
         {"trigger": "reset_for_next", "source": "DONE", "dest": "READY"},
@@ -253,6 +266,21 @@ def _is_state_monitoring(state: str) -> bool:
 def _is_state_scanning_phase(state: str) -> bool:
     """True for either sub-machine's NAVIGATING/SCANNING/PUBLISHING states."""
     return _is_state_inspecting(state) or _is_state_monitoring(state)
+
+
+def _resume_origin_for(state: str) -> str:
+    """Which mission family a battery/dock resume should return to.
+
+    Captured at the instant we divert to RETURNING so /mission/resume re-enters
+    the matching sub-machine. Without this every resume fell into INSPECTING,
+    which terminates a MONITORING loop early (INSPECTING_PUBLISHING exits to
+    RETURNING when the tag list ends, whereas MONITORING_PUBLISHING loops).
+    """
+    if _is_state_monitoring(state):
+        return 'MONITORING'
+    if state == 'EXPLORING':
+        return 'EXPLORING'
+    return 'INSPECTING'
 
 
 def _yaw_to_quaternion(yaw: float) -> Quaternion:
@@ -492,6 +520,12 @@ class MissionOrchestratorNode(Node):
         self._paused: bool = False
         self._estop_engaged: bool = False  # mirrors EStopMonitor.engaged
         self._return_resumable = False
+        # Which mission family a battery/dock RETURNING should resume into —
+        # captured the moment we divert to the dock, so resume re-enters the
+        # right sub-machine instead of always falling into INSPECTING (which
+        # would, e.g., terminate a MONITORING loop early). One of
+        # 'INSPECTING' | 'MONITORING' | 'EXPLORING' | None.
+        self._return_origin: Optional[str] = None
         self._manual_dock_requested = False
 
         # in-flight Nav2 + bridge futures, used both as identity guards
@@ -825,6 +859,7 @@ class MissionOrchestratorNode(Node):
         self._cancel_inflight_nav("battery_low")
 
         if _is_state_inspecting(self.state) or _is_state_monitoring(self.state) or self.state == 'EXPLORING':
+            self._return_origin = _resume_origin_for(self.state)
             self.abort_to_return()  # type: ignore[attr-defined]
 
     def on_battery_recovered(self) -> None:
@@ -1215,7 +1250,15 @@ class MissionOrchestratorNode(Node):
             self._docked_for_battery = False
             self._return_resumable = False
             self._manual_dock_requested = False
-            self.resume_inspection()  # type: ignore[attr-defined]
+            # Resume into the family we left, not always INSPECTING.
+            origin = self._return_origin
+            self._return_origin = None
+            if origin == 'MONITORING':
+                self.resume_monitoring()  # type: ignore[attr-defined]
+            elif origin == 'EXPLORING':
+                self.resume_exploration()  # type: ignore[attr-defined]
+            else:
+                self.resume_inspection()  # type: ignore[attr-defined]
             response.success = True
             response.message = "resumed"
             return response
