@@ -113,6 +113,14 @@ class FakeNavServer(Node):
                 goal_handle.canceled()
                 return NavigateToPose.Result()
             time.sleep(0.02)
+        # Under the monitoring loop's rapid goal churn + an abort, this handle
+        # may already have been terminated/expired by the time we get here.
+        # Calling succeed()/abort()/canceled() on a non-active handle makes
+        # rclpy raise "feedback publisher is invalid" from publish_status(),
+        # which propagates out of the spin thread and wedges the whole test
+        # (the RETURN goal then never completes → stuck in RETURNING). Guard it.
+        if not goal_handle.is_active:
+            return NavigateToPose.Result()
         if status == GoalStatus.STATUS_SUCCEEDED:
             goal_handle.succeed()
         elif status == GoalStatus.STATUS_ABORTED:

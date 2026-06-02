@@ -250,6 +250,13 @@ _BUSY_PREFIXES = ('PREPARE', 'EXPLORING', 'INSPECTING', 'MONITORING', 'RETURNING
 
 _TERMINAL_PREFIXES = ("DONE", "FAULT")
 
+# on_enter_RETURNING defers the dock goal until an in-flight nav cancel acks.
+# If that ack is lost (DDS hiccup, or rapid goal churn when aborting mid-loop)
+# the dock goal would never send and the robot would sit in RETURNING forever.
+# After this grace period the orchestrator forces the dock goal anyway — a fresh
+# NavigateToPose preempts any lingering goal server-side.
+_RETURN_CANCEL_GRACE_S = 3.0
+
 
 def _is_state_busy(state: str) -> bool:
     return state.startswith(_BUSY_PREFIXES)
@@ -540,6 +547,9 @@ class MissionOrchestratorNode(Node):
         # so a pending goal that lands AFTER the cancel doesn't drive the
         # mission forward unexpectedly.
         self._nav_pending_cancel: bool = False
+        # One-shot timer armed when RETURNING defers its dock goal behind a
+        # pending cancel; forces the dock goal if the cancel ack never arrives.
+        self._return_cancel_watchdog = None
         self._scan_future = None
         self._scan_started_at: float = self._monotonic()
         # Track whether we've requested a return (via abort or battery)
@@ -582,7 +592,17 @@ class MissionOrchestratorNode(Node):
             initial=spec["initial"],
             send_event=True,
             queued=True,
-            ignore_invalid_triggers=False,
+            # A stale trigger from an async ROS callback must NO-OP, not raise.
+            # The node is driven by concurrent Nav2/bridge/scan callbacks; the
+            # per-callback entry guards (e.g. _on_scan_response, line ~2069)
+            # catch most stale fires, but under queued=True a trigger that was
+            # valid when enqueued (scan_done from SCANNING) can be drained AFTER
+            # a concurrently-enqueued abort_to_return/battery divert has moved us
+            # to RETURNING. With ignore=False that raised MachineError inside the
+            # executor thread and wedged the spin loop (mission stuck in
+            # RETURNING, never docking). True makes the stale trigger a graceful
+            # no-op — the entry guards remain as defence-in-depth.
+            ignore_invalid_triggers=True,
             after_state_change="_log_transition",
         )
         # Recorded by _log_transition so the published MissionState reflects
@@ -1632,6 +1652,13 @@ class MissionOrchestratorNode(Node):
             self.get_logger().info(
                 "RETURNING entered while nav cancel is pending; waiting before sending dock goal."
             )
+            # Don't trust the cancel ack to always arrive — arm a watchdog that
+            # forces the dock goal if it doesn't, so an abort/battery return
+            # can't strand the robot in RETURNING.
+            if self._return_cancel_watchdog is None:
+                self._return_cancel_watchdog = self.create_timer(
+                    _RETURN_CANCEL_GRACE_S, self._on_return_cancel_watchdog
+                )
             return
 
         self._send_return_nav_goal()
@@ -2092,6 +2119,8 @@ class MissionOrchestratorNode(Node):
 
     # ─── returning: dock goal ──────────────────────────────────────────
     def _send_return_nav_goal(self) -> None:
+        # A dock goal is going out now — the deferral watchdog has done its job.
+        self._clear_return_cancel_watchdog()
         x, y, yaw = self._dock_pose[0], self._dock_pose[1], self._dock_pose[2]
         goal_msg = NavigateToPose.Goal()
         goal_msg.pose = self._build_pose_stamped(x, y, yaw)
@@ -2236,6 +2265,28 @@ class MissionOrchestratorNode(Node):
         elif st == "INSPECTING_SCANNING":
             self.scan_done()  # type: ignore[attr-defined]
         # INSPECTING_PUBLISHING: already there, nothing to do.
+
+    def _on_return_cancel_watchdog(self) -> None:
+        """Fallback when a nav cancel ack never arrives (lost over DDS, or the
+        action server churned on an abort). Forces the deferred dock goal so the
+        robot can't be stranded in RETURNING. One-shot — cancels itself."""
+        self._clear_return_cancel_watchdog()
+        if self.state != "RETURNING" or self._estop_engaged or self._paused:
+            return
+        if self._nav_goal_handle is not None or self._nav_send_goal_future is not None:
+            return  # a dock goal is already in flight
+        if self._nav_pending_cancel:
+            self.get_logger().warn(
+                f"Nav cancel ack not seen within {_RETURN_CANCEL_GRACE_S:.0f}s; "
+                "forcing dock goal (assuming the cancel was lost)."
+            )
+            self._nav_pending_cancel = False
+        self._maybe_send_deferred_return()
+
+    def _clear_return_cancel_watchdog(self) -> None:
+        if self._return_cancel_watchdog is not None:
+            self._return_cancel_watchdog.cancel()
+            self._return_cancel_watchdog = None
 
     def _maybe_send_deferred_return(self) -> None:
         if self.state != "RETURNING":
