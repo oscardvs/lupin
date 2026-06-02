@@ -193,6 +193,20 @@ and try again.
 
 ## 4. Bit-by-bit launch (one terminal per subsystem)
 
+> **Full greenhouse demo — read this first.** The T1–T8 layout below brings up
+> the *base* stack (drive, SLAM, Nav2, HMI, perception overlay+fusion) but leaves
+> the **autonomous mission OFF**. For the complete demo (AprilTag fusion + flower
+> & pest **map markers** + explore→monitor autonomy) you need T7's **full**
+> perception stack and **T9** (mission), both spelled out below. Two ways:
+> - **One command** (simplest, least on-stage control):
+>   `ros2 launch lupin_bringup hardware.launch.py mission:=true` — everything
+>   below *plus* the mission pipeline, in one process tree.
+> - **Granular** (per-subsystem kill/restart): run T1–T8 using
+>   `perception_stack.launch.py` in T7, then add T9.
+>
+> Don't mix the two — `hardware.launch.py` already includes T1–T8, so running it
+> *and* the individual terminals double-launches everything.
+
 **Every new terminal opened from this point on** starts with the two `source`
 lines (same as §3 but without daemon-start, which is already done):
 
@@ -325,18 +339,32 @@ ros2 launch lupin_twin twin.launch.py
 One line: `lupin_twin up: obs_topic=/floranova/observations, …`. Idle until
 mission orchestrator publishes observations.
 
-### T7 — Perception (AprilTag detector)
+### T7 — Perception (AprilTag detector + flower/pest fusion)
+
+Use `perception_stack.launch.py`, **not** the tag-only `perception.launch.py` —
+the stack starts all three perception nodes the demo needs:
 
 ```bash
-ros2 launch lupin_perception perception.launch.py use_sim_time:=false
+ros2 launch lupin_perception perception_stack.launch.py
 ```
 
-**Expect:** `tag_annotator online — image="/camera/color/image_raw" …` then
-within 3 s `Latched intrinsics from camera_info: fx=… fy=… cx=… cy=…`.
+- **`tag_annotator`** — Orbbec AprilTag detection → `tag_<id>` TFs + `/camera/tag_detections_json` (the HMI Cameras overlay).
+- **`yolo_detector`** — gripper-cam YOLO → `/yolo/detections` (flower species + the `bug` anomaly class). **Needs `ultralytics` + `numpy<2`** in this env (see `project_ultralytics_install_gotcha`); if missing it no-ops and flowers stay unclassified.
+- **`perception_aggregator`** — fuses tags + YOLO into `/perception/discovered_tags` and `KIND_FLOWER` obs on `/floranova/observations` → twin → `/twin/state` (the flower/pest **map markers**).
+
+**Expect:** `tag_annotator online — image="/camera/color/image_raw" …`, then
+`Latched intrinsics from camera_info: …` within 3 s, plus a `perception_aggregator`
+start line and a YOLO model-load line (a few seconds on first run).
 
 **If no "Latched intrinsics" within 10 s:** cameras aren't publishing yet.
 Check `ros2 topic hz /camera/color/camera_info` — should be ~5 Hz. If silent,
 `ssh lupin 'sudo systemctl restart lupin-cameras'`.
+
+> **Markers need a mission.** Flower/pest markers only pin once T9's mission
+> SCANNING phase attributes a YOLO reading to a tag — "point the camera at a
+> flower" alone won't place a marker. The AprilTag green-box overlay (Cameras
+> view) works on its own. To run just the tag overlay (no YOLO/torch), the old
+> `ros2 launch lupin_perception perception.launch.py` still works.
 
 ### T8 — Xbox teleop (joy_node + teleop_twist_joy + arm_teleop)
 
@@ -371,6 +399,26 @@ Shoulder pan/lift are gated off while LB is held — don't expect Y/A/B/X to mov
 
 > Alternative: pass `joystick:=true` to the unified bringup (`ros2 launch lupin_bringup hardware.launch.py joystick:=true ...`) instead of running T8 standalone. Same node graph — pick whichever fits the on-stage debugging story.
 
+### T9 — Mission (autonomous explore → monitor → flower; optional)
+
+Only for the autonomous-mission demo. Bundles the greenhouse bridge (tag
+oracle), the mission orchestrator, and the one-shot AMCL pose seed. Run it
+**after** T1–T8 are up — it needs Nav2 + SLAM + twin + T7's full perception:
+
+```bash
+ros2 launch lupin_bringup mission_stack.launch.py        # discovery_goal:=N to override
+```
+
+**Expect:** a `greenhouse_bridge` ready line, `[lupin_bringup] mission_stack: …`,
+and the orchestrator idling in `READY` (`/mission/state` lifecycle_state=READY).
+Start a run from the HMI **Mission** controls (or `ros2 service call
+/mission/start std_srvs/srv/Trigger`). The HMI MissionStrip should walk
+PREPARE → EXPLORING → MONITORING; flower/pest markers land on the Map view as
+tags are scanned.
+
+**If the orchestrator FAULTs after ~120 s:** it never saw Nav2 or the bridge —
+confirm T5 reached "Managed nodes are active" and that T9 was started after it.
+
 ---
 
 ## 5. Demo test sequence — verify everything works before the audience arrives
@@ -388,6 +436,17 @@ Shoulder pan/lift are gated off while LB is held — don't expect Y/A/B/X to mov
 | **AprilTag overlay** | HMI Cameras view, point camera at a printed tag | Bounding box + tag ID overlay |
 | **E-stop** | HMI e-stop button | Robot stops immediately, banner shows "user" reason |
 | **Map erase** | HMI menu → "Erase map" | /map clears and slam_toolbox respawns blank |
+
+The rows below need T7's **full** perception stack (`perception_stack.launch.py`) and, for the mission rows, **T9** (`mission_stack.launch.py`):
+
+| Test | How | Pass criterion |
+|---|---|---|
+| **AprilTag overlay** | HMI Cameras view, point Orbbec at a printed tag | Green box + tag ID + distance overlay (no QR payload — IDs only) |
+| **YOLO alive** | `ros2 topic hz /yolo/detections` with the gripper cam at a flower | Ticks > 0 Hz; detections carry a class (`tulip_*` / `bug`) |
+| **Flower → map** | T7 + T9; start a mission, let it SCAN a tag that has a flower | Species-coloured ring appears on the HMI Map at that tag |
+| **Pest → map** | T7 + T9; a flower YOLO-classed as `bug` | Red dashed ring + "pest detected" tooltip on that flower's marker |
+| **Mission explore→monitor** | T9 up; HMI Mission → Start | MissionStrip walks PREPARE→EXPLORING→MONITORING; robot discovers tags then loops |
+| **Voice drive** | HMI Voice; **set a Gemini key in Settings first**; "drive forward one metre" | Tab shows "gemini live" (not the amber "mock" banner); a `nav_forward` tool call fires and the robot drives ~1 m |
 
 ---
 
