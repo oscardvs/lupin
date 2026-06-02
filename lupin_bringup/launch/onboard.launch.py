@@ -92,6 +92,10 @@ def generate_launch_description() -> LaunchDescription:
             'led_service': '/io/leds/leds/set_color',
             'manual_service': '/lupin/leds/set',
             'auto_service': '/lupin/leds/auto',
+            # Mirte-247264's strip is wired BRG (green→red, blue→green,
+            # red→blue at the hardware). The MIRTE C++ neopixel driver has no
+            # reorder knob, so the bridge remaps. See reference_mirte_ledstrip.
+            'color_order': 'BRG',
         }],
         output='log',
     )

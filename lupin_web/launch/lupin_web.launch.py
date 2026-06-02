@@ -34,6 +34,7 @@ Usage:
     ros2 launch lupin_web lupin_web.launch.py video:=false        # skip web_video_server
     ros2 launch lupin_web lupin_web.launch.py rosbridge:=false    # skip rosbridge (use vendor)
     ros2 launch lupin_web lupin_web.launch.py tls:=true           # https + wss/_ros (mic)
+    ros2 launch lupin_web lupin_web.launch.py leds:=false         # skip LED bridge (robot runs it)
 
 Requirements:
     - Node 20+ and npm available on PATH
@@ -87,6 +88,7 @@ def generate_launch_description():
     video_target = LaunchConfiguration('video_target')
     rosbridge = LaunchConfiguration('rosbridge')
     tls = LaunchConfiguration('tls')
+    leds = LaunchConfiguration('leds')
 
     # Resolve the npm script at launch time based on `mode`.
     npm_script = PythonExpression([
@@ -99,6 +101,10 @@ def generate_launch_description():
 
     spawn_rosbridge = PythonExpression([
         "'", rosbridge, "'.lower() in ('true', '1', 'yes')"
+    ])
+
+    spawn_leds = PythonExpression([
+        "'", leds, "'.lower() in ('true', '1', 'yes')"
     ])
 
     # vite.config.ts reads LUPIN_TLS=1 to enable @vitejs/plugin-basic-ssl.
@@ -186,6 +192,19 @@ def generate_launch_description():
                         'on the robot for the voice tab (browsers gate the mic API '
                         'to secure contexts). Sim/dev keep http on localhost.',
         ),
+        DeclareLaunchArgument(
+            'leds',
+            default_value='true',
+            description='Spawn light_strip_bridge alongside the HMI so the '
+                        "LightControl card can change the robot's status strip "
+                        '(/lupin/leds/set + /lupin/leds/auto) and the strip '
+                        'follows /mission/state. Reaches the MIRTE LED service '
+                        'over DDS, so this terminal MUST have sourced ros-env.sh '
+                        '(same discovery-server requirement as rosbridge). Set '
+                        'false on a robot whose lupin-onboard.service already '
+                        'runs the bridge — two instances collide on the node '
+                        'name and the manual-override services.',
+        ),
 
         LogInfo(msg=['Lupin Web HMI · serving from ', _REPO_WEB_DIR, ' on :', port]),
 
@@ -245,5 +264,35 @@ def generate_launch_description():
             ),
             launch_arguments=[('port', '9090')],
             condition=IfCondition(spawn_rosbridge),
+        ),
+
+        # 4. light_strip_bridge — lets the HMI LightControl card change the
+        # robot's status strip. It serves the manual-override services
+        # (/lupin/leds/set, /lupin/leds/auto) the card calls and mirrors
+        # /mission/state onto the strip in auto mode. Co-located here so the
+        # operator who launches the laptop HMI also gets LED control without a
+        # separate launch; the bridge is just a client of the robot's MIRTE LED
+        # service (/io/leds/leds/set_color) reached over DDS — hence the same
+        # ros-env.sh requirement flagged in the DDS banner above. Params mirror
+        # lupin_bringup/onboard.launch.py so behaviour is identical wherever it
+        # runs. On a robot whose lupin-onboard.service already runs this bridge,
+        # pass leds:=false (two instances would clash on the node name and the
+        # override services).
+        Node(
+            package='lupin_hmi', executable='light_strip_bridge',
+            name='light_strip_bridge',
+            parameters=[{
+                'use_sim_time': False,
+                'mission_state_topic': '/mission/state',
+                'led_service': '/io/leds/leds/set_color',
+                'manual_service': '/lupin/leds/set',
+                'auto_service': '/lupin/leds/auto',
+                # Mirte-247264's strip is wired BRG; the bridge remaps so the
+                # HMI palette shows true colours. See reference_mirte_ledstrip
+                # and the matching param in lupin_bringup/onboard.launch.py.
+                'color_order': 'BRG',
+            }],
+            output='screen',
+            condition=IfCondition(spawn_leds),
         ),
     ])

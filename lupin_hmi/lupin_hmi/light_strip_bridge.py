@@ -62,6 +62,7 @@ class LightStripBridge(Node):
         self.declare_parameter('auto_service', '/lupin/leds/auto')
         self.declare_parameter('set_on_startup', True)
         self.declare_parameter('unknown_state_off', True)
+        self.declare_parameter('color_order', 'RGB')
 
         self._mission_state_topic = str(
             self.get_parameter('mission_state_topic').value
@@ -80,6 +81,9 @@ class LightStripBridge(Node):
         )
         self._unknown_state_off = bool(
             self.get_parameter('unknown_state_off').value
+        )
+        self._color_order = self._parse_color_order(
+            str(self.get_parameter('color_order').value)
         )
 
         self._last_rgb: Optional[RGB] = None
@@ -122,7 +126,8 @@ class LightStripBridge(Node):
         self.get_logger().info(
             f'light_strip_bridge listening on {self._mission_state_topic}, '
             f'calling {self._led_service}; manual override via '
-            f'{self._manual_service} / {self._auto_service}'
+            f'{self._manual_service} / {self._auto_service}; '
+            f'wire color_order={self._color_order}'
         )
 
         if self._set_on_startup:
@@ -293,6 +298,43 @@ class LightStripBridge(Node):
         response.success = True
         return response
 
+    def _parse_color_order(self, value: str) -> str:
+        """Validate the strip's wire colour order, else fall back to 'RGB'.
+
+        Names which physical colour each transmitted byte drives, in slot
+        order. 'RGB' is the no-op identity. Mirte-247264's strip is wired
+        'BRG': what the HMI calls green lights the red channel, blue→green,
+        red→blue (confirmed on hardware 2026-06-02). The MIRTE C++ neopixel
+        driver sends our (r,g,b) straight through with no reorder knob
+        (neopixel.cpp), so we compensate here — the single chokepoint for
+        every Lupin LED write (auto mission-state and manual HMI alike).
+        """
+        order = (value or '').strip().upper()
+        if sorted(order) != ['B', 'G', 'R']:
+            self.get_logger().warn(
+                f"invalid color_order '{value}', expected a permutation of "
+                f"'RGB'; using 'RGB' (no remap)"
+            )
+            return 'RGB'
+        return order
+
+    def _apply_color_order(self, rgb: RGB) -> RGB:
+        """Remap a logical (r,g,b) into the bytes the strip must receive.
+
+        For each transmitted slot we emit the desired intensity of whatever
+        physical colour that slot actually drives (self._color_order), so the
+        strip shows the colour the operator picked. 'RGB' is a no-op. Dedup
+        and logging stay in logical space — only the wire bytes are reordered.
+        """
+        if self._color_order == 'RGB':
+            return rgb
+        lut = {'R': rgb[0], 'G': rgb[1], 'B': rgb[2]}
+        return (
+            lut[self._color_order[0]],
+            lut[self._color_order[1]],
+            lut[self._color_order[2]],
+        )
+
     def _send_color(self, rgb: RGB, reason: str = '') -> None:
         if not self._client.service_is_ready():
             self.get_logger().warn(
@@ -301,11 +343,12 @@ class LightStripBridge(Node):
             )
             return
 
+        ordered = self._apply_color_order(rgb)
         req = SetNeopixel.Request()
         req.color = NeopixelColor(
-            r=int(rgb[0]),
-            g=int(rgb[1]),
-            b=int(rgb[2]),
+            r=int(ordered[0]),
+            g=int(ordered[1]),
+            b=int(ordered[2]),
         )
 
         self._pending_rgb = rgb
