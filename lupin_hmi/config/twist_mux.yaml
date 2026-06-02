@@ -38,3 +38,14 @@ twist_mux:
         topic: /cmd_vel_auto
         timeout: 0.5
         priority: 10
+      # Sim-only idle-stop guard (dormant on hardware). The Gazebo planar_move
+      # driver holds the last commanded twist indefinitely once its input goes
+      # silent, so the sim bringup publishes a constant zero on /zero_cmd_vel.
+      # As the lowest-priority input it is let through only when joy/manual/auto
+      # have all timed out, so the robot halts instead of drifting. On hardware
+      # nothing publishes /zero_cmd_vel, so this input never activates and the
+      # base controller's own command timeout stops the wheels as before.
+      zero:
+        topic: /zero_cmd_vel
+        timeout: 1.0
+        priority: 1

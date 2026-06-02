@@ -90,13 +90,14 @@ def generate_launch_description():
         # South aisle of the greenhouse, facing +Y (toward the tables).
         DeclareLaunchArgument('x', default_value='2.0'),
         DeclareLaunchArgument('y', default_value='1.5'),
-        # Wheels sit 0.0965 m below base_link (wheel joint -0.0455 − radius 0.051),
-        # so base_link must spawn at ≈0.097 m or the wheels start BELOW the ground
-        # plane → Gazebo ejects the penetration → robot launches + spins → NaN →
-        # Ogre AABB crash. 0.05 (penetrating) was only survivable while planar_move
-        # pinned the pose; with ros2_control driving the real wheels we must spawn
-        # grounded. 0.10 leaves a <1 cm settle drop.
-        DeclareLaunchArgument('z', default_value='0.10'),
+        # base_link spawns on the floor. Measured TF base_link->front_left_wheel
+        # z = +0.055 and wheel radius 0.05, so the wheel bottoms sit base_link+0.005
+        # → base_link at z=0.0 grounds the robot (5 mm gap, invisible). The base is
+        # <kinematic> (vendor design) and planar_move holds it at exactly this z —
+        # there is NO gravity settling, so z is the final resting height, not a drop.
+        # (The old 0.10 left it hovering 10.5 cm; the "wheels 0.0965 m below
+        # base_link" note it was based on had the sign and magnitude both wrong.)
+        DeclareLaunchArgument('z', default_value='0.0'),
         DeclareLaunchArgument('yaw', default_value='1.5708'),
     ]
 
@@ -128,10 +129,24 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}],
     )
 
-    base_controllers = Node(
-        package='controller_manager', executable='spawner',
-        arguments=['pid_wheels_controller', 'mirte_base_controller'],
+    # Option A (vendor planar_move drive): we deliberately do NOT spawn the
+    # ros2_control mecanum base controllers (pid_wheels_controller /
+    # mirte_base_controller). planar_move drives the kinematic base directly and is
+    # the SINGLE odom->base_link TF source; also running the mecanum controller
+    # would publish a second, competing odom TF (the Nav2 "timestamp earlier than
+    # transform cache" drops). The arm/gripper controllers are still spawned above,
+    # and joint_state_broadcaster still reports the (free-spinning) wheel joints.
+
+    # planar_move advertises odometry on /odom; the rest of the stack subscribes to
+    # /mirte_base_controller/odom exactly as on hardware (nav2_params odom_topic,
+    # HMI odomTopic). Relay so the topic name matches hardware 1:1 — least-friction
+    # port. The odom->base_link TF planar_move publishes is already identical.
+    odom_relay = Node(
+        package='topic_tools', executable='relay',
+        name='sim_odom_relay',
+        arguments=['/odom', '/mirte_base_controller/odom'],
         parameters=[{'use_sim_time': True}],
+        output='log',
     )
 
     # The vendor empty-world launch publishes a constant zero twist at 100 Hz so
@@ -146,19 +161,17 @@ def generate_launch_description():
         output='log',
     )
 
-    twist_mux = Node(
-        package='twist_mux', executable='twist_mux',
-        parameters=[twist_mux_config, {'use_sim_time': True}],
-        remappings=[('/cmd_vel_out', '/cmd_vel')],
-    )
-
+    # The single command bus (lupin twist_mux: joy/manual/auto + the idle-zero
+    # fallback) lives in sim_robot.launch.py and publishes to /cmd_vel, which
+    # planar_move consumes. We keep only the constant-zero publisher here as
+    # planar_move's idle-stop guard (planar_move holds the last twist forever
+    # otherwise); sim_robot's twist_mux routes /zero_cmd_vel in as lowest priority.
     return LaunchDescription([
         *gazebo_env,
         *args,
         gazebo,
         spawn_robot,
         arm_controllers,
-        base_controllers,
+        odom_relay,
         zero_cmd_vel,
-        twist_mux,
     ])

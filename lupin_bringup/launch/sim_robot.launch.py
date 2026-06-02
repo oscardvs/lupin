@@ -65,7 +65,11 @@ def generate_launch_description() -> LaunchDescription:
             os.path.join(pkg_hmi, 'config', 'twist_mux.yaml'),
             {'use_sim_time': True},
         ],
-        remappings=[('cmd_vel_out', '/mirte_base_controller/cmd_vel_unstamped')],
+        # Sim drives the vendor gazebo_ros_planar_move plugin, which subscribes to
+        # /cmd_vel. (Hardware remaps cmd_vel_out to /mirte_base_controller/cmd_vel
+        # instead — this terminal topic is the one documented sim<->hardware drive
+        # difference; the joy/manual/auto bus above is identical on both.)
+        remappings=[('cmd_vel_out', '/cmd_vel')],
         output='log',
     )
 
