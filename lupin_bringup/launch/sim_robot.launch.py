@@ -94,8 +94,12 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('joystick')),
     )
 
-    seed = ExecuteProcess(
-        cmd=['ros2', 'run', 'lupin_bringup', 'seed_amcl_pose'],
+    # AMCL stand-in for the SLAM sim: continuously republishes map->base_link as
+    # /amcl_pose so the mission orchestrator's localization + drift gates clear.
+    # Must run with sim time (sim-clock stamps) or the orchestrator sees stale poses.
+    seed = Node(
+        package='lupin_bringup', executable='seed_amcl_pose', name='seed_amcl_pose',
+        parameters=[{'use_sim_time': True}],
         output='log',
         condition=IfCondition(LaunchConfiguration('seed_amcl')),
     )
