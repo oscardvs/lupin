@@ -352,9 +352,9 @@ class MissionOrchestratorNode(Node):
         # bootstrap wait while SLAM fills the first scans.
         self.declare_parameter('exploration_timeout_s', 180.0)
 
-        self.declare_parameter('state_publish_rate_hz', 5.0)
-        self.declare_parameter('mission_id_prefix', 'lupin')
-        self.declare_parameter('frame_id', 'map')
+        self.declare_parameter("state_publish_rate_hz", 5.0)
+        self.declare_parameter("mission_id_prefix", "lupin")
+        self.declare_parameter("frame_id", "map")
 
         self._nav_action_name = str(self.get_parameter("nav_action_name").value)
         self._bridge_service_name = str(self.get_parameter("bridge_service_name").value)
@@ -824,7 +824,7 @@ class MissionOrchestratorNode(Node):
         self._return_requested = True
         self._cancel_inflight_nav("battery_low")
 
-        if _is_state_inspecting(self.state):
+        if _is_state_inspecting(self.state) or _is_state_monitoring(self.state) or self.state == 'EXPLORING':
             self.abort_to_return()  # type: ignore[attr-defined]
 
     def on_battery_recovered(self) -> None:
