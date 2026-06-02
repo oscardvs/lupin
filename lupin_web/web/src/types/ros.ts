@@ -193,7 +193,32 @@ export const ROS_TYPE = {
 export const MIRTE_SRV = {
   SetServoAngleWithSpeed: 'mirte_msgs/srv/SetServoAngleWithSpeed',
   SetBool: 'std_srvs/srv/SetBool',
+  SetNeopixel: 'mirte_msgs/srv/SetNeopixel',
 } as const
+
+/** Status-light bridge service endpoints (lupin_hmi/light_strip_bridge).
+ * `setManual` holds a manual whole-strip colour and stops the bridge
+ * following mission state; `setAuto` hands colouring back to the FSM. */
+export const LED_SERVICE = {
+  setManual: '/lupin/leds/set',
+  setAuto: '/lupin/leds/auto',
+} as const
+
+/** Mirror of `mirte_msgs/msg/NeopixelColor` — whole-strip RGB, 0–255/channel. */
+export interface NeopixelColor {
+  r: number
+  g: number
+  b: number
+}
+
+/** Mirror of `mirte_msgs/srv/SetNeopixel`. */
+export interface SetNeopixelRequest {
+  color: NeopixelColor
+}
+
+export interface SetNeopixelResponse {
+  status: boolean
+}
 
 /** lupin_msgs service type strings. */
 export const LUPIN_SRV = {
