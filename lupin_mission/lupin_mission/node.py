@@ -74,6 +74,7 @@ from .tag_locations import (
     load_default_tag_locations,
     numeric_string_sort_key,
 )
+from .battery_monitor import BatteryMonitor
 
 # ─── HSM topology ────────────────────────────────────────────────────────
 #
