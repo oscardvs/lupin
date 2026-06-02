@@ -20,6 +20,7 @@ import { ROBOT_TOOL_DECLARATIONS, clampNumber, type ToolName } from './tools'
 import type { ToolInvocation, TranscriptTurn, VoiceStatus } from './types'
 import { SpeechEndpointer } from './vad'
 
+import { GRIPPER_CLOSE_DEG, GRIPPER_HMI_MAX_DEG, GRIPPER_OPEN_DEG } from '@/lib/arm'
 import { useEStop } from '@/lib/estop'
 import { invertTwist } from '@/lib/polarity'
 import { isMockMode, useSettings, type Settings, type VoiceNamedLocation } from '@/lib/settings'
@@ -387,17 +388,16 @@ export function useVoiceSession(): VoiceSession {
             if (action !== 'open' && action !== 'close' && action !== 'set') {
               return finish({ ok: false, error: "action must be 'open', 'close', or 'set'" })
             }
-            // Conservative ±30° window — matches ArmView's unverified gripper range.
-            // Re-tune once the live mechanical limits are recorded; see the
-            // verification recipe in ArmView.tsx. Service path is the
-            // gripper_action_bridge, NOT the raw Hiwonder service — see the
-            // ArmView gripper comment for why.
+            // Gripper window + direction come from the shared lib/arm source of
+            // truth (GRIPPER_OPEN_DEG / GRIPPER_CLOSE_DEG), so the voice tool can
+            // never drift from the Arm page or the backend bridge. The window is
+            // still UNVERIFIED against the real mechanical stops. Service path is
+            // the gripper_action_bridge, NOT the raw Hiwonder service.
             //
-            // On Mirte-247264 the mechanically-open jaw corresponds to NEGATIVE
-            // HMI degrees (URDF gripper_joint < 0). Map 0% closed → +30°,
-            // 100% open → -30°.
-            const OPEN_DEG = -30
-            const CLOSE_DEG = 30
+            // On Mirte-247264 the mechanically-open jaw is NEGATIVE HMI degrees
+            // (URDF gripper_joint < 0): 0% closed → +30°, 100% open → -30°.
+            const OPEN_DEG = GRIPPER_OPEN_DEG
+            const CLOSE_DEG = GRIPPER_CLOSE_DEG
             let percent: number
             let angle: number
             if (action === 'set') {
@@ -425,7 +425,7 @@ export function useVoiceSession(): VoiceSession {
                 direction: action,
                 percent,
                 angle_deg: angle,
-                note: 'gripper range is unverified — angles capped to ±30°',
+                note: `gripper range is unverified — angles capped to ±${GRIPPER_HMI_MAX_DEG}°`,
                 response: res,
               })
             } catch (e) {

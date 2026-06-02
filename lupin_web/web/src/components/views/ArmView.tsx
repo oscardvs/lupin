@@ -1,11 +1,25 @@
-import { Activity, Camera, Compass, Grip, Home, Power, RotateCcw, Square } from 'lucide-react'
+import { Activity, Camera, Compass, Grip, Home, Minus, Plus, Power, RotateCcw, Square } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 
 import { RobotTwin } from '@/components/system/RobotTwin'
 import { ArmCalibrateDialog } from '@/components/widgets/ArmCalibrateDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
+import {
+  ARM_JOINT_LIMITS,
+  ARM_SETTLE_TOL_DEG,
+  GRIPPER_HMI_MAX_DEG,
+  GRIPPER_HMI_MIN_DEG,
+  GRIPPER_JOINT_STATE_NAME,
+  GRIPPER_RANGE_UNVERIFIED,
+  GRIPPER_SETTLE_TOL_DEG,
+  type ArmJointId,
+  armJointStateName,
+  hmiDegToTargetRad,
+  jointStateRadToHmiDeg,
+} from '@/lib/arm'
 import { ESTOP_REASON_LABELS, useEStop } from '@/lib/estop'
 import { useRos, useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
@@ -15,132 +29,75 @@ import {
   LUPIN_SRV,
   MIRTE_SRV,
   ROS_TYPE,
-  type ServoPosition,
+  type JointState,
   type SetServoAngleWithSpeedRequest,
 } from '@/types/ros'
 
-const RAD2DEG = 180 / Math.PI
-const DEG2RAD = Math.PI / 180
+/** The arm power switch — orchestrates servo torque + the HW-interface command
+ * gate in the backend (gripper_action_bridge `/lupin/arm/set_torque`). NOT the
+ * raw `enable_all_servos`: that only toggles torque and leaves the HW interface
+ * re-asserting its setpoint, which is the enable/disable lurch we fixed. */
+const ARM_TORQUE_SERVICE = '/lupin/arm/set_torque'
 
-// The gripper readback is on a DIFFERENT scale than the gripper slider:
-// gripper_action_bridge maps the HMI ±30° window LINEARLY onto the URDF
-// gripper_joint range [-0.20, +0.25] rad. A raw rad→deg of the joint angle
-// (what every other joint uses) would therefore never converge to the
-// commanded ±30° "target" — current would read ~[-11.5,+14.3]° forever.
-// Mirror the bridge's map in reverse so the gripper "current" is shown back
-// in the same ±30° HMI window. Exact in sim (arm_sim_shim republishes the
-// gripper_joint angle 1:1); on hardware the vendor servo .angle frame still
-// needs the live tuning pass the "range unverified" badge already flags.
-// KEEP IN SYNC with gripper_action_bridge.py GRIPPER_* constants.
-const GRIPPER_HMI_MIN_DEG = -30
-const GRIPPER_HMI_MAX_DEG = 30
-const GRIPPER_URDF_MIN_RAD = -0.2
-const GRIPPER_URDF_MAX_RAD = 0.25
-function gripperRadToHmiDeg(rad: number): number {
-  const ratio = (rad - GRIPPER_URDF_MIN_RAD) / (GRIPPER_URDF_MAX_RAD - GRIPPER_URDF_MIN_RAD)
-  return GRIPPER_HMI_MIN_DEG + ratio * (GRIPPER_HMI_MAX_DEG - GRIPPER_HMI_MIN_DEG)
-}
-function gripperHmiDegToRad(deg: number): number {
-  const clamped = Math.max(GRIPPER_HMI_MIN_DEG, Math.min(GRIPPER_HMI_MAX_DEG, deg))
-  const ratio = (clamped - GRIPPER_HMI_MIN_DEG) / (GRIPPER_HMI_MAX_DEG - GRIPPER_HMI_MIN_DEG)
-  return GRIPPER_URDF_MIN_RAD + ratio * (GRIPPER_URDF_MAX_RAD - GRIPPER_URDF_MIN_RAD)
-}
-// Joint readback (ServoPosition.angle, rad) → the HMI-degree scale the
-// slider uses. Gripper goes through the bridge's linear map; every other
-// joint is a straight rad→deg.
-function servoAngleToHmiDeg(jointId: string, rad: number): number {
-  return jointId === 'gripper' ? gripperRadToHmiDeg(rad) : rad * RAD2DEG
-}
+type JointPiece = ArmJointId | 'gripper'
 
 interface ArmJointSpec {
-  /** Servo name as it appears in `/io/servo/hiwonder/<id>/...`. */
-  id: string
+  /** Joint id as it appears in `/lupin/arm/<id>/set_angle_with_speed`. */
+  id: JointPiece
   label: string
   hint: string
   code: string
   Icon: typeof Camera
-  /** Min / max angle in degrees. URDF declares ±π/2 for the four arm servos. */
+  /** Command window in degrees — from the shared single-source-of-truth lib/arm. */
   minDeg: number
   maxDeg: number
-  /**
-   * If true, render a loud magenta "RANGE UNVERIFIED" badge. Used for joints
-   * (currently the gripper) where the safe servo-angle limits haven't been
-   * confirmed against the real robot — see the comment block above
-   * `ARM_JOINTS` for the verification recipe.
-   */
+  /** Loud magenta badge for a joint whose safe range isn't confirmed on the
+   * real robot yet (currently the gripper). */
   unverified?: boolean
 }
 
-// Gripper sends through /lupin/gripper/set_angle_with_speed (gripper_action_bridge),
-// NOT the raw Hiwonder service. On hardware the vendor mirte_master_arm_control
-// HW interface treats any external servo motion as "moved by hand / by gravity"
-// and re-asserts its own commanded position on every 100 ms tick — so a direct
-// Hiwonder call would visibly move the jaw and then snap it back to the stale
-// GripperActionController setpoint. The bridge forwards as a GripperCommand
-// action goal so the controller's commanded state matches the HMI request.
-//
-// HMI degrees are mapped linearly to the URDF gripper_joint range
-// [-0.20, 0.25] rad inside the bridge — the ±30° HMI window is the
-// "range unverified" guess pending a live tuning pass.
-//
-// To verify range on a live robot:
-//   ros2 service call /lupin/gripper/set_angle_with_speed \
-//     mirte_msgs/srv/SetServoAngleWithSpeed "{angle: 0, rate: 30, degrees: true}"
-// Then jog by ±5° at a time until the jaw hits its mechanical stops; record
-// those as the new minDeg / maxDeg here and drop the `unverified` flag.
-const ARM_JOINTS: ArmJointSpec[] = [
-  {
-    id: 'shoulder_pan',
-    label: 'Shoulder pan',
-    hint: 'base yaw',
-    code: 'J01',
-    Icon: RotateCcw,
-    minDeg: -90,
-    maxDeg: 90,
-  },
-  {
-    id: 'shoulder_lift',
-    label: 'Shoulder lift',
-    hint: 'lift segment 1',
-    code: 'J02',
-    Icon: RotateCcw,
-    minDeg: -90,
-    maxDeg: 90,
-  },
-  {
-    id: 'elbow',
-    label: 'Elbow',
-    hint: 'bend segment 2',
-    code: 'J03',
-    Icon: RotateCcw,
-    minDeg: -90,
-    maxDeg: 90,
-  },
-  {
-    id: 'wrist',
-    label: 'Wrist · gripper-cam tilt',
-    hint: 'tilts the gripper camera',
-    code: 'J04',
-    Icon: Camera,
-    minDeg: -90,
-    maxDeg: 90,
-  },
+// Built from the shared limit table (lib/arm) so the slider windows can never
+// drift from the backend clamp + the voice tools. The arm joint windows are the
+// real asymmetric servo limits intersected with the ±90° envelope; the gripper
+// keeps its conservative ±30° window pending the live tuning pass.
+const ARM_JOINT_SPECS: ArmJointSpec[] = [
+  { id: 'shoulder_pan', label: 'Shoulder pan', hint: 'base yaw', code: 'J01', Icon: RotateCcw, ...ARM_JOINT_LIMITS.shoulder_pan },
+  { id: 'shoulder_lift', label: 'Shoulder lift', hint: 'lift segment 1', code: 'J02', Icon: RotateCcw, ...ARM_JOINT_LIMITS.shoulder_lift },
+  { id: 'elbow', label: 'Elbow', hint: 'bend segment 2', code: 'J03', Icon: RotateCcw, ...ARM_JOINT_LIMITS.elbow },
+  { id: 'wrist', label: 'Wrist · gripper-cam tilt', hint: 'tilts the gripper camera', code: 'J04', Icon: Camera, ...ARM_JOINT_LIMITS.wrist },
   {
     id: 'gripper',
     label: 'Gripper · jaw',
-    hint: 'open / close — range unverified, tune on robot',
+    hint: 'open (−) / close (+) — range unverified, tune on robot',
     code: 'J05',
     Icon: Grip,
-    minDeg: -30,
-    maxDeg: 30,
-    unverified: true,
+    minDeg: GRIPPER_HMI_MIN_DEG,
+    maxDeg: GRIPPER_HMI_MAX_DEG,
+    unverified: GRIPPER_RANGE_UNVERIFIED,
   },
 ]
 
+function jointStateName(id: JointPiece): string {
+  return id === 'gripper' ? GRIPPER_JOINT_STATE_NAME : armJointStateName(id)
+}
+
+function settleTol(id: JointPiece): number {
+  return id === 'gripper' ? GRIPPER_SETTLE_TOL_DEG : ARM_SETTLE_TOL_DEG
+}
+
+function humanizeError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  if (/not connected/i.test(msg)) return 'rosbridge disconnected'
+  if (/not ready/i.test(msg)) return 'rosbridge not ready'
+  return msg
+}
+
 type CallStatus = 'idle' | 'sending' | 'ok' | 'error'
+type TorqueState = boolean | 'unknown'
 
 export function ArmView() {
-  const [{ armServoNamespace, armRateDegPerSec }, updateSettings] = useSettings()
+  const [{ armServoNamespace: _ns, armRateDegPerSec, jointStatesTopic }, updateSettings] = useSettings()
+  void _ns // namespace no longer used for commands — kept in settings for the calibrate dialog
   const {
     active: estopActive,
     reason: estopReason,
@@ -148,31 +105,53 @@ export function ArmView() {
   } = useEStop()
   const { callService, status: rosStatus } = useRos()
 
+  // Torque is the arm power state. 'unknown' on mount/reconnect — the arm boots
+  // with torque ON (HW-interface `enable` defaults true), so 'unknown' does NOT
+  // block commands; only an explicit Disable does.
+  const [torque, setTorque] = useState<TorqueState>('unknown')
   const [enableStatus, setEnableStatus] = useState<CallStatus>('idle')
   const [enableError, setEnableError] = useState<string | null>(null)
   const [initStatus, setInitStatus] = useState<CallStatus>('idle')
   const [initError, setInitError] = useState<string | null>(null)
   const [calibOpen, setCalibOpen] = useState(false)
+  // Rate slider: track locally during drag, persist only on release so we don't
+  // write localStorage on every drag tick.
+  const [rateLocal, setRateLocal] = useState(armRateDegPerSec)
 
-  const blocked = estopActive || rosStatus !== 'connected'
+  const connBlocked = estopActive || rosStatus !== 'connected'
+  const armDisabled = torque === false
+  // Sliders + Home are gated by connectivity/e-stop AND by an explicitly
+  // disabled arm — commanding a limp arm just queues a no-op that looks live.
+  const controlsBlocked = connBlocked || armDisabled
+  const blockReason = estopActive
+    ? 'E-stop engaged — arm commands disabled'
+    : rosStatus !== 'connected'
+      ? 'rosbridge disconnected — arm commands disabled'
+      : armDisabled
+        ? 'arm torque disabled — press Enable to energise'
+        : null
 
-  const enableAll = useCallback(
+  const setTorqueCmd = useCallback(
     async (enable: boolean) => {
       setEnableStatus('sending')
       setEnableError(null)
       try {
-        await callService<{ data: boolean }, { success: boolean; message?: string }>(
-          `${armServoNamespace}/enable_all_servos`,
+        const res = await callService<{ data: boolean }, { success: boolean; message?: string }>(
+          ARM_TORQUE_SERVICE,
           MIRTE_SRV.SetBool,
           { data: enable },
         )
+        if (res?.success === false) throw new Error(res.message || 'torque command rejected')
+        setTorque(enable)
         setEnableStatus('ok')
       } catch (e) {
         setEnableStatus('error')
-        setEnableError(e instanceof Error ? e.message : String(e))
+        setEnableError(humanizeError(e))
+        // Leave torque state unknown — we genuinely don't know what happened.
+        setTorque('unknown')
       }
     },
-    [callService, armServoNamespace],
+    [callService],
   )
 
   const goToSafePose = useCallback(async () => {
@@ -180,11 +159,7 @@ export function ArmView() {
     setInitError(null)
     try {
       // Drive to the SAME measured safe rest pose the robot uses on boot
-      // (auto_home → /lupin/arm/preset {home}) and that the voice agent
-      // uses, so "go to a known pose" means one thing everywhere. The home
-      // tuple is owned by arm_preset_server — never duplicated here. We do
-      // NOT snap the target thumbs (home is not the zero pose); the live
-      // ghost-bar readback tracks the move instead.
+      // (auto_home → /lupin/arm/preset {home}) and that the voice agent uses.
       const res = await callService<{ name: string }, { success: boolean; message?: string }>(
         '/lupin/arm/preset',
         LUPIN_SRV.SetArmPreset,
@@ -194,7 +169,7 @@ export function ArmView() {
       setInitStatus('ok')
     } catch (e) {
       setInitStatus('error')
-      setInitError(e instanceof Error ? e.message : String(e))
+      setInitError(humanizeError(e))
     }
   }, [callService])
 
@@ -237,7 +212,7 @@ export function ArmView() {
         <RobotTwin className="absolute inset-0" />
       </div>
 
-      {/* arm console controls — enable / home / rate */}
+      {/* arm console controls — torque toggle / home / rate */}
       <div className="reticle relative flex flex-col gap-3 rounded-sm border border-hairline bg-card/60 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5 sm:px-5 sm:py-4">
         <span className="reticle-bl" aria-hidden />
         <span className="reticle-br" aria-hidden />
@@ -245,32 +220,50 @@ export function ArmView() {
         <div className="flex items-baseline gap-2">
           <span className="tag tag-strong">arm console</span>
           <span className="tag tag-accent">PNL-ARM-01</span>
+          {torque === false ? (
+            <span className="tag border border-destructive/60 bg-destructive/15 font-semibold text-destructive">
+              ARM LIMP
+            </span>
+          ) : torque === true ? (
+            <span className="tag text-primary">torque on</span>
+          ) : (
+            <span className="tag text-muted-foreground" title="The arm boots energised; press Enable/Disable to set a known state.">
+              torque ?
+            </span>
+          )}
         </div>
 
+        {/* Enable / Disable as a segmented toggle so the active state is legible. */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => enableAll(true)}
-            disabled={blocked || enableStatus === 'sending'}
-          >
-            <Power className="mr-2 h-4 w-4 text-primary" />
-            Enable
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => enableAll(false)}
-            disabled={blocked || enableStatus === 'sending'}
-          >
-            <Power className="mr-2 h-4 w-4 text-muted-foreground" />
-            Disable
-          </Button>
+          <div className="inline-flex overflow-hidden rounded-sm border border-hairline" role="group" aria-label="Arm torque">
+            <Button
+              variant={torque === true ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-none border-0"
+              onClick={() => setTorqueCmd(true)}
+              disabled={connBlocked || enableStatus === 'sending'}
+              aria-pressed={torque === true}
+            >
+              <Power className={cn('mr-2 h-4 w-4', torque === true ? '' : 'text-primary')} />
+              Enable
+            </Button>
+            <Button
+              variant={torque === false ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-none border-0 border-l border-hairline"
+              onClick={() => setTorqueCmd(false)}
+              disabled={connBlocked || enableStatus === 'sending'}
+              aria-pressed={torque === false}
+            >
+              <Power className={cn('mr-2 h-4 w-4', torque === false ? '' : 'text-muted-foreground')} />
+              Disable
+            </Button>
+          </div>
           <Button
             variant="outline"
             size="sm"
             onClick={goToSafePose}
-            disabled={blocked || initStatus === 'sending'}
+            disabled={controlsBlocked || initStatus === 'sending'}
             title="Drive the arm to the measured safe rest pose (same as boot auto-home) via JTC over ~3s"
           >
             <Home className="mr-2 h-4 w-4" />
@@ -280,16 +273,16 @@ export function ArmView() {
             variant="outline"
             size="sm"
             onClick={() => setCalibOpen(true)}
-            disabled={blocked}
+            disabled={connBlocked}
             title="Hiwonder zero-offset calibration (operator-in-the-loop, hardware only)"
           >
             <Compass className="mr-2 h-4 w-4" />
             Calibrate…
           </Button>
           {enableStatus === 'error' && enableError ? (
-            <span className="tag text-destructive">enable failed: {enableError}</span>
-          ) : enableStatus === 'ok' ? (
-            <span className="tag text-primary">enable ack</span>
+            <span className="tag text-destructive" title={enableError}>torque failed: {enableError}</span>
+          ) : enableStatus === 'sending' ? (
+            <span className="tag">torque…</span>
           ) : null}
           {initStatus === 'sending' ? (
             <span className="tag">home sending…</span>
@@ -301,38 +294,49 @@ export function ArmView() {
         </div>
 
         <div className="flex flex-1 items-center gap-3 sm:min-w-[18rem]">
-          <span className="tag shrink-0">rate</span>
+          <span className="tag shrink-0" title="Slew rate for arm joints. Ignored by the gripper (it uses a force-limited grasp).">rate</span>
           <Slider
             min={5}
             max={180}
             step={5}
-            value={[armRateDegPerSec]}
-            onValueChange={(v) => updateSettings({ armRateDegPerSec: v[0] })}
+            value={[rateLocal]}
+            onValueChange={(v) => setRateLocal(v[0])}
+            onValueCommit={(v) => updateSettings({ armRateDegPerSec: v[0] })}
             className="flex-1"
+            aria-label="Arm slew rate, degrees per second"
           />
           <div className="flex w-24 shrink-0 items-baseline justify-end gap-1">
-            <span className="ticker text-base text-foreground">
-              {armRateDegPerSec.toFixed(0)}
-            </span>
+            <span className="ticker text-base text-foreground">{rateLocal.toFixed(0)}</span>
             <span className="tag">°/s</span>
           </div>
         </div>
       </div>
 
+      {/* block-reason status line (screen-reader live + visible) */}
+      {blockReason ? (
+        <div
+          className="rounded-sm border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning"
+          role="status"
+          aria-live="polite"
+        >
+          {blockReason}
+        </div>
+      ) : null}
+
       {/* per-joint sliders */}
       <div
         className={cn(
           'grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2',
-          blocked && 'pointer-events-none opacity-50',
+          controlsBlocked && 'opacity-50',
         )}
       >
-        {ARM_JOINTS.map((joint) => (
+        {ARM_JOINT_SPECS.map((joint) => (
           <ServoSlider
             key={joint.id}
             spec={joint}
-            namespace={armServoNamespace}
+            jointStatesTopic={jointStatesTopic}
             rateDegPerSec={armRateDegPerSec}
-            disabled={blocked}
+            disabled={controlsBlocked}
           />
         ))}
       </div>
@@ -344,7 +348,7 @@ export function ArmView() {
           /lupin/arm/&lt;joint&gt;/set_angle_with_speed · /lupin/gripper/set_angle_with_speed
         </span>
         <span className="tag">·</span>
-        <span className="ticker">on release</span>
+        <span className="ticker">commit on release · status from /joint_states</span>
       </div>
 
       <ArmCalibrateDialog open={calibOpen} onOpenChange={setCalibOpen} />
@@ -354,54 +358,76 @@ export function ArmView() {
 
 interface ServoSliderProps {
   spec: ArmJointSpec
-  namespace: string
+  jointStatesTopic: string
   rateDegPerSec: number
   disabled: boolean
 }
 
-function ServoSlider({ spec, namespace, rateDegPerSec, disabled }: ServoSliderProps) {
-  const positionTopic = `${namespace}/${spec.id}/position`
-  // All slider commands go through the lupin command bridge so the
-  // JointTrajectoryController / GripperActionController stay aligned with
-  // the HMI. Routing arm joints to the raw Hiwonder service caused the
-  // vendor HW interface to reassert its own commanded position on the
-  // next 10 Hz tick, snapping the joint back mid-motion.
+interface LastSend {
+  target: number
+  at: number
+  /** Expected time-to-arrive (ms) used to flip "moving"→"stalled". */
+  expectedMs: number
+}
+
+function ServoSlider({ spec, jointStatesTopic, rateDegPerSec, disabled }: ServoSliderProps) {
+  // Command path: all slider commands go through the lupin command bridge so
+  // the JTC / GripperActionController stay aligned with the HMI.
   const setAngleService =
     spec.id === 'gripper'
       ? '/lupin/gripper/set_angle_with_speed'
       : `/lupin/arm/${spec.id}/set_angle_with_speed`
 
-  // Record arrival time of each ServoPosition so we can flag a frozen feed
-  // (rosbridge silent-wedge / lazy-publisher) instead of showing the last
-  // angle as if it were live. useThrottledRender(8) re-evaluates freshness
-  // at 8 Hz, so no separate interval is needed (cf. RobotTwin's stale tag).
+  // Readback comes from /joint_states — the SAME source the controllers and the
+  // backend command path use. (Previously this subscribed to the raw vendor
+  // /io/servo/hiwonder/<id>/position topic, a different frame that could read
+  // "—" when the lazy publisher slept even though commands still worked.)
+  const jsName = jointStateName(spec.id)
   const lastMsgRef = useRef(0)
-  const positionRef = useTopic<ServoPosition>(positionTopic, ROS_TYPE.ServoPosition, {
-    onMessage: () => {
-      lastMsgRef.current = performance.now()
+  const angleRef = useRef<number | null>(null)
+  const jsRef = useTopic<JointState>(jointStatesTopic, ROS_TYPE.JointState, {
+    onMessage: (msg) => {
+      const i = msg.name.indexOf(jsName)
+      if (i >= 0 && i < msg.position.length) {
+        angleRef.current = msg.position[i]
+        lastMsgRef.current = performance.now()
+      }
     },
   })
+  void jsRef
   useThrottledRender(8)
 
   const { callService } = useRos()
 
   const [target, setTarget] = useState(0)
-  const [lastSent, setLastSent] = useState<number | null>(null)
-  const [status, setStatus] = useState<CallStatus>('idle')
-  const [errMsg, setErrMsg] = useState<string | null>(null)
+  const [lastSend, setLastSend] = useState<LastSend | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
   const inFlightRef = useRef(0)
+
+  const currentRad = angleRef.current
+  const currentDeg = currentRad === null ? null : jointStateRadToHmiDeg(spec.id, currentRad)
+  const currentDegRef = useRef<number | null>(null)
+  currentDegRef.current = currentDeg
+  // Stale once /joint_states stops; >2 s without an update means not live.
+  const fresh = currentRad !== null && performance.now() - lastMsgRef.current < 2000
 
   const send = useCallback(
     async (angleDeg: number) => {
       const id = ++inFlightRef.current
-      setStatus('sending')
-      setErrMsg(null)
-      // On a failed/rejected command, snap the thumb back to the live
-      // readback so the slider never sits at a pose that was never
-      // commanded. No auto-retry — the operator re-commits to retry.
+      setSendError(null)
+      const startDeg = currentDegRef.current ?? angleDeg
+      const disp = Math.abs(angleDeg - startDeg)
+      // Gripper time is force/effort driven (rate is ignored by GripperCommand),
+      // so use a fixed generous window. Arm joints scale by the slew rate.
+      const expectedMs =
+        spec.id === 'gripper'
+          ? 2500
+          : Math.max(450, (disp / Math.max(1, rateDegPerSec)) * 1000 + 900)
+      setLastSend({ target: angleDeg, at: performance.now(), expectedMs })
       const revertToLive = () => {
-        const live = positionRef.current?.angle
-        if (live != null) setTarget(Math.round(servoAngleToHmiDeg(spec.id, live)))
+        // Only snap back to the readback when it's actually live — reverting to
+        // a frozen value would move the thumb to a stale pose at the worst time.
+        if (fresh && currentDegRef.current != null) setTarget(Math.round(currentDegRef.current))
       }
       try {
         const res = await callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
@@ -409,44 +435,49 @@ function ServoSlider({ spec, namespace, rateDegPerSec, disabled }: ServoSliderPr
           MIRTE_SRV.SetServoAngleWithSpeed,
           { angle: angleDeg, rate: rateDegPerSec, degrees: true },
         )
-        if (id !== inFlightRef.current) return // a newer call superseded us
+        if (id !== inFlightRef.current) return // superseded by a newer send
         if (res?.status === false) {
-          // RPC succeeded but the bridge rejected the command (e.g.
-          // /joint_states not yet seen, so the joint is unseeded).
-          setStatus('error')
-          setErrMsg('rejected by bridge')
+          setSendError('rejected by bridge — joint not seeded yet (no /joint_states)')
           revertToLive()
-          return
         }
-        setLastSent(angleDeg)
-        setStatus('ok')
       } catch (e) {
         if (id !== inFlightRef.current) return
-        setStatus('error')
-        setErrMsg(e instanceof Error ? e.message : String(e))
+        setSendError(humanizeError(e))
         revertToLive()
       }
     },
-    [callService, setAngleService, rateDegPerSec, spec.id],
+    [callService, setAngleService, rateDegPerSec, spec.id, fresh],
   )
 
-  const currentRad = positionRef.current?.angle ?? null
-  // Readback mapped onto the same HMI-degree scale as "target" so the two
-  // converge (gripper goes through the bridge's linear map — see
-  // servoAngleToHmiDeg).
-  const currentDeg = currentRad === null ? null : servoAngleToHmiDeg(spec.id, currentRad)
-  // Stale once the feed stops; /position should update at the servo poll
-  // rate, so >2 s without a message means the readout is no longer live.
-  const fresh = currentRad !== null && performance.now() - lastMsgRef.current < 2000
-  // Show the radians the bridge actually commands. For the gripper that is
-  // the linear ±30°→[-0.20,+0.25] map, not target×DEG2RAD.
-  const targetRad = spec.id === 'gripper' ? gripperHmiDegToRad(target) : target * DEG2RAD
-  const range = spec.maxDeg - spec.minDeg
+  const commit = useCallback(
+    (deg: number) => {
+      const clamped = Math.max(spec.minDeg, Math.min(spec.maxDeg, deg))
+      setTarget(clamped)
+      void send(clamped)
+    },
+    [send, spec.minDeg, spec.maxDeg],
+  )
 
+  const targetRad = hmiDegToTargetRad(spec.id, target)
+  const range = spec.maxDeg - spec.minDeg
   const currentPct =
     currentDeg === null
       ? null
       : ((Math.max(spec.minDeg, Math.min(spec.maxDeg, currentDeg)) - spec.minDeg) / range) * 100
+
+  // Status is DERIVED from /joint_states convergence — "ack" no longer means
+  // merely "RPC dispatched". moving → settled when the joint arrives; stalled
+  // if it never converges within the expected travel time (surfaces silent
+  // servo rejects + Hiwonder thermal/effort stalls).
+  const tol = settleTol(spec.id)
+  let phase: 'idle' | 'moving' | 'settled' | 'stalled' | 'error' = 'idle'
+  if (sendError) phase = 'error'
+  else if (lastSend) {
+    const converged = fresh && currentDeg !== null && Math.abs(currentDeg - lastSend.target) <= tol
+    if (converged) phase = 'settled'
+    else if (performance.now() - lastSend.at > lastSend.expectedMs) phase = 'stalled'
+    else phase = 'moving'
+  }
 
   return (
     <Card className="flex flex-col">
@@ -479,7 +510,7 @@ function ServoSlider({ spec, namespace, rateDegPerSec, disabled }: ServoSliderPr
               {currentDeg === null ? '—' : `${currentDeg >= 0 ? '+' : ''}${currentDeg.toFixed(1)}°`}
             </span>
             {currentDeg !== null && !fresh ? (
-              <span className="tag text-warning" title="No position update in >2s — readout may be stale">
+              <span className="tag text-warning" title="No /joint_states update in >2s — readout may be stale">
                 ○ stale
               </span>
             ) : null}
@@ -509,35 +540,98 @@ function ServoSlider({ spec, namespace, rateDegPerSec, disabled }: ServoSliderPr
             step={1}
             value={[target]}
             onValueChange={(v) => setTarget(v[0])}
-            onValueCommit={(v) => {
-              setTarget(v[0])
-              void send(v[0])
-            }}
+            onValueCommit={(v) => commit(v[0])}
             disabled={disabled}
+            aria-label={`${spec.label} target angle, degrees`}
           />
         </div>
 
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span className="tag">{spec.minDeg}°</span>
-          <div className="flex items-center gap-2">
-            {status === 'sending' ? (
-              <span className="tag">sending…</span>
-            ) : status === 'ok' && lastSent !== null ? (
-              <span className="tag text-primary">
-                ack · {lastSent >= 0 ? '+' : ''}
-                {lastSent.toFixed(1)}°
-              </span>
-            ) : status === 'error' ? (
-              <span className="tag text-destructive" title={errMsg ?? undefined}>
-                send failed
-              </span>
-            ) : (
-              <span className="tag">idle</span>
-            )}
-          </div>
-          <span className="tag">+{spec.maxDeg}°</span>
+        {/* Fine control: nudge ±1° and exact numeric entry (matters for the
+            wrist camera-tilt onto an AprilTag — 1° over the slider's range is
+            otherwise the finest reachable step). */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            disabled={disabled || target <= spec.minDeg}
+            onClick={() => commit(target - 1)}
+            aria-label={`Nudge ${spec.label} down 1 degree`}
+          >
+            <Minus className="h-3.5 w-3.5" />
+          </Button>
+          <Input
+            type="number"
+            inputMode="decimal"
+            step={1}
+            min={spec.minDeg}
+            max={spec.maxDeg}
+            value={Number.isFinite(target) ? target : 0}
+            disabled={disabled}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              if (!Number.isNaN(v)) setTarget(v)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit(target)
+            }}
+            onBlur={() => commit(target)}
+            className="h-7 w-20 text-center text-xs"
+            aria-label={`${spec.label} exact target, degrees`}
+          />
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            disabled={disabled || target >= spec.maxDeg}
+            onClick={() => commit(target + 1)}
+            aria-label={`Nudge ${spec.label} up 1 degree`}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+          <span className="tag">°</span>
+          <span className="ml-auto flex items-center gap-2">
+            <span className="tag">{spec.minDeg}°</span>
+            <StatusBadge phase={phase} target={lastSend?.target ?? null} errMsg={sendError} />
+            <span className="tag">+{spec.maxDeg}°</span>
+          </span>
         </div>
       </CardContent>
     </Card>
   )
+}
+
+function StatusBadge({
+  phase,
+  target,
+  errMsg,
+}: {
+  phase: 'idle' | 'moving' | 'settled' | 'stalled' | 'error'
+  target: number | null
+  errMsg: string | null
+}) {
+  switch (phase) {
+    case 'moving':
+      return <span className="tag text-primary/90">moving…</span>
+    case 'settled':
+      return (
+        <span className="tag text-primary">
+          settled{target !== null ? ` · ${target >= 0 ? '+' : ''}${target.toFixed(0)}°` : ''}
+        </span>
+      )
+    case 'stalled':
+      return (
+        <span className="tag text-warning" title="Commanded but the joint did not reach the target in time — servo reject, thermal/effort stall, or torque off">
+          ⚠ stalled
+        </span>
+      )
+    case 'error':
+      return (
+        <span className="tag text-destructive" title={errMsg ?? undefined}>
+          send failed
+        </span>
+      )
+    default:
+      return <span className="tag">idle</span>
+  }
 }

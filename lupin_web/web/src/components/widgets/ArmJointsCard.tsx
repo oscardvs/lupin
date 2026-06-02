@@ -1,13 +1,12 @@
 import { useRef } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { RAD2DEG } from '@/lib/arm'
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useThrottledRender } from '@/lib/throttle'
 import { cn } from '@/lib/utils'
 import { ROS_TYPE, type JointState } from '@/types/ros'
-
-const RAD2DEG = 180 / Math.PI
 
 // MIRTE master arm = 5-DOF Hiwonder + gripper. Joint names come from the
 // vendor URDF; they don't share a common prefix, so match by membership.
@@ -54,7 +53,11 @@ export function ArmJointsCard({ className }: { className?: string } = {}) {
           ) : null}
           <span className={cn('tag tag-accent', stale ? 'ml-2' : 'ml-auto')}>PNL-ARM-01</span>
         </CardTitle>
-        <CardDescription>{jointStatesTopic}</CardDescription>
+        {/* Raw controller-frame diagnostic: degrees are a straight rad→deg of
+            /joint_states (NOT the command scale the Arm page sliders use — the
+            gripper especially reads differently because the slider maps a ±30°
+            HMI window onto the URDF gripper_joint range). */}
+        <CardDescription>raw /joint_states · controller frame · {jointStatesTopic}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 text-sm">
         {arm.length === 0 ? (
@@ -68,7 +71,7 @@ export function ArmJointsCard({ className }: { className?: string } = {}) {
                 <div
                   className="absolute inset-y-0 left-1/2 rounded-full bg-primary"
                   style={{
-                    transform: `translateX(${j.position >= 0 ? 0 : '-100%'})`,
+                    transform: `translateX(${j.position >= 0 ? '0%' : '-100%'})`,
                     width: `${Math.min(50, (Math.abs(j.position) / Math.PI) * 50)}%`,
                   }}
                 />
