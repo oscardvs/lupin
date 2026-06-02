@@ -24,7 +24,7 @@
 
     <model name="wall_south">
       <static>true</static>
-      <pose>2.4000 -1.3000 1.0000 0 0 0</pose>
+      <pose>2.4000 0.6000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
@@ -40,7 +40,7 @@
     </model>
     <model name="wall_north">
       <static>true</static>
-      <pose>2.4000 11.1000 1.0000 0 0 0</pose>
+      <pose>2.4000 9.2000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>4.4000 0.1000 2.0000</size></box></geometry>
@@ -59,10 +59,10 @@
       <pose>0.2000 4.9000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -75,10 +75,10 @@
       <pose>4.6000 4.9000 1.0000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.1000 12.4000 2.0000</size></box></geometry>
+          <geometry><box><size>0.1000 8.6000 2.0000</size></box></geometry>
           <material>
             <ambient>0.85 0.85 0.85 1</ambient>
             <diffuse>0.90 0.90 0.90 1</diffuse>
@@ -88,13 +88,13 @@
     </model>
     <model name="table_1">
       <static>true</static>
-      <pose>1.2500 0.5875 0.0500 0 0 0</pose>
+      <pose>1.2500 2.0250 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -104,13 +104,13 @@
     </model>
     <model name="table_10">
       <static>true</static>
-      <pose>0.9250 8.4250 0.0500 0 0 0</pose>
+      <pose>0.9250 7.2500 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -120,13 +120,13 @@
     </model>
     <model name="table_11">
       <static>true</static>
-      <pose>2.3250 8.4250 0.0500 0 0 0</pose>
+      <pose>2.3250 7.2500 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -136,13 +136,13 @@
     </model>
     <model name="table_12">
       <static>true</static>
-      <pose>3.5250 8.4250 0.0500 0 0 0</pose>
+      <pose>3.5250 7.2500 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -152,13 +152,13 @@
     </model>
     <model name="table_2">
       <static>true</static>
-      <pose>3.5500 0.5875 0.0500 0 0 0</pose>
+      <pose>3.5500 2.0250 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -168,13 +168,13 @@
     </model>
     <model name="table_3">
       <static>true</static>
-      <pose>1.2500 2.0875 0.0500 0 0 0</pose>
+      <pose>1.2500 3.0250 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -184,13 +184,13 @@
     </model>
     <model name="table_4">
       <static>true</static>
-      <pose>3.5500 2.0875 0.0500 0 0 0</pose>
+      <pose>3.5500 3.0250 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -200,13 +200,13 @@
     </model>
     <model name="table_5">
       <static>true</static>
-      <pose>1.3500 3.5875 0.0500 0 0 0</pose>
+      <pose>1.3500 4.0250 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -216,13 +216,13 @@
     </model>
     <model name="table_6">
       <static>true</static>
-      <pose>3.5500 3.5875 0.0500 0 0 0</pose>
+      <pose>3.5500 4.0250 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>1.1000 0.2500 0.1000</size></box></geometry>
+          <geometry><box><size>1.1000 0.2500 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -232,13 +232,13 @@
     </model>
     <model name="table_7">
       <static>true</static>
-      <pose>0.9250 5.8750 0.0500 0 0 0</pose>
+      <pose>0.9250 5.5500 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -248,13 +248,13 @@
     </model>
     <model name="table_8">
       <static>true</static>
-      <pose>2.3250 5.8750 0.0500 0 0 0</pose>
+      <pose>2.3250 5.5500 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -264,13 +264,13 @@
     </model>
     <model name="table_9">
       <static>true</static>
-      <pose>3.5250 5.8750 0.0500 0 0 0</pose>
+      <pose>3.5250 5.5500 0.0700 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.2500 1.1000 0.1000</size></box></geometry>
+          <geometry><box><size>0.2500 1.1000 0.1400</size></box></geometry>
           <material>
             <ambient>0.45 0.30 0.20 1</ambient>
             <diffuse>0.55 0.38 0.25 1</diffuse>
@@ -280,10 +280,10 @@
     </model>
     <model name="trough_table_0">
       <static>true</static>
-      <pose>1.2500 0.5875 0.1150 0 0 0</pose>
+      <pose>1.2500 2.0250 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>1.0000 0.1500 0.0300</size></box></geometry>
+          <geometry><box><size>1.0000 0.1500 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -293,15 +293,15 @@
     </model>
     <model name="flower_0_red">
       <static>true</static>
-      <pose>0.8500 0.5875 0 0 0 0</pose>
+      <pose>0.8500 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -313,15 +313,15 @@
     </model>
     <model name="flower_1_pink">
       <static>true</static>
-      <pose>1.0100 0.5875 0 0 0 0</pose>
+      <pose>1.0100 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -333,15 +333,15 @@
     </model>
     <model name="flower_2_red">
       <static>true</static>
-      <pose>1.1700 0.5875 0 0 0 0</pose>
+      <pose>1.1700 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -353,15 +353,15 @@
     </model>
     <model name="flower_3_red">
       <static>true</static>
-      <pose>1.3300 0.5875 0 0 0 0</pose>
+      <pose>1.3300 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -373,15 +373,15 @@
     </model>
     <model name="flower_4_white">
       <static>true</static>
-      <pose>1.4900 0.5875 0 0 0 0</pose>
+      <pose>1.4900 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -393,15 +393,15 @@
     </model>
     <model name="flower_5_red">
       <static>true</static>
-      <pose>1.6500 0.5875 0 0 0 0</pose>
+      <pose>1.6500 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -413,10 +413,10 @@
     </model>
     <model name="trough_table_1">
       <static>true</static>
-      <pose>0.9250 8.4250 0.1150 0 0 0</pose>
+      <pose>0.9250 7.2500 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>0.1500 1.0000 0.0300</size></box></geometry>
+          <geometry><box><size>0.1500 1.0000 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -426,15 +426,15 @@
     </model>
     <model name="flower_6_white">
       <static>true</static>
-      <pose>0.9250 8.0250 0 0 0 0</pose>
+      <pose>0.9250 6.8500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -446,15 +446,15 @@
     </model>
     <model name="flower_7_pink">
       <static>true</static>
-      <pose>0.9250 8.1850 0 0 0 0</pose>
+      <pose>0.9250 7.0100 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -466,15 +466,15 @@
     </model>
     <model name="flower_8_white">
       <static>true</static>
-      <pose>0.9250 8.3450 0 0 0 0</pose>
+      <pose>0.9250 7.1700 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -486,15 +486,15 @@
     </model>
     <model name="flower_9_white">
       <static>true</static>
-      <pose>0.9250 8.5050 0 0 0 0</pose>
+      <pose>0.9250 7.3300 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -506,15 +506,15 @@
     </model>
     <model name="flower_10_red">
       <static>true</static>
-      <pose>0.9250 8.6650 0 0 0 0</pose>
+      <pose>0.9250 7.4900 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -526,15 +526,15 @@
     </model>
     <model name="flower_11_white">
       <static>true</static>
-      <pose>0.9250 8.8250 0 0 0 0</pose>
+      <pose>0.9250 7.6500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -546,10 +546,10 @@
     </model>
     <model name="trough_table_2">
       <static>true</static>
-      <pose>2.3250 8.4250 0.1150 0 0 0</pose>
+      <pose>2.3250 7.2500 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>0.1500 1.0000 0.0300</size></box></geometry>
+          <geometry><box><size>0.1500 1.0000 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -559,15 +559,15 @@
     </model>
     <model name="flower_12_pink">
       <static>true</static>
-      <pose>2.3250 8.0250 0 0 0 0</pose>
+      <pose>2.3250 6.8500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -579,15 +579,15 @@
     </model>
     <model name="flower_13_white">
       <static>true</static>
-      <pose>2.3250 8.1850 0 0 0 0</pose>
+      <pose>2.3250 7.0100 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -599,15 +599,15 @@
     </model>
     <model name="flower_14_pink">
       <static>true</static>
-      <pose>2.3250 8.3450 0 0 0 0</pose>
+      <pose>2.3250 7.1700 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -619,15 +619,15 @@
     </model>
     <model name="flower_15_pink">
       <static>true</static>
-      <pose>2.3250 8.5050 0 0 0 0</pose>
+      <pose>2.3250 7.3300 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -639,15 +639,15 @@
     </model>
     <model name="flower_16_red">
       <static>true</static>
-      <pose>2.3250 8.6650 0 0 0 0</pose>
+      <pose>2.3250 7.4900 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -659,15 +659,15 @@
     </model>
     <model name="flower_17_pink">
       <static>true</static>
-      <pose>2.3250 8.8250 0 0 0 0</pose>
+      <pose>2.3250 7.6500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -679,10 +679,10 @@
     </model>
     <model name="trough_table_3">
       <static>true</static>
-      <pose>3.5250 8.4250 0.1150 0 0 0</pose>
+      <pose>3.5250 7.2500 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>0.1500 1.0000 0.0300</size></box></geometry>
+          <geometry><box><size>0.1500 1.0000 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -692,15 +692,15 @@
     </model>
     <model name="flower_18_red">
       <static>true</static>
-      <pose>3.5250 8.0250 0 0 0 0</pose>
+      <pose>3.5250 6.8500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -712,15 +712,15 @@
     </model>
     <model name="flower_19_pink">
       <static>true</static>
-      <pose>3.5250 8.1850 0 0 0 0</pose>
+      <pose>3.5250 7.0100 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -732,15 +732,15 @@
     </model>
     <model name="flower_20_red">
       <static>true</static>
-      <pose>3.5250 8.3450 0 0 0 0</pose>
+      <pose>3.5250 7.1700 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -752,15 +752,15 @@
     </model>
     <model name="flower_21_red">
       <static>true</static>
-      <pose>3.5250 8.5050 0 0 0 0</pose>
+      <pose>3.5250 7.3300 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -772,15 +772,15 @@
     </model>
     <model name="flower_22_white">
       <static>true</static>
-      <pose>3.5250 8.6650 0 0 0 0</pose>
+      <pose>3.5250 7.4900 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -792,15 +792,15 @@
     </model>
     <model name="flower_23_red">
       <static>true</static>
-      <pose>3.5250 8.8250 0 0 0 0</pose>
+      <pose>3.5250 7.6500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -812,7 +812,7 @@
     </model>
     <model name="bug_24">
       <static>true</static>
-      <pose>3.5700 8.4250 0.1450 0 0 0</pose>
+      <pose>3.5700 7.2500 0.1750 0 0 0</pose>
       <link name="link">
         <visual name="visual">
           <geometry><box><size>0.0500 0.0500 0.008</size></box></geometry>
@@ -825,10 +825,10 @@
     </model>
     <model name="trough_table_4">
       <static>true</static>
-      <pose>3.5500 0.5875 0.1150 0 0 0</pose>
+      <pose>3.5500 2.0250 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>1.0000 0.1500 0.0300</size></box></geometry>
+          <geometry><box><size>1.0000 0.1500 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -838,15 +838,15 @@
     </model>
     <model name="flower_25_white">
       <static>true</static>
-      <pose>3.1500 0.5875 0 0 0 0</pose>
+      <pose>3.1500 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -858,15 +858,15 @@
     </model>
     <model name="flower_26_pink">
       <static>true</static>
-      <pose>3.3100 0.5875 0 0 0 0</pose>
+      <pose>3.3100 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -878,15 +878,15 @@
     </model>
     <model name="flower_27_white">
       <static>true</static>
-      <pose>3.4700 0.5875 0 0 0 0</pose>
+      <pose>3.4700 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -898,15 +898,15 @@
     </model>
     <model name="flower_28_white">
       <static>true</static>
-      <pose>3.6300 0.5875 0 0 0 0</pose>
+      <pose>3.6300 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -918,15 +918,15 @@
     </model>
     <model name="flower_29_red">
       <static>true</static>
-      <pose>3.7900 0.5875 0 0 0 0</pose>
+      <pose>3.7900 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -938,15 +938,15 @@
     </model>
     <model name="flower_30_white">
       <static>true</static>
-      <pose>3.9500 0.5875 0 0 0 0</pose>
+      <pose>3.9500 2.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -958,10 +958,10 @@
     </model>
     <model name="trough_table_5">
       <static>true</static>
-      <pose>1.2500 2.0875 0.1150 0 0 0</pose>
+      <pose>1.2500 3.0250 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>1.0000 0.1500 0.0300</size></box></geometry>
+          <geometry><box><size>1.0000 0.1500 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -971,15 +971,15 @@
     </model>
     <model name="flower_31_pink">
       <static>true</static>
-      <pose>0.8500 2.0875 0 0 0 0</pose>
+      <pose>0.8500 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -991,15 +991,15 @@
     </model>
     <model name="flower_32_white">
       <static>true</static>
-      <pose>1.0100 2.0875 0 0 0 0</pose>
+      <pose>1.0100 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1011,15 +1011,15 @@
     </model>
     <model name="flower_33_pink">
       <static>true</static>
-      <pose>1.1700 2.0875 0 0 0 0</pose>
+      <pose>1.1700 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1031,15 +1031,15 @@
     </model>
     <model name="flower_34_pink">
       <static>true</static>
-      <pose>1.3300 2.0875 0 0 0 0</pose>
+      <pose>1.3300 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1051,15 +1051,15 @@
     </model>
     <model name="flower_35_red">
       <static>true</static>
-      <pose>1.4900 2.0875 0 0 0 0</pose>
+      <pose>1.4900 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1071,15 +1071,15 @@
     </model>
     <model name="flower_36_pink">
       <static>true</static>
-      <pose>1.6500 2.0875 0 0 0 0</pose>
+      <pose>1.6500 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1091,10 +1091,10 @@
     </model>
     <model name="trough_table_6">
       <static>true</static>
-      <pose>3.5500 2.0875 0.1150 0 0 0</pose>
+      <pose>3.5500 3.0250 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>1.0000 0.1500 0.0300</size></box></geometry>
+          <geometry><box><size>1.0000 0.1500 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -1104,15 +1104,15 @@
     </model>
     <model name="flower_37_red">
       <static>true</static>
-      <pose>3.1500 2.0875 0 0 0 0</pose>
+      <pose>3.1500 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1124,15 +1124,15 @@
     </model>
     <model name="flower_38_pink">
       <static>true</static>
-      <pose>3.3100 2.0875 0 0 0 0</pose>
+      <pose>3.3100 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1144,15 +1144,15 @@
     </model>
     <model name="flower_39_red">
       <static>true</static>
-      <pose>3.4700 2.0875 0 0 0 0</pose>
+      <pose>3.4700 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1164,15 +1164,15 @@
     </model>
     <model name="flower_40_red">
       <static>true</static>
-      <pose>3.6300 2.0875 0 0 0 0</pose>
+      <pose>3.6300 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1184,15 +1184,15 @@
     </model>
     <model name="flower_41_white">
       <static>true</static>
-      <pose>3.7900 2.0875 0 0 0 0</pose>
+      <pose>3.7900 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1204,15 +1204,15 @@
     </model>
     <model name="flower_42_red">
       <static>true</static>
-      <pose>3.9500 2.0875 0 0 0 0</pose>
+      <pose>3.9500 3.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1224,10 +1224,10 @@
     </model>
     <model name="trough_table_7">
       <static>true</static>
-      <pose>1.3500 3.5875 0.1150 0 0 0</pose>
+      <pose>1.3500 4.0250 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>1.0000 0.1500 0.0300</size></box></geometry>
+          <geometry><box><size>1.0000 0.1500 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -1237,15 +1237,15 @@
     </model>
     <model name="flower_43_white">
       <static>true</static>
-      <pose>0.9500 3.5875 0 0 0 0</pose>
+      <pose>0.9500 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1257,15 +1257,15 @@
     </model>
     <model name="flower_44_pink">
       <static>true</static>
-      <pose>1.1100 3.5875 0 0 0 0</pose>
+      <pose>1.1100 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1277,15 +1277,15 @@
     </model>
     <model name="flower_45_white">
       <static>true</static>
-      <pose>1.2700 3.5875 0 0 0 0</pose>
+      <pose>1.2700 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1297,15 +1297,15 @@
     </model>
     <model name="flower_46_white">
       <static>true</static>
-      <pose>1.4300 3.5875 0 0 0 0</pose>
+      <pose>1.4300 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1317,15 +1317,15 @@
     </model>
     <model name="flower_47_red">
       <static>true</static>
-      <pose>1.5900 3.5875 0 0 0 0</pose>
+      <pose>1.5900 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1337,15 +1337,15 @@
     </model>
     <model name="flower_48_white">
       <static>true</static>
-      <pose>1.7500 3.5875 0 0 0 0</pose>
+      <pose>1.7500 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1357,7 +1357,7 @@
     </model>
     <model name="bug_49">
       <static>true</static>
-      <pose>1.3500 3.6325 0.1450 0 0 0</pose>
+      <pose>1.3500 4.0700 0.1750 0 0 0</pose>
       <link name="link">
         <visual name="visual">
           <geometry><box><size>0.0500 0.0500 0.008</size></box></geometry>
@@ -1370,10 +1370,10 @@
     </model>
     <model name="trough_table_8">
       <static>true</static>
-      <pose>3.5500 3.5875 0.1150 0 0 0</pose>
+      <pose>3.5500 4.0250 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>1.0000 0.1500 0.0300</size></box></geometry>
+          <geometry><box><size>1.0000 0.1500 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -1383,15 +1383,15 @@
     </model>
     <model name="flower_50_pink">
       <static>true</static>
-      <pose>3.1500 3.5875 0 0 0 0</pose>
+      <pose>3.1500 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1403,15 +1403,15 @@
     </model>
     <model name="flower_51_white">
       <static>true</static>
-      <pose>3.3100 3.5875 0 0 0 0</pose>
+      <pose>3.3100 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1423,15 +1423,15 @@
     </model>
     <model name="flower_52_pink">
       <static>true</static>
-      <pose>3.4700 3.5875 0 0 0 0</pose>
+      <pose>3.4700 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1443,15 +1443,15 @@
     </model>
     <model name="flower_53_pink">
       <static>true</static>
-      <pose>3.6300 3.5875 0 0 0 0</pose>
+      <pose>3.6300 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1463,15 +1463,15 @@
     </model>
     <model name="flower_54_red">
       <static>true</static>
-      <pose>3.7900 3.5875 0 0 0 0</pose>
+      <pose>3.7900 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1483,15 +1483,15 @@
     </model>
     <model name="flower_55_pink">
       <static>true</static>
-      <pose>3.9500 3.5875 0 0 0 0</pose>
+      <pose>3.9500 4.0250 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1503,10 +1503,10 @@
     </model>
     <model name="trough_table_9">
       <static>true</static>
-      <pose>0.9250 5.8750 0.1150 0 0 0</pose>
+      <pose>0.9250 5.5500 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>0.1500 1.0000 0.0300</size></box></geometry>
+          <geometry><box><size>0.1500 1.0000 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -1516,15 +1516,15 @@
     </model>
     <model name="flower_56_red">
       <static>true</static>
-      <pose>0.9250 5.4750 0 0 0 0</pose>
+      <pose>0.9250 5.1500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1536,15 +1536,15 @@
     </model>
     <model name="flower_57_pink">
       <static>true</static>
-      <pose>0.9250 5.6350 0 0 0 0</pose>
+      <pose>0.9250 5.3100 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1556,15 +1556,15 @@
     </model>
     <model name="flower_58_red">
       <static>true</static>
-      <pose>0.9250 5.7950 0 0 0 0</pose>
+      <pose>0.9250 5.4700 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1576,15 +1576,15 @@
     </model>
     <model name="flower_59_red">
       <static>true</static>
-      <pose>0.9250 5.9550 0 0 0 0</pose>
+      <pose>0.9250 5.6300 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1596,15 +1596,15 @@
     </model>
     <model name="flower_60_white">
       <static>true</static>
-      <pose>0.9250 6.1150 0 0 0 0</pose>
+      <pose>0.9250 5.7900 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1616,15 +1616,15 @@
     </model>
     <model name="flower_61_red">
       <static>true</static>
-      <pose>0.9250 6.2750 0 0 0 0</pose>
+      <pose>0.9250 5.9500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1636,10 +1636,10 @@
     </model>
     <model name="trough_table_10">
       <static>true</static>
-      <pose>2.3250 5.8750 0.1150 0 0 0</pose>
+      <pose>2.3250 5.5500 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>0.1500 1.0000 0.0300</size></box></geometry>
+          <geometry><box><size>0.1500 1.0000 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -1649,15 +1649,15 @@
     </model>
     <model name="flower_62_white">
       <static>true</static>
-      <pose>2.3250 5.4750 0 0 0 0</pose>
+      <pose>2.3250 5.1500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1669,15 +1669,15 @@
     </model>
     <model name="flower_63_pink">
       <static>true</static>
-      <pose>2.3250 5.6350 0 0 0 0</pose>
+      <pose>2.3250 5.3100 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1689,15 +1689,15 @@
     </model>
     <model name="flower_64_white">
       <static>true</static>
-      <pose>2.3250 5.7950 0 0 0 0</pose>
+      <pose>2.3250 5.4700 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1709,15 +1709,15 @@
     </model>
     <model name="flower_65_white">
       <static>true</static>
-      <pose>2.3250 5.9550 0 0 0 0</pose>
+      <pose>2.3250 5.6300 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1729,15 +1729,15 @@
     </model>
     <model name="flower_66_red">
       <static>true</static>
-      <pose>2.3250 6.1150 0 0 0 0</pose>
+      <pose>2.3250 5.7900 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1749,15 +1749,15 @@
     </model>
     <model name="flower_67_white">
       <static>true</static>
-      <pose>2.3250 6.2750 0 0 0 0</pose>
+      <pose>2.3250 5.9500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1769,10 +1769,10 @@
     </model>
     <model name="trough_table_11">
       <static>true</static>
-      <pose>3.5250 5.8750 0.1150 0 0 0</pose>
+      <pose>3.5250 5.5500 0.1300 0 0 0</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>0.1500 1.0000 0.0300</size></box></geometry>
+          <geometry><box><size>0.1500 1.0000 0.0600</size></box></geometry>
           <material>
             <ambient>0.20 0.12 0.05 1</ambient>
             <diffuse>0.30 0.18 0.08 1</diffuse>
@@ -1782,15 +1782,15 @@
     </model>
     <model name="flower_68_pink">
       <static>true</static>
-      <pose>3.5250 5.4750 0 0 0 0</pose>
+      <pose>3.5250 5.1500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1802,15 +1802,15 @@
     </model>
     <model name="flower_69_white">
       <static>true</static>
-      <pose>3.5250 5.6350 0 0 0 0</pose>
+      <pose>3.5250 5.3100 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.42 0.42 0.42 1</ambient>
@@ -1822,15 +1822,15 @@
     </model>
     <model name="flower_70_pink">
       <static>true</static>
-      <pose>3.5250 5.7950 0 0 0 0</pose>
+      <pose>3.5250 5.4700 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1842,15 +1842,15 @@
     </model>
     <model name="flower_71_pink">
       <static>true</static>
-      <pose>3.5250 5.9550 0 0 0 0</pose>
+      <pose>3.5250 5.6300 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1862,15 +1862,15 @@
     </model>
     <model name="flower_72_red">
       <static>true</static>
-      <pose>3.5250 6.1150 0 0 0 0</pose>
+      <pose>3.5250 5.7900 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.32 0.02 0.15 1</ambient>
@@ -1882,15 +1882,15 @@
     </model>
     <model name="flower_73_pink">
       <static>true</static>
-      <pose>3.5250 6.2750 0 0 0 0</pose>
+      <pose>3.5250 5.9500 0 0 0 0</pose>
       <link name="link">
         <visual name="stem">
-          <pose>0 0 0.1550 0 0 0</pose>
+          <pose>0 0 0.1850 0 0 0</pose>
           <geometry><cylinder><radius>0.009</radius><length>0.0500</length></cylinder></geometry>
           <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
         </visual>
         <visual name="blossom">
-          <pose>0 0 0.1965 0 0 0</pose>
+          <pose>0 0 0.2265 0 0 0</pose>
           <geometry><sphere><radius>0.0300</radius></sphere></geometry>
           <material>
             <ambient>0.40 0.26 0.31 1</ambient>
@@ -1902,7 +1902,7 @@
     </model>
     <model name="bug_74">
       <static>true</static>
-      <pose>3.5700 5.8750 0.1450 0 0 0</pose>
+      <pose>3.5700 5.5500 0.1750 0 0 0</pose>
       <link name="link">
         <visual name="visual">
           <geometry><box><size>0.0500 0.0500 0.008</size></box></geometry>
@@ -1915,7 +1915,7 @@
     </model>
     <model name="apriltag_1">
       <static>true</static>
-      <pose>0.6950 0.4825 0.1000 0 0 3.141593</pose>
+      <pose>0.6950 1.9200 0.1000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -1947,7 +1947,7 @@
     </model>
     <model name="apriltag_2">
       <static>true</static>
-      <pose>0.8000 0.4575 0.1000 0 0 -1.570796</pose>
+      <pose>0.8000 1.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -1979,7 +1979,7 @@
     </model>
     <model name="apriltag_3">
       <static>true</static>
-      <pose>1.7000 0.4575 0.1000 0 0 -1.570796</pose>
+      <pose>1.7000 1.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2011,7 +2011,7 @@
     </model>
     <model name="apriltag_4">
       <static>true</static>
-      <pose>3.0200 1.9575 0.1000 0 0 -1.570796</pose>
+      <pose>3.0200 2.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2043,7 +2043,7 @@
     </model>
     <model name="apriltag_5">
       <static>true</static>
-      <pose>3.0200 3.4575 0.1000 0 0 -1.570796</pose>
+      <pose>3.0200 3.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2075,7 +2075,7 @@
     </model>
     <model name="apriltag_6">
       <static>true</static>
-      <pose>2.4550 6.4050 0.1000 0 0 0.000000</pose>
+      <pose>2.4550 6.0800 0.1000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2107,7 +2107,7 @@
     </model>
     <model name="apriltag_7">
       <static>true</static>
-      <pose>3.1000 0.4575 0.1000 0 0 -1.570796</pose>
+      <pose>3.1000 1.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2139,7 +2139,7 @@
     </model>
     <model name="apriltag_8">
       <static>true</static>
-      <pose>4.0000 0.4575 0.1000 0 0 -1.570796</pose>
+      <pose>4.1050 2.0000 0.1000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2171,7 +2171,7 @@
     </model>
     <model name="apriltag_9">
       <static>true</static>
-      <pose>0.8000 1.9575 0.1000 0 0 -1.570796</pose>
+      <pose>0.8000 2.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2203,7 +2203,7 @@
     </model>
     <model name="apriltag_10">
       <static>true</static>
-      <pose>3.6000 1.9575 0.1000 0 0 -1.570796</pose>
+      <pose>3.6000 2.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2235,7 +2235,7 @@
     </model>
     <model name="apriltag_11">
       <static>true</static>
-      <pose>1.2000 3.4575 0.1000 0 0 -1.570796</pose>
+      <pose>1.2000 3.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2267,7 +2267,7 @@
     </model>
     <model name="apriltag_12">
       <static>true</static>
-      <pose>3.7000 3.4575 0.1000 0 0 -1.570796</pose>
+      <pose>3.7000 3.8950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2299,7 +2299,7 @@
     </model>
     <model name="apriltag_13">
       <static>true</static>
-      <pose>0.9000 5.3200 0.1000 0 0 -1.570796</pose>
+      <pose>0.7950 5.2000 0.1000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2331,7 +2331,7 @@
     </model>
     <model name="apriltag_14">
       <static>true</static>
-      <pose>2.1950 6.1000 0.1000 0 0 3.141593</pose>
+      <pose>2.1950 5.7000 0.1000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2363,7 +2363,7 @@
     </model>
     <model name="apriltag_15">
       <static>true</static>
-      <pose>3.3950 5.3450 0.1000 0 0 3.141593</pose>
+      <pose>3.5000 4.9950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2395,7 +2395,7 @@
     </model>
     <model name="apriltag_16">
       <static>true</static>
-      <pose>1.0000 7.8700 0.1000 0 0 -1.570796</pose>
+      <pose>1.0550 6.9000 0.1000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2427,7 +2427,7 @@
     </model>
     <model name="apriltag_17">
       <static>true</static>
-      <pose>2.3000 8.9800 0.1000 0 0 1.570796</pose>
+      <pose>2.1950 7.6000 0.1000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2459,7 +2459,7 @@
     </model>
     <model name="apriltag_18">
       <static>true</static>
-      <pose>3.3950 7.8950 0.1000 0 0 3.141593</pose>
+      <pose>3.5000 6.6950 0.1000 0 0 -1.570796</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2491,7 +2491,7 @@
     </model>
     <model name="apriltag_19">
       <static>true</static>
-      <pose>3.3950 8.8000 0.1000 0 0 3.141593</pose>
+      <pose>3.3950 7.5000 0.1000 0 0 3.141593</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2523,7 +2523,7 @@
     </model>
     <model name="apriltag_20">
       <static>true</static>
-      <pose>1.0550 8.9550 0.1000 0 0 0.000000</pose>
+      <pose>1.0550 7.7800 0.1000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2555,7 +2555,7 @@
     </model>
     <model name="apriltag_21">
       <static>true</static>
-      <pose>2.4550 8.9550 0.1000 0 0 0.000000</pose>
+      <pose>2.4550 7.7800 0.1000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>
@@ -2587,7 +2587,7 @@
     </model>
     <model name="apriltag_22">
       <static>true</static>
-      <pose>3.6550 8.9550 0.1000 0 0 0.000000</pose>
+      <pose>3.6550 7.7800 0.1000 0 0 0.000000</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.0050 0.0400 0.0400</size></box></geometry>

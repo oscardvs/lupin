@@ -44,7 +44,13 @@ DEFAULT_TAG_HEIGHT_M = 0.10        # on the low planter side, near the rim
 # Low planter so the short Mirte arm + gripper camera can actually reach and
 # see the blooms (the real pots are ≤15 cm). The "table" box stands in for the
 # planter body; flowers rise out of the trough on top of it.
-DEFAULT_TABLE_HEIGHT_M = 0.10      # planter body height (was a 0.70 m bench)
+DEFAULT_TABLE_HEIGHT_M = 0.14      # planter body height. MUST exceed the lidar scan
+                                   # plane (~0.107 m = base_link 0 + frame 0.10 + lidar
+                                   # 0.0072) or the costmap never sees the planter and
+                                   # Nav2 drives into it. 0.10 sat 0.7 cm UNDER the beam
+                                   # → invisible → collisions. Raising this also lifts the
+                                   # trough+blooms (see _render_trough); kept as low as the
+                                   # lidar allows so the arm can still reach the blooms.
 DEFAULT_WALL_HEIGHT_M = 2.0
 DEFAULT_WALL_THICKNESS_M = 0.10
 DEFAULT_WALL_MARGIN_M = 0.50       # padding from outer tag/table extent
@@ -334,7 +340,7 @@ _FLOWER_SPECIES_CYCLE = ('red', 'white', 'pink')
 
 
 def _render_trough(name: str, rect: dict[str, float], table_height: float,
-                   *, wall_h: float = 0.03, inset: float = 0.05) -> str:
+                   *, wall_h: float = 0.06, inset: float = 0.05) -> str:
     """A shallow soil-brown planter box on the table top — the flower trough.
 
     Stands in for the laser-cut wooden planter; the blossoms rise out of it.
@@ -420,7 +426,7 @@ def _render_table_planting(
     cluster. Returns (sdf_blocks, next_flower_idx).
     """
     blocks = [_render_trough(f"table_{table_index}", rect, table_height)]
-    top_z = table_height + 0.03  # trough top
+    top_z = table_height + 0.06  # trough top
     dom = _FLOWER_SPECIES_CYCLE[table_index % len(_FLOWER_SPECIES_CYCLE)]
     accents = [s for s in _FLOWER_SPECIES_CYCLE if s != dom]
 
