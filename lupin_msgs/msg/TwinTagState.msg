@@ -35,3 +35,20 @@ builtin_interfaces/Time last_observed
 # the consumer side, but precomputed here so simple consumers don't have
 # to do the time math.
 float32 stale_seconds
+
+# ─── Flower classification (co-located with this tag) ────────────────────
+# Populated when the twin has ingested a KIND_FLOWER observation for this
+# tag id (perception_aggregator fuses the YOLO tulip classifier with the
+# AprilTag). Empty/false until then, so the HMI can show tags before a
+# flower is classified.
+
+# YOLO dominant flower class: "tulip_red" | "tulip_white" | "tulip_pink".
+# Empty string when no flower has been classified at this tag.
+string species
+
+# Confidence [0, 1] for `species`. 0.0 when species is empty.
+float32 species_confidence
+
+# True when the YOLO "bug" anomaly class was seen at this tag. Latest-wins,
+# so it clears on the next clean monitoring pass.
+bool anomaly

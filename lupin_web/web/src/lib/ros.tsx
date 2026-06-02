@@ -137,6 +137,41 @@ function mockServiceResponse(serviceType: string, request: unknown): unknown {
   switch (serviceType) {
     case 'lupin_msgs/srv/GetField':
       return mockTwinField(request as Parameters<typeof mockTwinField>[0])
+    case 'lupin_msgs/srv/CalibrateArm': {
+      // Stateless mock — the dialog's local state drives the wizard; the
+      // service response just has to be shape-correct. Return AWAITING_POSE
+      // for "start", IDLE for everything else, and synthetic diffs for
+      // "commit" so the per-joint table has something to render.
+      const action = (request as { action?: string })?.action ?? ''
+      if (action === 'start') {
+        return {
+          success: true,
+          state: 'AWAITING_POSE',
+          message: '[mock] servos disabled — hand-pose the arm',
+          joint_names: [],
+          offsets_applied: [],
+          diffs_observed: [],
+        }
+      }
+      if (action === 'commit') {
+        return {
+          success: true,
+          state: 'IDLE',
+          message: '[mock] calibration complete',
+          joint_names: ['shoulder_pan', 'shoulder_lift', 'elbow', 'wrist', 'gripper'],
+          offsets_applied: [12, -34, 7, 0, -2],
+          diffs_observed: [288, -816, 168, 0, -48],
+        }
+      }
+      return {
+        success: true,
+        state: 'IDLE',
+        message: `[mock] ${action || 'status'}`,
+        joint_names: [],
+        offsets_applied: [],
+        diffs_observed: [],
+      }
+    }
     default:
       return { success: true }
   }
@@ -185,6 +220,13 @@ export function RosProvider({ children }: { children: ReactNode }) {
           ros,
           name: sub.topicName,
           messageType: sub.msgType,
+          // CBOR is binary, much smaller than rosbridge's default JSON
+          // (especially for arrays — LaserScan, Image headers, OccupancyGrid
+          // costmaps, JointState arrays). roslibjs decodes it transparently;
+          // the only requirement is rosbridge ≥0.11, which Humble ships.
+          // See project_rosbridge_wedge — JSON encode CPU on the Pi is the
+          // single biggest contributor to the wedge.
+          compression: 'cbor',
         })
         sub.topic.subscribe((msg) => {
           sub.callbacks.forEach((cb) => cb(msg))
@@ -289,6 +331,8 @@ export function RosProvider({ children }: { children: ReactNode }) {
             ros: rosRef.current,
             name: topicName,
             messageType: msgType,
+            // Match setupSubscriptionsFor's default — see comment there.
+            compression: 'cbor',
           })
           sub.topic.subscribe((msg) => {
             sub!.callbacks.forEach((c) => c(msg))
@@ -540,11 +584,24 @@ export function useMapPose(mapFrame: string, baseFrame: string): MapPose | null 
     // from the wheel base). /tf_static is also subscribed in case a future
     // refactor anchors mapFrame or baseFrame off a static link — skipping
     // it would silently break that case.
+    //
+    // throttle_rate + compression are the load-shedding levers on this
+    // subscription. /tf can hit 50+ Hz with Nav2 in the loop and the JSON
+    // payload is the single biggest driver of the rosbridge wedge on the
+    // Pi (project_rosbridge_wedge memory). throttle_rate caps to 10 Hz —
+    // plenty for a 100 ms-poll map render — and 'cbor' switches the wire
+    // format to binary so the Pi-side encoder doesn't have to round-trip
+    // floats through JSON.stringify.
     const tfTopic = new ROSLIB.Topic({
       ros, name: '/tf', messageType: 'tf2_msgs/msg/TFMessage',
+      throttle_rate: 100,
+      compression: 'cbor',
     })
+    // /tf_static is latched (transient_local) and rarely updates, so the
+    // throttle is mostly cosmetic — keep cbor for parity with /tf.
     const tfStaticTopic = new ROSLIB.Topic({
       ros, name: '/tf_static', messageType: 'tf2_msgs/msg/TFMessage',
+      compression: 'cbor',
     })
     tfTopic.subscribe(ingest)
     tfStaticTopic.subscribe(ingest)

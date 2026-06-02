@@ -24,6 +24,12 @@
 # dead-man without a custom adapter — LB is the closest button equivalent.
 # Without a dead-man, joy_node's continuous "all zeros" stream would pin
 # priority on twist_mux and starve Nav2 / the web HMI.
+# Scales are POSITIVE: the Mirte-247264 drive inversion was fixed at the source
+# (telemetrix motor p1/p2 + encoder A/B pin-swap, 2026-06-01), so the vendor
+# cmd_vel frame now matches the physical chassis — pushing the stick forward
+# drives forward. The old negative scales that mirrored the (now-default-off)
+# HMI polarityInvertHmi flip have been removed. This also aligns sim, which
+# includes this same file via xbox_teleop.launch.py and never had the flip.
 teleop_twist_joy_node:
   ros__parameters:
     require_enable_button: true

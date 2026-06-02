@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
-// v3 adds voice-assistant fields (Gemini Live). v2 keys are migrated forward —
-// rosbridge URL and topic overrides are preserved; new voice fields fall back
-// to defaults.
-const STORAGE_KEY = 'lupin-hmi-settings/v3'
-const LEGACY_STORAGE_KEYS = ['lupin-hmi-settings/v2']
+// v4: the Mirte-247264 drive inversion is fixed at the source (telemetrix
+// motor p1/p2 + encoder A/B pin-swap), so the HMI no longer compensates —
+// polarityInvertHmi defaults false and any persisted `true` is dropped on
+// migration (see readStored). v3 added voice-assistant fields; v2/v3 keys are
+// migrated forward (rosbridge URL, topic overrides, voice + Gemini key kept).
+const STORAGE_KEY = 'lupin-hmi-settings/v4'
+const LEGACY_STORAGE_KEYS = ['lupin-hmi-settings/v3', 'lupin-hmi-settings/v2']
 
 export interface VoiceNamedLocation {
   x: number
@@ -76,12 +78,28 @@ export interface Settings {
    * way — those are real safety events, not focus changes.
    */
   estopAutoOnFocusLoss: boolean
+  /**
+   * Mirte-247264 wheel polarity calibration. When true, joystick / voice
+   * cmd_vel and map-click goal coordinates are flipped 180° about Z before
+   * publishing, and the rendered map view is rotated 180° to match physical
+   * orientation. The internal Nav2 / SLAM frame is left untouched (it's
+   * already self-consistent — see project_hardware_axis_inversion). Default
+   * false since the drive inversion was fixed at the source (telemetrix
+   * pin-swap, 2026-06-01); set true only against an uncorrected robot.
+   */
+  polarityInvertHmi: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   rosUrl: '',
-  // sim publishes via the controller's unstamped Twist input
-  cmdVelTopic: '/mirte_base_controller/cmd_vel_unstamped',
+  // HMI publishes to twist_mux's "manual" input (priority 50). twist_mux on
+  // the robot (lupin-onboard.service) arbitrates against /cmd_vel_joy
+  // (Xbox, prio 100) and /cmd_vel_auto (Nav2, prio 10), then writes the
+  // winner to /mirte_base_controller/cmd_vel. Bypassing twist_mux by
+  // publishing directly to the controller topic creates a multi-publisher
+  // race against the laptop-side Nav2 — the joystick wins because it
+  // publishes faster, but only by accident.
+  cmdVelTopic: '/cmd_vel_manual',
   cmdVelType: 'geometry_msgs/msg/Twist',
   // The MIRTE telemetrix node publishes IMU on /io/imu/movement/data;
   // the canonical /imu/data has no publisher on the real robot.
@@ -93,10 +111,13 @@ export const DEFAULT_SETTINGS: Settings = {
   // /io/power/power_watcher is what the telemetrix node actually publishes.
   batteryTopic: '/io/power/power_watcher',
   rosoutTopic: '/rosout',
-  // Sim greenhouse_sim publishes the Astra Pro Plus plugin on /camera/image_raw.
-  // Real Mirte: override via Settings → Topics if your camera node uses a
-  // different name (e.g. /camera/color/image_raw on a stock Orbbec stack).
-  cameraTopic: '/camera/image_raw',
+  // Real Mirte: subscribe to the vendor topic directly — lupin-cameras.service
+  // on the robot now publishes here at a low FPS (5 Hz default) by relaunching
+  // the vendor cameras with our params, so there's no separate /lupin/camera
+  // shadow topic to track. See lupin_bringup/config/cameras.yaml for the FPS
+  // and depth/pointcloud toggles. Sim branch overrides this default to the
+  // greenhouse plugin's /camera/image_raw.
+  cameraTopic: '/camera/color/image_raw',
   webVideoServerUrl: '',
   mapTopic: '/map',
   planTopic: '/plan',
@@ -139,6 +160,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   debugPublish: false,
   estopAutoOnFocusLoss: true,
+  polarityInvertHmi: false,
 }
 
 function defaultRosUrl(): string {
@@ -189,7 +211,14 @@ function readStored(): Partial<Settings> {
     if (raw) return JSON.parse(raw) as Partial<Settings>
     for (const legacy of LEGACY_STORAGE_KEYS) {
       const old = localStorage.getItem(legacy)
-      if (old) return JSON.parse(old) as Partial<Settings>
+      if (old) {
+        const parsed = JSON.parse(old) as Partial<Settings>
+        // v4 migration: drive inversion is now fixed at the source, so a
+        // persisted polarityInvertHmi (true on old hardware installs) must not
+        // carry forward — drop it so the v4 default (false) applies.
+        delete parsed.polarityInvertHmi
+        return parsed
+      }
     }
     return {}
   } catch {

@@ -27,13 +27,21 @@ gripper open/close.
 
 Default preset values (radians)
 -------------------------------
-``home``   — all four joints at 0 (the URDF zero pose).
-``tuck``   — arm folded onto the chassis: shoulder_lift up, elbow back so
+``home``   — Mirte-247264's measured safe rest pose (project_arm_servo_thermal_trip).
+             shoulder_lift near 0 = upper arm horizontal forward, wrist rotated
+             -π/2 so the gripper jaw axis lies sideways. Chosen as the auto-home
+             target on boot because at this pose the Hiwonder shoulder_lift
+             servo carries the minimum gravity moment of any URDF-feasible pose
+             we've measured. ``zero`` preserves the old (0,0,0,0) URDF zero
+             pose for code that explicitly wants it.
+``zero``   — All four joints at 0 (the URDF zero pose). Use only when you
+             know you want the literal URDF zero — most operators want ``home``.
+``tuck``   — Arm folded onto the chassis: shoulder_lift up, elbow back so
              the wrist sits over the base footprint. Conservative against
              the URDF ±π/2 limits.
-``pick``   — arm extended forward, wrist level with the table for a
+``pick``   — Arm extended forward, wrist level with the table for a
              top-down approach.
-``place``  — arm extended forward, wrist raised so an item carried in the
+``place``  — Arm extended forward, wrist raised so an item carried in the
              gripper clears table edges.
 
 These are conservative starting points — re-tune on the real robot once
@@ -63,10 +71,15 @@ ARM_JOINT_NAMES: Tuple[str, ...] = (
 
 # All values in radians. Order matches ARM_JOINT_NAMES.
 PRESETS: Dict[str, Tuple[float, float, float, float]] = {
-    'home':  (0.0,  0.0,   0.0,   0.0),
-    'tuck':  (0.0, -1.40,  1.40,  0.0),
-    'pick':  (0.0, -0.60,  0.80, -0.40),
-    'place': (0.0,  0.20,  0.80, -0.40),
+    # Measured 2026-05-20 from /joint_states with arm in its rest pose
+    # (project_arm_servo_thermal_trip). Hiwonder shoulder_lift carries minimum
+    # gravity moment here, so this is the safe pose for auto-home on boot
+    # and any long-duration "park" state.
+    'home':  (0.04, -0.01,  0.01, -1.57),
+    'zero':  (0.0,   0.0,   0.0,   0.0),
+    'tuck':  (0.0,  -1.40,  1.40,  0.0),
+    'pick':  (0.0,  -0.60,  0.80, -0.40),
+    'place': (0.0,   0.20,  0.80, -0.40),
 }
 
 # Time the controller is given to reach each preset. Conservative — slow

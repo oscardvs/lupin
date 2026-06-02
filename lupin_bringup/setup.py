@@ -15,9 +15,12 @@ setup(
         ('share/' + package_name + '/launch',
             glob('launch/*.launch.py') + glob('launch/*.launch.xml')),
         ('share/' + package_name + '/config',
-            glob('config/*.yaml') + glob('config/*.json')),
+            glob('config/*.yaml') + glob('config/*.json') + glob('config/*.xml.in')),
         ('share/' + package_name + '/worlds', glob('worlds/*.world')),
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
+        ('share/' + package_name + '/systemd', glob('systemd/*.service')),
+        ('share/' + package_name + '/scripts', glob('scripts/*.sh')),
+        ('share/' + package_name + '/udev', glob('udev/*.rules')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -32,6 +35,15 @@ setup(
             # orchestrator's PREPARE.LOCALIZING gate clears in slam_toolbox
             # mode (no real AMCL in the chain). Hardware doesn't need it.
             'seed_amcl_pose = lupin_bringup.seed_amcl_pose:main',
+            # Launch sentinel — blocks until tf 'base_link' is resolvable
+            # against 'odom'. Used to gate Nav2 lifecycle start on hardware,
+            # where a cold DDS-over-WiFi /tf subscription needs ~5–10 s to
+            # warm up before Nav2's costmap activation can succeed.
+            'wait_for_tf = lupin_bringup.wait_for_tf:main',
+            # Sim helper: publishes a draining BatteryState on
+            # /io/power/power_watcher (the topic the real MIRTE power
+            # watcher uses) so Nav2's IsBatteryLow and the mission
+            # orchestrator's BatteryMonitor have data in sim.
             'sim_battery_publisher = lupin_bringup.sim_battery_publisher:main',
         ],
     },

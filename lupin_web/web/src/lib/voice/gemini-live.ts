@@ -120,6 +120,25 @@ export class GeminiLiveClient {
     this.ws.send(JSON.stringify(msg))
   }
 
+  /**
+   * Manual VAD turn boundaries. We disable Gemini's automatic VAD in the setup
+   * config (see buildSetup) and signal speech boundaries explicitly so the
+   * server doesn't have to wait for its own silence-detector timeout after the
+   * mic closes. Without these the model takes ~800 ms longer to respond and
+   * the UI appears stuck on "thinking".
+   */
+  sendActivityStart(): void {
+    if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    const msg: BidiClientMessage = { realtimeInput: { activityStart: {} } }
+    this.ws.send(JSON.stringify(msg))
+  }
+
+  sendActivityEnd(): void {
+    if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    const msg: BidiClientMessage = { realtimeInput: { activityEnd: {} } }
+    this.ws.send(JSON.stringify(msg))
+  }
+
   /** Send a text turn from the user. Useful for typed prompts and the mock harness. */
   sendUserText(text: string): void {
     if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return
@@ -145,6 +164,16 @@ export class GeminiLiveClient {
       tools: this.opts.tools.length ? [{ functionDeclarations: this.opts.tools }] : undefined,
       inputAudioTranscription: {},
       outputAudioTranscription: {},
+      // Manual turn-taking: client owns activityStart/activityEnd. The session
+      // layer's SpeechEndpointer fires those at the right moments. Leaving
+      // server-side VAD on while the client also closes the mic on silence
+      // double-gates the turn — the server has to wait for its own silence
+      // timeout before it commits the turn, which surfaces as a long
+      // "thinking" pause and a response that only flushes on the next button
+      // press. See https://ai.google.dev/gemini-api/docs/live-guide.
+      realtimeInputConfig: {
+        automaticActivityDetection: { disabled: true },
+      },
     }
   }
 

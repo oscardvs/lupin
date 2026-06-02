@@ -53,6 +53,12 @@ class TagBuffer:
     )
     history: deque = field(default_factory=lambda: deque(maxlen=DEFAULT_BUFFER_LEN))
 
+    # Flower classification co-located with this tag (from perception's
+    # KIND_FLOWER observations). Empty/false until a flower is classified.
+    species: str = ''
+    species_confidence: float = 0.0
+    anomaly: bool = False
+
     def has_pose(self) -> bool:
         return self.pose_x is not None and self.pose_y is not None
 
@@ -71,6 +77,25 @@ class TwinObservation:
     pose_qz: Optional[float]
     pose_qw: Optional[float]
     readings: list[TagSensorEntry]
+
+
+@dataclass
+class FlowerUpdate:
+    """A flower classification co-located with a tag (KIND_FLOWER).
+
+    Carries the tag's map pose too, so a flower seen at a tag that the
+    sensor-reading path never pinned (e.g. discovered during exploration but
+    not yet bridge-scanned) still gets a map pin from the detector.
+    """
+    tag_id: str
+    monotonic_at: float
+    species: str
+    species_confidence: float
+    anomaly: bool
+    pose_x: Optional[float] = None
+    pose_y: Optional[float] = None
+    pose_qz: Optional[float] = None
+    pose_qw: Optional[float] = None
 
 
 class TwinStateStore:
@@ -119,6 +144,34 @@ class TwinStateStore:
 
         for r in obs.readings:
             buf.latest_readings[r.name] = r.value
+
+        self._observation_count += 1
+        return True
+
+    def record_flower(self, upd: FlowerUpdate) -> bool:
+        """Merge a flower classification onto a tag. Returns True if mutated.
+
+        Latest-wins for species/anomaly (so the anomaly clears on a clean
+        re-scan). Pins the tag from the flower pose when no pose is cached
+        yet — the detector's tag pose is the plant's actual location.
+        """
+        if not upd.tag_id:
+            return False
+        buf = self._tags.get(upd.tag_id)
+        if buf is None:
+            buf = TagBuffer(tag_id=upd.tag_id)
+            buf.history = deque(maxlen=self._buffer_len)
+            self._tags[upd.tag_id] = buf
+
+        buf.last_seen_monotonic = upd.monotonic_at
+        buf.species = upd.species
+        buf.species_confidence = upd.species_confidence
+        buf.anomaly = upd.anomaly
+        if not buf.has_pose() and upd.pose_x is not None and upd.pose_y is not None:
+            buf.pose_x = upd.pose_x
+            buf.pose_y = upd.pose_y
+            buf.pose_qz = upd.pose_qz if upd.pose_qz is not None else 0.0
+            buf.pose_qw = upd.pose_qw if upd.pose_qw is not None else 1.0
 
         self._observation_count += 1
         return True

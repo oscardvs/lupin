@@ -1,5 +1,5 @@
 [Unit]
-Description=Lupin Web HMI (static UI on :8090, talks to rosbridge on :9090)
+Description=Lupin Web HMI (https UI on :8090, proxies rosbridge :9090 + video :8091)
 Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
 After=network-online.target
 Wants=network-online.target
@@ -16,7 +16,10 @@ WorkingDirectory=/home/mirte/ros2_ws/src/lupin/lupin_web/web
 ExecStartPre=/usr/bin/test -d dist
 # Run via the package launch file so we get the UI + LAN-reachable web_video_server
 # in one shot. The bash wrapper sources ROS so `ros2 launch` resolves.
-ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/mirte/mirte_ws/install/setup.bash && source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; exec ros2 launch lupin_web lupin_web.launch.py mode:=preview'
+# tls:=true → https + same-origin wss /_ros / https /_video proxies, so the
+# voice tab's mic (navigator.mediaDevices.getUserMedia) works from any LAN
+# device. Self-signed cert: each device trusts it once on first visit.
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/mirte/mirte_ws/install/setup.bash && source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; exec ros2 launch lupin_web lupin_web.launch.py mode:=preview tls:=true'
 Restart=on-failure
 RestartSec=5
 # Cap memory in case a runaway HMR session leaks.

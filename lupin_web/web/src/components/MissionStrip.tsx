@@ -172,6 +172,8 @@ function PhaseBadge({ state, interactive }: { state: MissionState; interactive?:
     current_target,
     targets_completed,
     targets_total,
+    tags_discovered,
+    discovery_goal,
     paused,
     estop_engaged,
   } = state
@@ -180,6 +182,7 @@ function PhaseBadge({ state, interactive }: { state: MissionState; interactive?:
     if (estop_engaged || lifecycle_state === 'FAULT') return 'err'
     if (paused) return 'warn'
     if (lifecycle_state === 'INSPECTING' || lifecycle_state === 'PREPARE') return 'live'
+    if (lifecycle_state === 'EXPLORING' || lifecycle_state === 'MONITORING') return 'live'
     if (lifecycle_state === 'RETURNING') return 'live'
     if (lifecycle_state === 'DONE') return 'ok'
     return 'idle'
@@ -223,6 +226,24 @@ function PhaseBadge({ state, interactive }: { state: MissionState; interactive?:
               ({targets_completed + 1}/{targets_total})
             </span>
           )}
+        </>
+      )}
+      {lifecycle_state === 'EXPLORING' && (
+        <>
+          <span className="h-3 w-px bg-hairline" aria-hidden />
+          <span className="tag">discover</span>
+          <span className="font-mono text-[11px] text-foreground">
+            {tags_discovered}/{discovery_goal || '?'}
+          </span>
+        </>
+      )}
+      {lifecycle_state === 'MONITORING' && (
+        <>
+          <span className="h-3 w-px bg-hairline" aria-hidden />
+          <span className="tag">{mission_phase || 'NAV'}</span>
+          <span className="font-mono text-[11px] text-foreground">
+            {current_target || '—'}
+          </span>
         </>
       )}
       {lifecycle_state === 'PREPARE' && mission_phase && (

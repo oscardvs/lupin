@@ -63,6 +63,11 @@ export function Joystick({
       restOpacity: 0.6,
       lockX: false,
       lockY: false,
+      // Recompute zone origin on each pointerdown. Without this, banners
+      // above the joystick row (e-stop, mission lock/pause) shift the
+      // joystick after nipplejs cached its page offset, and the knob
+      // jumps off the cursor.
+      dynamicPage: true,
     })
     managerRef.current = manager
 

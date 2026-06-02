@@ -19,7 +19,11 @@ slam_toolbox:
 
     debug_logging: false
     throttle_scans: 1
-    transform_publish_period: 0.02
+    # Was 0.02 (50 Hz). At 50 Hz the map→odom TF dominates DDS bandwidth and
+    # the rosbridge JSON encoder on the Pi (project_rosbridge_wedge memory).
+    # 10 Hz is plenty for downstream consumers — Nav2's local costmap runs
+    # at 5 Hz, the HMI map at ~5 Hz, controllers don't subscribe to /tf.
+    transform_publish_period: 0.10
     map_update_interval: 5.0
     resolution: 0.05
     min_laser_range: 0.25        # Sim lidar reports 0 m hits inside the robot body; filter them

@@ -10,20 +10,39 @@ verified live with /tmp/joy_probe.py):
 
     Drive (hold LB as dead-man):
         Left stick     → translation  (forward/back + strafe)
-        Right stick X  → rotation
+        Right stick X  → rotation (turn in place)
         RB (turbo)     → ~2× the linear/angular scale
 
     Arm (LB released — modes are mutually exclusive by construction):
-        Right stick    → shoulder pan / lift  (X = pan, Y = lift)
-        D-pad ←/→      → elbow ±   (always live)
-        D-pad ↑/↓      → wrist ±   (always live)
+        Y (top)        → shoulder_lift +
+        A (bottom)     → shoulder_lift -
+        B (right)      → shoulder_pan +
+        X (left)       → shoulder_pan -
+        D-pad ←/→      → wrist ±
+        D-pad ↑/↓      → elbow ±
+
+Shoulder pan/lift moved off the right stick to the face buttons because
+the right stick used to be dual-use — chassis yaw while LB was held,
+shoulder pan while LB was released. Brushing the stick during an
+LB-release flicked the arm. Face buttons are physically separate from
+any chassis input, so the two modes can never bleed into each other.
+Right stick Y is now unbound. Shoulder gating via shoulder_disable_button
+is kept (LB-held silences shoulder buttons too) as a "don't move the
+arm while driving" safety.
 
 LT/RT can't be the dead-man — teleop_twist_joy's enable_button only
 takes a *button* index and triggers on this controller are axes (4, 5).
 LB is the closest button equivalent.
 
+Face-button indices on this Series X|S BLE HID mapping (probed live
+2026-05-21): A=0, B=1, X=3, Y=4. Index 2 is reserved/skipped by
+Microsoft's HID descriptor (it is NOT X — that's the SDL2 layout, which
+this BT pad does not follow). LB/RB sit at 6/7, also shifted from SDL2's
+4/5. Re-probe with `ros2 topic echo /joy --field buttons` if you swap
+pads — they're plain launch params, so a remap is one-line.
+
 Does NOT include twist_mux — priority arbitration is owned by the bringup
-launch (sim_full.launch.py / hardware_full.launch.py) so all sources of
+launch (sim_full.launch.py / hardware.launch.py) so all sources of
 /cmd_vel_* are arbitrated in one place. Run this standalone if you only
 want joystick output (e.g. for bench-testing a new controller binding).
 
@@ -76,10 +95,25 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[{
                 'device_name': LaunchConfiguration('device_name'),
                 'device_id': LaunchConfiguration('device_id'),
-                'deadzone': 0.05,
+                # 0.15 covers the Series X|S BT-mode resting drift we see
+                # on Mirte-247264's pad (probed 2026-05-12: right-stick X
+                # idled ~0.5% off centre and made the chassis spin in
+                # place when LB was held). 0.05 (the joy_node default) was
+                # too tight; with cmd_vel_joy ≈ drift × scale_angular(-0.7),
+                # any drift >0.05 yielded a constant angular.z.
+                'deadzone': 0.15,
                 'autorepeat_rate': 20.0,
                 'use_sim_time': LaunchConfiguration('use_sim_time'),
             }],
+            # joy_node only enumerates SDL2 gamepads at startup. If the pad
+            # is off at boot, the node binds nothing and stays dead until
+            # restarted. Pair with the lupin_bringup udev rule
+            # (99-lupin-xbox-rebind.rules) which pkills this process when an
+            # Xbox Wireless Controller appears — respawn brings it back, the
+            # fresh scan picks up the device, and the operator doesn't have
+            # to `systemctl restart lupin-onboard` after powering the pad.
+            respawn=True,
+            respawn_delay=2.0,
         ),
         Node(
             package='teleop_twist_joy', executable='teleop_node',
@@ -116,6 +150,14 @@ def generate_launch_description() -> LaunchDescription:
                 'joint_velocity': 2.0,
                 'deadzone': 0.05,
                 'gripper_step_rad': 0.04,
+                # Shoulder pan/lift on face buttons; right stick is now
+                # chassis-yaw only. -1 disables the stick fallback.
+                'shoulder_pan_axis': -1,
+                'shoulder_lift_axis': -1,
+                'shoulder_pan_plus_button': 1,    # B  (right)  → pan +
+                'shoulder_pan_minus_button': 3,   # X  (left)   → pan -
+                'shoulder_lift_plus_button': 4,   # Y  (top)    → lift +
+                'shoulder_lift_minus_button': 0,  # A  (bottom) → lift -
             }],
         ),
     ])

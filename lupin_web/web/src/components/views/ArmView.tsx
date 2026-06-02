@@ -1,6 +1,8 @@
-import { Activity, Camera, Grip, Home, Power, RotateCcw, Square } from 'lucide-react'
+import { Activity, Camera, Compass, Grip, Home, Power, RotateCcw, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { RobotTwin } from '@/components/system/RobotTwin'
+import { ArmCalibrateDialog } from '@/components/widgets/ArmCalibrateDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
@@ -10,6 +12,7 @@ import { useSettings } from '@/lib/settings'
 import { useThrottledRender } from '@/lib/throttle'
 import { cn } from '@/lib/utils'
 import {
+  LUPIN_SRV,
   MIRTE_SRV,
   ROS_TYPE,
   type ServoPosition,
@@ -38,18 +41,20 @@ interface ArmJointSpec {
   unverified?: boolean
 }
 
-// Gripper range is GUESSED. The URDF declares gripper_joint at -0.20..0.25,
-// but those numbers are URDF-joint coordinates (likely radians of linkage
-// rotation), not necessarily the Hiwonder servo command angle. Until we
-// confirm on a live robot, ship a conservative ±30° window with a loud
-// "RANGE UNVERIFIED" badge so nobody assumes it's been checked.
+// Gripper sends through /lupin/gripper/set_angle_with_speed (gripper_action_bridge),
+// NOT the raw Hiwonder service. On hardware the vendor mirte_master_arm_control
+// HW interface treats any external servo motion as "moved by hand / by gravity"
+// and re-asserts its own commanded position on every 100 ms tick — so a direct
+// Hiwonder call would visibly move the jaw and then snap it back to the stale
+// GripperActionController setpoint. The bridge forwards as a GripperCommand
+// action goal so the controller's commanded state matches the HMI request.
 //
-// To verify (next time the MIRTE is up — see project_mirte_access memory):
-//   ssh lupin
-//   source /opt/ros/humble/setup.bash
-//   source /home/mirte/mirte_ws/install/setup.bash
-//   ros2 service type /io/servo/hiwonder/gripper/set_angle_with_speed
-//   ros2 service call /io/servo/hiwonder/gripper/set_angle_with_speed \
+// HMI degrees are mapped linearly to the URDF gripper_joint range
+// [-0.20, 0.25] rad inside the bridge — the ±30° HMI window is the
+// "range unverified" guess pending a live tuning pass.
+//
+// To verify range on a live robot:
+//   ros2 service call /lupin/gripper/set_angle_with_speed \
 //     mirte_msgs/srv/SetServoAngleWithSpeed "{angle: 0, rate: 30, degrees: true}"
 // Then jog by ±5° at a time until the jaw hits its mechanical stops; record
 // those as the new minDeg / maxDeg here and drop the `unverified` flag.
@@ -115,8 +120,14 @@ export function ArmView() {
 
   const [enableStatus, setEnableStatus] = useState<CallStatus>('idle')
   const [enableError, setEnableError] = useState<string | null>(null)
-  /** Bumped whenever Home is pressed so each ServoSlider snaps its target to 0. */
+  /** Bumped whenever Init/safe-pose is pressed so each ServoSlider snaps
+   *  its target visual to 0. The actual motion is driven by ONE
+   *  /lupin/arm/init service call (handled below) so the four joints move
+   *  via a single JTC trajectory instead of four racing slider commands. */
   const [homeTick, setHomeTick] = useState(0)
+  const [initStatus, setInitStatus] = useState<CallStatus>('idle')
+  const [initError, setInitError] = useState<string | null>(null)
+  const [calibOpen, setCalibOpen] = useState(false)
 
   const blocked = estopActive || rosStatus !== 'connected'
 
@@ -138,6 +149,24 @@ export function ArmView() {
     },
     [callService, armServoNamespace],
   )
+
+  const goToSafePose = useCallback(async () => {
+    setInitStatus('sending')
+    setInitError(null)
+    // Snap slider visuals to 0 immediately so the UI tracks the move.
+    setHomeTick((t) => t + 1)
+    try {
+      await callService<Record<string, never>, { success: boolean; message?: string }>(
+        '/lupin/arm/init',
+        LUPIN_SRV.Trigger,
+        {},
+      )
+      setInitStatus('ok')
+    } catch (e) {
+      setInitStatus('error')
+      setInitError(e instanceof Error ? e.message : String(e))
+    }
+  }, [callService])
 
   return (
     <div className="flex w-full flex-col gap-3 p-3 sm:gap-4 sm:p-4">
@@ -169,6 +198,14 @@ export function ArmView() {
           </Button>
         </div>
       ) : null}
+
+      {/* Live digital twin — mirrors joint_states + odom in real time. */}
+      <div
+        className="relative h-[240px] w-full overflow-hidden rounded-sm border border-hairline sm:h-[300px] lg:h-[360px]"
+        style={{ background: 'radial-gradient(130% 100% at 50% -10%, hsl(var(--ink-2)), hsl(var(--ink-0)) 72%)' }}
+      >
+        <RobotTwin className="absolute inset-0" />
+      </div>
 
       {/* arm console controls — enable / home / rate */}
       <div className="reticle relative flex flex-col gap-3 rounded-sm border border-hairline bg-card/60 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5 sm:px-5 sm:py-4">
@@ -202,16 +239,34 @@ export function ArmView() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setHomeTick((t) => t + 1)}
-            disabled={blocked}
+            onClick={goToSafePose}
+            disabled={blocked || initStatus === 'sending'}
+            title="Drive all 4 arm joints to (0,0,0,0) via JTC over 5s"
           >
             <Home className="mr-2 h-4 w-4" />
-            Home (0°)
+            Init (home, 5s)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCalibOpen(true)}
+            disabled={blocked}
+            title="Hiwonder zero-offset calibration (operator-in-the-loop, hardware only)"
+          >
+            <Compass className="mr-2 h-4 w-4" />
+            Calibrate…
           </Button>
           {enableStatus === 'error' && enableError ? (
             <span className="tag text-destructive">enable failed: {enableError}</span>
           ) : enableStatus === 'ok' ? (
             <span className="tag text-primary">enable ack</span>
+          ) : null}
+          {initStatus === 'sending' ? (
+            <span className="tag">init sending…</span>
+          ) : initStatus === 'error' && initError ? (
+            <span className="tag text-destructive" title={initError}>init failed</span>
+          ) : initStatus === 'ok' ? (
+            <span className="tag text-primary">init ack</span>
           ) : null}
         </div>
 
@@ -262,6 +317,8 @@ export function ArmView() {
         <span className="tag">·</span>
         <span className="ticker">on release</span>
       </div>
+
+      <ArmCalibrateDialog open={calibOpen} onOpenChange={setCalibOpen} />
     </div>
   )
 }
@@ -276,7 +333,15 @@ interface ServoSliderProps {
 
 function ServoSlider({ spec, namespace, rateDegPerSec, homeTick, disabled }: ServoSliderProps) {
   const positionTopic = `${namespace}/${spec.id}/position`
-  const setAngleService = `${namespace}/${spec.id}/set_angle_with_speed`
+  // All slider commands go through the lupin command bridge so the
+  // JointTrajectoryController / GripperActionController stay aligned with
+  // the HMI. Routing arm joints to the raw Hiwonder service caused the
+  // vendor HW interface to reassert its own commanded position on the
+  // next 10 Hz tick, snapping the joint back mid-motion.
+  const setAngleService =
+    spec.id === 'gripper'
+      ? '/lupin/gripper/set_angle_with_speed'
+      : `/lupin/arm/${spec.id}/set_angle_with_speed`
 
   const positionRef = useTopic<ServoPosition>(positionTopic, ROS_TYPE.ServoPosition)
   useThrottledRender(8)
@@ -289,12 +354,14 @@ function ServoSlider({ spec, namespace, rateDegPerSec, homeTick, disabled }: Ser
   const [errMsg, setErrMsg] = useState<string | null>(null)
   const inFlightRef = useRef(0)
 
-  // Snap target to 0 whenever Home is pressed at the parent.
+  // Snap target visual to 0 whenever the parent fires Init. The actual
+  // motion is driven by ONE /lupin/arm/init call upstream — we do NOT
+  // call send() per slider here, because four racing single-joint
+  // trajectories would each preempt the previous and could leave the
+  // arm in an awkward intermediate pose.
   useEffect(() => {
     if (homeTick === 0) return
     setTarget(0)
-    void send(0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeTick])
 
   const send = useCallback(

@@ -1,0 +1,18 @@
+# Lupin: pkill joy_node when an Xbox Wireless Controller appears so the
+# launch's respawn=True picks up the fresh /dev/input/event* device.
+#
+# joy_node uses SDL2's gamepad enumeration, which runs only at startup —
+# if the operator powers on the pad after lupin-onboard is already up,
+# joy_node sees nothing and /joy stays silent forever. SIGTERMing it on
+# the udev "add" event triggers respawn (~2 s); the new instance scans
+# evdev again and binds the just-arrived controller. lupin-onboard's
+# other nodes (twist_mux, arm_teleop, etc.) are untouched.
+#
+# Trade-off: an extra unnecessary respawn on power-cycle boots where the
+# pad was already on. That's a ~2 s blip in /joy publication; acceptable.
+#
+# Match scope is narrow on purpose: by the kernel-reported device name we
+# only catch this specific controller family (045E:0B13 — Xbox Wireless
+# Controller, Series X|S, paired over BT). Other input devices (keyboard,
+# touchpad, etc.) don't trigger.
+ACTION=="add", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Xbox Wireless Controller", RUN+="/usr/bin/pkill -f /opt/ros/humble/lib/joy/joy_node"

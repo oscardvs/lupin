@@ -29,7 +29,10 @@ gear · permanent E-STOP) wraps seven tabs:
   named-location memory, telemetry reads, and software E-stop. Mock session
   runs without an API key. See **Voice assistant** below.
 - **Cameras** — MJPEG stream from `web_video_server` with FPS counter,
-  reload, fullscreen, friendly placeholder when no stream.
+  reload, fullscreen, friendly placeholder when no stream. The view can
+  also overlay AprilTag detections (corner box + ID + range) using JSON
+  metadata from `/camera/tag_detections_json` — toggled by the "Overlay
+  AprilTags" switch above the tab list.
 - **Telemetry** — Lidar canvas (top-down), IMU (roll/pitch/yaw + ω bars),
   Odometry pose+twist, Battery + voltage sparkline, Arm joints, System
   placeholder.
@@ -38,7 +41,13 @@ gear · permanent E-STOP) wraps seven tabs:
 - **Map** — live SLAM occupancy grid (subscribes `/map`), robot pose via
   `ROSLIB.TFClient` against the `map → base_link` transform, latest Nav2
   plan (`/plan`) as a chartreuse polyline, and click-and-drag to publish a
-  `geometry_msgs/PoseStamped` to `/goal_pose`. AprilTag overlay still TODO.
+  `geometry_msgs/PoseStamped` to `/goal_pose`. Twin-driven tag pins coloured by
+  the active sensor, plus a **flowers** layer: a species-coloured ring per
+  classified tag with a red dashed ring on the YOLO `bug` anomaly; the hover
+  tooltip and the Greenhouse State table show species + health + pest. Mission
+  Control has a **Start exploration** button (discover N tags → monitor), and
+  the mission strip shows the `EXPLORE k/N` → `MONITOR` phase. All demoable in
+  `?mock=1`.
 
 ## Engineering notes
 
@@ -135,48 +144,50 @@ Settings → Diagnostics → "Log outgoing publishes" (or set
 JSON to the console with the topic name. Use this when debugging
 rosbridge-side wire-format issues end to end.
 
-## Deploying on the robot (hardware branch)
+## Bringing the HMI up
 
-Two ways to bring the UI up; pick whichever fits the moment.
+The HMI is part of `lupin_bringup`'s `hardware.launch.py` — one command
+on the laptop brings up Nav2, SLAM, RViz, **and** the HMI. The HMI is on
+by default; pass `web:=false` if you don't want it.
 
-### Manual via ros2 launch
+```bash
+ros2 launch lupin_bringup hardware.launch.py            # HMI + Nav2 + SLAM + RViz
+ros2 launch lupin_bringup hardware.launch.py web:=false # no HMI
+```
+
+Open `https://<laptop-ip>:8090` once Vite logs "ready in NNN ms".
+Browsers warn about the self-signed cert — accept it once per device.
+See `lupin_bringup/README.md` for the full flag matrix.
+
+### Standalone (HMI only, no Nav2)
+
+If you just want the HMI without the autonomy stack:
 
 ```bash
 ros2 launch lupin_web lupin_web.launch.py             # serves dist/ on :8090
 ros2 launch lupin_web lupin_web.launch.py mode:=dev   # vite dev server (HMR)
-ros2 launch lupin_web lupin_web.launch.py port:=8091  # alternative port
+ros2 launch lupin_web lupin_web.launch.py rosbridge:=false  # use external rosbridge
 ```
 
 The `preview` mode (default) requires `npm run build` to have produced a
-`dist/` artefact. The launch file just wraps `npm run preview` / `npm run dev`
-with the flags pinned, so you still need `npm install` to have been run once.
+`dist/` artefact. The launch file wraps `npm run preview` / `npm run dev`
+with the flags pinned, so `npm install` must have been run once.
 
-### Auto-start at boot via systemd
+### Robot-side legacy unit (rarely useful)
 
-A system-level unit lives at `systemd/lupin-web.service` and is installed
-through `scripts/install-systemd.sh`. Idempotent — re-run any time:
+`systemd/lupin-web.service` + `scripts/install-systemd.sh` are kept for
+offline / standalone teleop where there's no laptop in the loop. Running
+both robot- and laptop-side HMIs at once means two rosbridges fighting
+for the same topics — pick one.
 
 ```bash
-# on the robot, from anywhere on the repo
+# on the robot, if you really want the HMI on the Pi
 sudo ~/ros2_ws/src/lupin/lupin_web/scripts/install-systemd.sh
 ```
 
-The unit runs `npm run preview` against `dist/` as the `mirte` user. After
-each `git pull` you must rebuild and restart:
-
-```bash
-cd ~/ros2_ws/src/lupin/lupin_web/web
-npm install      # only if package-lock.json changed
-npm run build
-sudo systemctl restart lupin-web
-```
-
-Inspect with `journalctl -u lupin-web -f`. Uninstall with
-`sudo .../install-systemd.sh --uninstall`.
-
-The unit binds `:8090` only — never `:80` (course UI), `:8080` (wifi-connect
-AP captive portal), or `:9090` (rosbridge). Failure of the course web stack
-does not bring this down and vice versa.
+Adds the rosbridge JSON-encoding load back to the Pi (the whole point of
+the laptop offload was to remove it), so don't reach for this unless
+you're working without a laptop.
 
 ## Voice assistant
 
@@ -249,11 +260,11 @@ already has a code seam to swap in the token-fetching client.
 
 ## What's not in here yet
 
-- AprilTag overlay on the camera stream
 - Voice agent: ephemeral-token broker, persona / wake-word, multi-turn memory
 - Voice tool gaps awaiting backend: `scan_apriltags`, `detect_flowers`,
   `get_camera_frame`, `record_observation` — deliberately not stubbed; see
-  `lib/voice/tools.ts` to add once the perception/mission node lands.
+  `lib/voice/tools.ts`. (Flower data now flows via the twin's `TwinTagState`
+  species/anomaly fields, so a `detect_flowers` voice tool can read those.)
 - `nav_pause` / `nav_resume` — Nav2 has no real pause primitive; deferred
   unless we want to fake it as cancel + remembered goal.
 - Authentication, PWA / service worker, multi-user awareness — all deferred

@@ -30,6 +30,9 @@ export function useMissionState(): MissionState | null {
 
 export interface MissionServices {
   start: (tagSequence?: string[]) => Promise<{ accepted: boolean; mission_id: string; error_message: string }>
+  /** Start an autonomous ExplorationMission: explore until `goal` tags are
+   * discovered, then continuously monitor them. */
+  startExploration: (goal: number) => Promise<{ accepted: boolean; mission_id: string; error_message: string }>
   pause: () => Promise<{ success: boolean; message: string }>
   resume: () => Promise<{ success: boolean; message: string }>
   abort: () => Promise<{ success: boolean; message: string }>
@@ -39,6 +42,7 @@ export interface MissionServices {
 interface StartMissionRequest {
   mission_type: string
   tag_sequence: string[]
+  discovery_goal: number
 }
 
 interface StartMissionResponse {
@@ -81,7 +85,12 @@ export function useMissionServices(): MissionServices {
 
   const start = useCallback(
     (tagSequence: string[] = []) =>
-      startSrv({ mission_type: 'InspectionMission', tag_sequence: tagSequence }),
+      startSrv({ mission_type: 'InspectionMission', tag_sequence: tagSequence, discovery_goal: 0 }),
+    [startSrv],
+  )
+  const startExploration = useCallback(
+    (goal: number) =>
+      startSrv({ mission_type: 'ExplorationMission', tag_sequence: [], discovery_goal: goal }),
     [startSrv],
   )
   const pause = useCallback(() => pauseSrv({}), [pauseSrv])
@@ -89,7 +98,7 @@ export function useMissionServices(): MissionServices {
   const abort = useCallback(() => abortSrv({}), [abortSrv])
   const skipCurrent = useCallback(() => skipSrv({}), [skipSrv])
 
-  return { start, pause, resume, abort, skipCurrent }
+  return { start, startExploration, pause, resume, abort, skipCurrent }
 }
 
 /**
@@ -210,14 +219,24 @@ export function useMissionEventLog(): MissionEvent[] {
       if (
         state.current_target !== prev.current_target &&
         state.current_target &&
-        state.lifecycle_state === 'INSPECTING'
+        (state.lifecycle_state === 'INSPECTING' || state.lifecycle_state === 'MONITORING')
       ) {
         append({
           at,
           kind: 'target',
           label: `target ${state.current_target}`,
-          detail: `${state.targets_completed + 1} / ${state.targets_total}`,
+          detail: state.lifecycle_state === 'MONITORING'
+            ? 'monitoring'
+            : `${state.targets_completed + 1} / ${state.targets_total}`,
           tone: 'info',
+        })
+      }
+      if (state.tags_discovered !== prev.tags_discovered && state.lifecycle_state === 'EXPLORING') {
+        append({
+          at,
+          kind: 'target',
+          label: `discovered tag (${state.tags_discovered}/${state.discovery_goal})`,
+          tone: 'ok',
         })
       }
       if (state.paused !== prev.paused) {
@@ -353,12 +372,22 @@ export function formatMissionPhase(state: MissionState | null): string {
     case 'READY': return 'IDLE · ready'
     case 'PREPARE':
       return mission_phase ? `PREPARE · ${mission_phase.toLowerCase()}` : 'PREPARE'
+    case 'EXPLORING': {
+      const k = state.tags_discovered
+      const N = state.discovery_goal || 1
+      return `EXPLORE · ${k}/${N} found`
+    }
     case 'INSPECTING': {
       const phase = mission_phase || 'NAV'
       const tag = current_target || '?'
       const k = targets_completed + 1
       const M = targets_total || 1
       return `${phase} · ${tag} (${k}/${M})`
+    }
+    case 'MONITORING': {
+      const phase = mission_phase || 'NAV'
+      const tag = current_target || '?'
+      return `MONITOR · ${phase} · ${tag}`
     }
     case 'RETURNING': return 'RETURNING'
     case 'DONE': return 'DONE'
@@ -379,7 +408,9 @@ export function isMissionActive(state: MissionState | null): boolean {
   if (!state) return false
   return (
     state.lifecycle_state === 'PREPARE' ||
+    state.lifecycle_state === 'EXPLORING' ||
     state.lifecycle_state === 'INSPECTING' ||
+    state.lifecycle_state === 'MONITORING' ||
     state.lifecycle_state === 'RETURNING'
   )
 }

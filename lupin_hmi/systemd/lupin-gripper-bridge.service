@@ -1,0 +1,29 @@
+[Unit]
+Description=Lupin gripper-action bridge (/lupin/gripper/set_angle_with_speed → mirte_master_gripper_controller/gripper_cmd)
+Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
+# The bridge needs the GripperActionController (loaded by mirte-ros.service)
+# to send goals to. Start after that unit so the action server is up; if it
+# isn't, the bridge waits internally for up to 2 s per request anyway.
+After=network-online.target mirte-ros.service
+Wants=network-online.target
+Requires=mirte-ros.service
+
+[Service]
+Type=simple
+User=mirte
+Group=mirte
+WorkingDirectory=/home/mirte/ros2_ws
+# Source ROS + the workspace overlay so `ros2 run lupin_hmi …` resolves.
+# Robot's mirte_ws overlay carries the vendor mirte_msgs / control_msgs;
+# our ros2_ws overlay carries lupin_hmi.
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/mirte/mirte_ws/install/setup.bash && source /home/mirte/ros2_ws/install/setup.bash && exec ros2 run lupin_hmi gripper_action_bridge'
+Restart=on-failure
+RestartSec=5
+MemoryMax=128M
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lupin-gripper-bridge
+
+[Install]
+WantedBy=multi-user.target

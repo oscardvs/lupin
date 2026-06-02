@@ -64,7 +64,7 @@ expose the QoS wrinkle, so this only bites CLI debugging.
 1. Orchestrator scans tag *N*, calls bridge, builds an `Observation`
    with `STATUS_OK` plus `tag_pose_in_map` populated from the latest
    AMCL snapshot. v1 = robot's standoff pose; v2 hardware =
-   AprilTag's pose from `apriltag_ros`.
+   AprilTag's pose from the perception pipeline.
 2. Twin's subscriber thread records the observation in
    `TwinStateStore` — pose cached from the *first* OK observation per
    tag (tags don't move; re-stamping would jitter the HMI marker).
@@ -76,6 +76,19 @@ expose the QoS wrinkle, so this only bites CLI debugging.
    (defaults equal — see "Why no donut" below).
 5. Result cached as a frozen `_CachedField`, copied into each rclpy
    `GetField.Response` on the way out — no Response-object aliasing.
+
+### Flower classification (KIND_FLOWER)
+
+The perception aggregator co-locates the YOLO tulip class with each tag and
+publishes a `KIND_FLOWER` Observation on the same `/floranova/observations`
+topic. The twin's `_ingest_flower` merges `species` / `species_confidence` /
+`anomaly` (the `bug` pest flag) onto the tag's `TagBuffer` keyed by
+`flower.tag_id` (latest-wins, so a clean re-scan clears the anomaly), and will
+**pin** a tag from the flower pose if the sensor-reading path hasn't already.
+Those three fields ride out on each `TwinTagState`; the HMI renders species +
+health (sensor-derived, HMI-side) + the pest flag on the map and the
+Greenhouse table. The twin stays a pure data plane — health thresholds remain
+HMI-side (`tulip-health.ts`).
 
 ## IDW design notes
 
@@ -152,6 +165,7 @@ standalone bring-up.
 - **History service** — per-tag time series for trend lines on the HMI.
   Store already keeps a 32-deep ring buffer; service interface is the
   remaining work.
-- **Anomaly detection** — domain-specific; lives in a separate node
-  that subscribes to `/twin/state` (or `/floranova/observations` for
-  raw values).
+- **Anomaly detection** — domain-specific. The YOLO `bug` pest flag is
+  already surfaced per-tag (via the flower path above); richer abiotic
+  anomaly detection (sustained out-of-range trends, etc.) still belongs in a
+  separate node subscribing to `/twin/state` or `/floranova/observations`.

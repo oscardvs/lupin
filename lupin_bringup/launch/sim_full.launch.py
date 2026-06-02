@@ -387,6 +387,19 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── 8c3. gripper_action_bridge — HMI gripper service → controller ──
+    # Owns /lupin/gripper/set_angle_with_speed on both sim and hardware.
+    # Translates HMI degree commands into a GripperCommand action goal so
+    # the controller's commanded state stays aligned with the HMI request
+    # (without this, the hardware-side ros2_control HW interface re-asserts
+    # its stale 0 setpoint on every tick — see node docstring).
+    gripper_action_bridge = Node(
+        package='lupin_hmi', executable='gripper_action_bridge',
+        name='gripper_action_bridge',
+        parameters=[{'use_sim_time': True}],
+        output='log',
+    )
+
     # ── 8d. Xbox controller teleop ─────────────────────────────────────
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
     # Arm joints driven directly from /joy by lupin_hmi.arm_teleop.
@@ -477,6 +490,7 @@ def generate_launch_description() -> LaunchDescription:
         xbox_teleop,
         arm_sim_shim,
         arm_preset_server,
+        gripper_action_bridge,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.

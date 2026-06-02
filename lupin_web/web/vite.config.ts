@@ -13,11 +13,17 @@ const TLS_ENABLED = process.env.LUPIN_TLS === '1'
 // Same-origin reverse proxies. Both dev and preview share these so the in-app
 // defaults can point at /_ros and /_video regardless of which mode is running.
 //   /_ros   → rosbridge_websocket on :9090 (with WS upgrade)
-//   /_video → web_video_server on :8091 (HTTP + MJPEG long-lived streams)
+//   /_video → web_video_server (HTTP + MJPEG long-lived streams). Target is
+//             configurable via LUPIN_VIDEO_TARGET so the same HMI build can
+//             point at localhost:8091 in sim and at the robot directly in
+//             hardware (http://192.168.42.1:8091) — when web_video_server
+//             runs ON the robot, raw frames never cross WiFi and only MJPEG
+//             does, matching what other groups get from vendor mirte.local.
 // When TLS is on, the browser sees wss://<host>:8090/_ros and
 // https://<host>:8090/_video; Vite terminates TLS and forwards plain ws/http
-// to localhost. Keeping rosbridge / web_video_server unencrypted on loopback
-// avoids touching vendor service configs.
+// to the target. Keeping rosbridge / web_video_server unencrypted across
+// the proxy avoids touching vendor service configs.
+const VIDEO_TARGET = process.env.LUPIN_VIDEO_TARGET || 'http://localhost:8091'
 const proxy = {
   '/_ros': {
     target: 'ws://localhost:9090',
@@ -26,7 +32,7 @@ const proxy = {
     rewrite: (p: string) => p.replace(/^\/_ros/, ''),
   },
   '/_video': {
-    target: 'http://localhost:8091',
+    target: VIDEO_TARGET,
     changeOrigin: true,
     rewrite: (p: string) => p.replace(/^\/_video/, ''),
   },

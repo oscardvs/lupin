@@ -21,6 +21,7 @@ import type { ToolInvocation, TranscriptTurn, VoiceStatus } from './types'
 import { SpeechEndpointer } from './vad'
 
 import { useEStop } from '@/lib/estop'
+import { invertTwist } from '@/lib/polarity'
 import { isMockMode, useSettings, type Settings, type VoiceNamedLocation } from '@/lib/settings'
 import { useMapPose, useRos, useTopic, type MapPose } from '@/lib/ros'
 import {
@@ -186,10 +187,13 @@ export function useVoiceSession(): VoiceSession {
             const ly = clampNumber(args.linear_y, -linMax, linMax)
             const az = clampNumber(args.angular_z, -angMax, angMax)
             const dur = clampNumber(args.duration_s, 0.1, MAX_DRIVE_SECONDS, 0.5)
-            const twist = {
-              linear: { x: lx, y: ly, z: 0 },
-              angular: { x: 0, y: 0, z: az },
-            }
+            const twist = invertTwist(
+              {
+                linear: { x: lx, y: ly, z: 0 },
+                angular: { x: 0, y: 0, z: az },
+              },
+              settings.polarityInvertHmi,
+            )
             ros.publish(settings.cmdVelTopic, settings.cmdVelType, twist)
             if (driveTimerRef.current) clearTimeout(driveTimerRef.current)
             driveTimerRef.current = setTimeout(() => {
@@ -230,9 +234,15 @@ export function useVoiceSession(): VoiceSession {
                 error: 'no map→base transform — cannot compute relative goal',
               })
             }
-            const fwd = clampNumber(args.forward_m, -50, 50, 0)
-            const lat = clampNumber(args.lateral_m, -50, 50, 0)
-            const rotDeg = clampNumber(args.rotate_deg, -3600, 3600, 0)
+            const fwdRaw = clampNumber(args.forward_m, -50, 50, 0)
+            const latRaw = clampNumber(args.lateral_m, -50, 50, 0)
+            const rotDegRaw = clampNumber(args.rotate_deg, -3600, 3600, 0)
+            // User talks in physical-chassis frame; controller frame is rotated
+            // 180° on this unit. Flip body-frame offsets when calibration is on.
+            const sign = settings.polarityInvertHmi ? -1 : 1
+            const fwd = fwdRaw * sign
+            const lat = latRaw * sign
+            const rotDeg = rotDegRaw * sign
             // Rotate body-frame offset (fwd, lat) by current yaw to get the
             // map-frame delta, then add to current pose.
             const c = Math.cos(pose.yaw)
@@ -269,7 +279,12 @@ export function useVoiceSession(): VoiceSession {
                 error: 'no map→base transform — cannot compute relative rotation goal',
               })
             }
-            const deltaRad = (clampNumber(args.angle_deg, -3600, 3600) * Math.PI) / 180
+            const angleDegRaw = clampNumber(args.angle_deg, -3600, 3600)
+            // User's "+90 deg = turn left" in physical chassis frame. Internal
+            // frame is yaw-flipped on this unit, so flip the delta when the
+            // calibration is on.
+            const angleDeg = settings.polarityInvertHmi ? -angleDegRaw : angleDegRaw
+            const deltaRad = (angleDeg * Math.PI) / 180
             // Wrap to [-π, π] so Nav2 takes the shortest direction.
             let yaw = pose.yaw + deltaRad
             yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw))
@@ -279,7 +294,7 @@ export function useVoiceSession(): VoiceSession {
               action: 'rotate_goal_sent',
               from_yaw: pose.yaw,
               to_yaw: yaw,
-              delta_deg: clampNumber(args.angle_deg, -3600, 3600),
+              delta_deg: angleDegRaw,
             })
           }
 
@@ -369,16 +384,38 @@ export function useVoiceSession(): VoiceSession {
               )
             }
             const action = String(args.action ?? '').toLowerCase()
-            if (action !== 'open' && action !== 'close') {
-              return finish({ ok: false, error: "action must be 'open' or 'close'" })
+            if (action !== 'open' && action !== 'close' && action !== 'set') {
+              return finish({ ok: false, error: "action must be 'open', 'close', or 'set'" })
             }
             // Conservative ±30° window — matches ArmView's unverified gripper range.
             // Re-tune once the live mechanical limits are recorded; see the
-            // verification recipe in ArmView.tsx.
-            const angle = action === 'open' ? 30 : -30
+            // verification recipe in ArmView.tsx. Service path is the
+            // gripper_action_bridge, NOT the raw Hiwonder service — see the
+            // ArmView gripper comment for why.
+            //
+            // On Mirte-247264 the mechanically-open jaw corresponds to NEGATIVE
+            // HMI degrees (URDF gripper_joint < 0). Map 0% closed → +30°,
+            // 100% open → -30°.
+            const OPEN_DEG = -30
+            const CLOSE_DEG = 30
+            let percent: number
+            let angle: number
+            if (action === 'set') {
+              if (typeof args.percent !== 'number' || Number.isNaN(args.percent)) {
+                return finish({
+                  ok: false,
+                  error: "action='set' requires a numeric 'percent' in [0, 100]",
+                })
+              }
+              percent = clampNumber(args.percent, 0, 100, 0)
+              angle = CLOSE_DEG + (percent / 100) * (OPEN_DEG - CLOSE_DEG)
+            } else {
+              percent = action === 'open' ? 100 : 0
+              angle = action === 'open' ? OPEN_DEG : CLOSE_DEG
+            }
             try {
               const res = await ros.callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
-                `${settings.armServoNamespace}/gripper/set_angle_with_speed`,
+                '/lupin/gripper/set_angle_with_speed',
                 MIRTE_SRV.SetServoAngleWithSpeed,
                 { angle, rate: settings.armRateDegPerSec, degrees: true },
               )
@@ -386,6 +423,7 @@ export function useVoiceSession(): VoiceSession {
                 ok: true,
                 action: 'gripper',
                 direction: action,
+                percent,
                 angle_deg: angle,
                 note: 'gripper range is unverified — angles capped to ±30°',
                 response: res,
@@ -405,18 +443,73 @@ export function useVoiceSession(): VoiceSession {
                 { blocked: true, error: `e-stop active: ${estop.reason}` },
               )
             }
-            const preset = String(args.name ?? '')
+            const preset = String(args.name ?? '').trim().toLowerCase()
+            if (!preset) {
+              return finish({ ok: false, error: 'arm_preset: name is required' })
+            }
             try {
-              const result = await ros.callService<{ name: string }, Record<string, unknown>>(
-                '/lupin/arm/preset',
-                'lupin_msgs/srv/SetArmPreset',
-                { name: preset },
-              )
-              return finish({ ok: true, action: 'arm_preset', name: preset, response: result })
+              const result = await ros.callService<
+                { name: string },
+                { success: boolean; message: string }
+              >('/lupin/arm/preset', 'lupin_msgs/srv/SetArmPreset', { name: preset })
+              const ok = !!result.success
+              return finish({
+                ok,
+                action: 'arm_preset',
+                name: preset,
+                message: result.message,
+                ...(ok ? {} : { error: result.message }),
+              })
             } catch (e) {
               return finish({
                 ok: false,
                 error: `arm service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+              })
+            }
+          }
+
+          case 'calibrate_arm': {
+            const action = String(args.action ?? '')
+            if (!['start', 'commit', 'cancel', 'status'].includes(action)) {
+              return finish({
+                ok: false,
+                error: `calibrate_arm: action must be one of start|commit|cancel|status, got "${action}"`,
+              })
+            }
+            // E-stop gates 'start' only — cancel/status must still work while
+            // e-stopped so the operator can recover a stranded session.
+            if (action === 'start' && estop.active) {
+              return finish(
+                { ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` },
+              )
+            }
+            try {
+              const result = await ros.callService<
+                { action: string },
+                {
+                  success: boolean
+                  state: string
+                  message: string
+                  joint_names: string[]
+                  offsets_applied: number[]
+                  diffs_observed: number[]
+                }
+              >('/lupin/arm/calibrate', 'lupin_msgs/srv/CalibrateArm', { action })
+              return finish({
+                ok: !!result.success,
+                action: 'calibrate_arm',
+                wizard_action: action,
+                state: result.state,
+                message: result.message,
+                joint_names: result.joint_names,
+                offsets_applied: result.offsets_applied,
+                diffs_observed: result.diffs_observed,
+              })
+            } catch (e) {
+              return finish({
+                ok: false,
+                error: `calibrate service unavailable: ${e instanceof Error ? e.message : String(e)}`,
               })
             }
           }
@@ -476,15 +569,22 @@ export function useVoiceSession(): VoiceSession {
       maxUtteranceMs: settings.voiceVadMaxUtteranceMs,
       onSpeechStart: () => {
         streamingRef.current = true
+        // Hands-free: open the manual-VAD activity here. Push-to-talk already
+        // sent activityStart in beginUtterance — don't double-emit.
+        if (!voicePushToTalkRef.current) {
+          liveRef.current?.sendActivityStart()
+        }
         setStatus((s) => (s === 'ready' || s === 'speaking' ? 'listening' : s))
       },
       onSpeechEnd: () => {
         streamingRef.current = false
         if (voicePushToTalkRef.current) {
-          // Tear the mic down — the user has finished an utterance.
+          // Tear the mic down — endUtterance sends activityEnd.
           void endUtteranceRef.current('silence')
         } else {
-          // Hands-free: keep the mic open but stop forwarding frames.
+          // Hands-free: close the activity but keep the mic open for the
+          // next utterance.
+          liveRef.current?.sendActivityEnd()
           setStatus((s) => (s === 'listening' ? 'thinking' : s))
         }
       },
@@ -528,6 +628,12 @@ export function useVoiceSession(): VoiceSession {
     setStatus('connecting')
     playerRef.current = new AudioPlayer()
     playerRef.current.setMuted(speakerMuted)
+    // Eagerly create+resume the playback AudioContext while we're still inside
+    // the user gesture (the click/tap that called start()). Otherwise the
+    // model's first audio chunk lands on a suspended context and queues
+    // silently until the next gesture happens to resume it — which is what
+    // surfaces as "the answer is in but gated by the next button press".
+    await playerRef.current.prepare()
 
     const client = new GeminiLiveClient({
       apiKey: settings.geminiApiKey.trim(),
@@ -655,6 +761,9 @@ export function useVoiceSession(): VoiceSession {
     // because the user already gave consent by tapping the orb, and they may
     // begin speaking before the start-threshold trips.
     streamingRef.current = true
+    // Manual VAD: tell the server the activity is starting BEFORE the audio
+    // frames flow, so the first frame isn't dropped as pre-activity noise.
+    liveRef.current?.sendActivityStart()
     try {
       await mic.start(
         (frame) => sendFrame(frame),
@@ -670,6 +779,9 @@ export function useVoiceSession(): VoiceSession {
       // Tear down whatever stage of start managed to run before the throw.
       await mic.stop().catch(() => {})
       streamingRef.current = false
+      // Match the activityStart we already emitted so the server doesn't see
+      // an open activity that never closes.
+      liveRef.current?.sendActivityEnd()
       setErrorDetail(`mic: ${e instanceof Error ? e.message : String(e)}`)
       setStatus('error')
     } finally {
@@ -688,6 +800,11 @@ export function useVoiceSession(): VoiceSession {
     streamingRef.current = false
     setMicActive(false)
     setStatus((s) => (s === 'listening' ? 'thinking' : s))
+    // Manual VAD: signal end-of-activity so the server commits the turn now,
+    // instead of timing out its own (disabled) silence detector. This is the
+    // step that lets the response start streaming back without waiting for
+    // the next button press.
+    liveRef.current?.sendActivityEnd()
     await mic.stop()
   }, [settings.voicePushToTalk])
 
