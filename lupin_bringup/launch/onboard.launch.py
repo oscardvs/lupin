@@ -81,7 +81,8 @@ def generate_launch_description() -> LaunchDescription:
     # ── light_strip_bridge ─────────────────────────────────────────────
     # Mirrors the latched /mission/state snapshot onto the robot's status
     # neopixel strip via the MIRTE LED service. Keep robot-local so the
-    # status indication works without any laptop-side launch.
+    # status indication works without any laptop-side launch. The HMI can
+    # take over the strip via the manual/auto override services below.
     light_strip_bridge = Node(
         package='lupin_hmi', executable='light_strip_bridge',
         name='light_strip_bridge',
@@ -89,6 +90,8 @@ def generate_launch_description() -> LaunchDescription:
             'use_sim_time': False,
             'mission_state_topic': '/mission/state',
             'led_service': '/io/leds/leds/set_color',
+            'manual_service': '/lupin/leds/set',
+            'auto_service': '/lupin/leds/auto',
         }],
         output='log',
     )
