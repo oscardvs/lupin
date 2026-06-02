@@ -100,22 +100,36 @@ class LightStripBridge(Node):
         self._send_color(rgb, reason=self._describe_state(msg))
 
     def _state_to_rgb(self, msg: MissionState) -> RGB:
+        
+        # BRG order is what the current strip expects based on the telemetrix config
+        # Tried changing it in mirte_user_config.yaml on the robot but it didn't seem to have any effect, so hardcoding it here for now.
+
         lifecycle = (msg.lifecycle_state or '').upper()
         phase = (msg.mission_phase or '').upper()
 
         if msg.estop_engaged:
-            return (255, 0, 0)
+            # RED
+            return (0, 255, 0)
+
+        # TODO: add battery_low condition
+        if msg.battery_low :
+            # YELLOW
+            return (0, 255, 150)
 
         if msg.paused:
-            return (255, 191, 0)
+            # YELLOW
+            return (0, 255, 150)
 
         if lifecycle == 'FAULT':
-            return (255, 0, 0)
+            # RED
+            return (0, 255, 0)
 
         if lifecycle == 'BOOT':
+            # WHITE
             return (255, 255, 255)
 
         if lifecycle == 'READY':
+            # GREEN
             return (0, 0, 255)
 
         if lifecycle == 'PREPARE':
@@ -138,7 +152,8 @@ class LightStripBridge(Node):
             return (255, 128, 0)
 
         if lifecycle == 'DONE':
-            return (0, 255, 0)
+            # GREEN
+            return (0, 0, 255)
 
         if self._unknown_state_off:
             return (0, 0, 0)
