@@ -1,0 +1,40 @@
+--- a/gazebo_ros2_control/src/gazebo_ros2_control_plugin.cpp
++++ a/gazebo_ros2_control/src/gazebo_ros2_control_plugin.cpp
+@@ -220,9 +220,15 @@
+ 
+   // set the robot description parameter
+   // to propagate it among controller manager and controllers
+-  std::string rb_arg = std::string("robot_description:=") + urdf_string;
+-  arguments.push_back(RCL_PARAM_FLAG);
+-  arguments.push_back(rb_arg);
++  // [lupin patch] Passing the full URDF as a "--param robot_description:=<urdf>"
++  // CLI override rule aborts plugin load on newer rcl: the multi-line XML can't be
++  // parsed as a param-override rule (rcl/arguments.c), rcl_parse_arguments() fails,
++  // and this function returns before the controller_manager is ever created. We
++  // instead set robot_description DIRECTLY on the controller_manager node after it
++  // is constructed (see below), which is rcl-version-proof.
++  // std::string rb_arg = std::string("robot_description:=") + urdf_string;
++  // arguments.push_back(RCL_PARAM_FLAG);
++  // arguments.push_back(rb_arg);
+ 
+   if (sdf->HasElement("ros")) {
+     sdf = sdf->GetElement("ros");
+@@ -369,6 +375,18 @@
+       impl_->model_nh_->get_namespace()));
+   impl_->executor_->add_node(impl_->controller_manager_);
+ 
++  // [lupin patch] Set robot_description directly on the controller_manager node
++  // (replaces the removed "--param robot_description:=<urdf>" CLI override). The
++  // controller_manager forwards this to the controllers, same propagation the CLI
++  // rule used to provide — but as a real parameter value, so no rcl rule parsing.
++  if (impl_->controller_manager_->has_parameter("robot_description")) {
++    impl_->controller_manager_->set_parameter(
++      rclcpp::Parameter("robot_description", urdf_string));
++  } else {
++    impl_->controller_manager_->declare_parameter(
++      "robot_description", rclcpp::ParameterValue(urdf_string));
++  }
++
+   if (!impl_->controller_manager_->has_parameter("update_rate")) {
+     RCLCPP_ERROR_STREAM(
+       impl_->model_nh_->get_logger(), "controller manager doesn't have an update_rate parameter");
