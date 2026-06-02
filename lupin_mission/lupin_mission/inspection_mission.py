@@ -31,11 +31,56 @@ class TagResult:
 
 
 class Mission:
-    """Common surface so the orchestrator can drive any mission type."""
+    """Common surface so the orchestrator can drive any mission type.
+
+    Holds the per-leg result helpers shared by every tag-visiting mission
+    (InspectionMission's single pass, MonitoringMission's loop) so the
+    orchestrator's NAVIGATING/SCANNING callbacks work polymorphically. A
+    mission only has to provide ``current_result()``, ``current_tag_id()``,
+    ``is_complete()``, ``advance()`` and ``counters()``.
+    """
     name: str = ''
+    nav_max_attempts: int = 1
 
     def is_complete(self) -> bool:
         raise NotImplementedError
+
+    def current_result(self) -> 'TagResult':
+        raise NotImplementedError
+
+    def current_tag_id(self) -> str:
+        raise NotImplementedError
+
+    # ── nav outcome (shared) ───────────────────────────────────────────
+    def register_nav_attempt(self) -> int:
+        result = self.current_result()
+        result.nav_attempts += 1
+        return result.nav_attempts
+
+    def can_retry_nav(self) -> bool:
+        return self.current_result().nav_attempts < self.nav_max_attempts
+
+    def mark_unreachable(self, detail: str) -> 'TagResult':
+        result = self.current_result()
+        result.status = Observation.STATUS_UNREACHABLE
+        result.detail = detail
+        result.closed = True
+        return result
+
+    # ── scan outcome (shared) ──────────────────────────────────────────
+    def mark_scan_ok(self, tag_reading: TagReading) -> 'TagResult':
+        result = self.current_result()
+        result.status = Observation.STATUS_OK
+        result.tag_reading = tag_reading
+        result.closed = True
+        return result
+
+    def mark_scan_failed(self, detail: str) -> 'TagResult':
+        result = self.current_result()
+        result.status = Observation.STATUS_SCAN_FAILED
+        result.detail = detail
+        result.closed = True
+        return result
 
 
 class InspectionMission(Mission):
@@ -90,41 +135,10 @@ class InspectionMission(Mission):
         loc = self.tag_locations[tag_id]
         return float(loc['x']), float(loc['y'])
 
-    # ── nav outcome ────────────────────────────────────────────────────
-    def register_nav_attempt(self) -> int:
-        """Increment the nav attempts counter; return the new count.
-
-        Called each time a NavigateToPose goal is issued for the current tag.
-        """
-        result = self.current_result()
-        result.nav_attempts += 1
-        return result.nav_attempts
-
-    def can_retry_nav(self) -> bool:
-        """True iff another NavigateToPose attempt is still allowed."""
-        return self.current_result().nav_attempts < self.nav_max_attempts
-
-    def mark_unreachable(self, detail: str) -> TagResult:
-        result = self.current_result()
-        result.status = Observation.STATUS_UNREACHABLE
-        result.detail = detail
-        result.closed = True
-        return result
-
-    # ── scan outcome ───────────────────────────────────────────────────
-    def mark_scan_ok(self, tag_reading: TagReading) -> TagResult:
-        result = self.current_result()
-        result.status = Observation.STATUS_OK
-        result.tag_reading = tag_reading
-        result.closed = True
-        return result
-
-    def mark_scan_failed(self, detail: str) -> TagResult:
-        result = self.current_result()
-        result.status = Observation.STATUS_SCAN_FAILED
-        result.detail = detail
-        result.closed = True
-        return result
+    # ── nav / scan outcome ─────────────────────────────────────────────
+    # register_nav_attempt / can_retry_nav / mark_unreachable /
+    # mark_scan_ok / mark_scan_failed are inherited from Mission — identical
+    # for every tag-visiting mission type.
 
     # ── operator overrides ─────────────────────────────────────────────
     def mark_skipped(self, detail: str) -> TagResult:

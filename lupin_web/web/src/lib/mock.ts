@@ -391,6 +391,8 @@ export function mockMissionState(): MissionState {
     targets_failed: 0,
     targets_unreachable: 0,
     targets_skipped: 0,
+    tags_discovered: 0,   // mock cycle is an InspectionMission (a-priori tags)
+    discovery_goal: 0,
     last_error: '',
     estop_engaged: false,
     paused: false,
@@ -446,7 +448,13 @@ export function mockObservation(): Observation | null {
         { name: 'co2', value: co2Base + Math.sin(t * 0.02) * 12 },
       ],
     },
-    flower: null,
+    flower: {
+      tag_id: '',
+      pose: { header: makeHeader('map'), pose: { position: { x: 0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 0 } } },
+      species: '',
+      confidence: 0,
+      anomaly: false,
+    },
     anomaly: null,
   }
 }
@@ -492,19 +500,24 @@ interface MockTwinTagSeed {
   base: Record<TwinSensor, number>
   /** Phase offset so each tag oscillates differently. */
   phase: number
+  /** YOLO flower class co-located with this tag (demo the flower layer). */
+  species: string
+  /** Whether the YOLO "bug" anomaly is present at this tag. */
+  anomaly: boolean
 }
 
 // 7 tags scattered across a synthetic 10×10 m greenhouse. Two of them have
 // values intentionally near the edge of their ideal ranges so the tulip
-// has something to react to in mock mode.
+// has something to react to in mock mode. Species + one anomaly demo the
+// flower map layer / TYPE column / tooltip without a robot.
 const MOCK_TWIN_TAGS: MockTwinTagSeed[] = [
-  { tag_id: '1', x: 1.5, y: 1.5, base: { temperature: 22, humidity: 55, co2: 480, light: 500, soil_moisture: 45 }, phase: 0.0 },
-  { tag_id: '2', x: 4.5, y: 1.5, base: { temperature: 24, humidity: 60, co2: 520, light: 600, soil_moisture: 50 }, phase: 0.7 },
-  { tag_id: '3', x: 1.5, y: 4.5, base: { temperature: 21, humidity: 65, co2: 460, light: 450, soil_moisture: 40 }, phase: 1.4 },
-  { tag_id: '4', x: 4.5, y: 4.5, base: { temperature: 26, humidity: 70, co2: 700, light: 700, soil_moisture: 55 }, phase: 2.1 },
-  { tag_id: '5', x: 8.0, y: 2.5, base: { temperature: 19, humidity: 50, co2: 420, light: 350, soil_moisture: 35 }, phase: 2.8 },
-  { tag_id: '6', x: 8.0, y: 6.0, base: { temperature: 27, humidity: 78, co2: 950, light: 250, soil_moisture: 25 }, phase: 3.5 },  // stressed
-  { tag_id: '7', x: 5.5, y: 8.0, base: { temperature: 23, humidity: 58, co2: 540, light: 550, soil_moisture: 48 }, phase: 4.2 },
+  { tag_id: '1', x: 1.5, y: 1.5, base: { temperature: 22, humidity: 55, co2: 480, light: 500, soil_moisture: 45 }, phase: 0.0, species: 'tulip_red', anomaly: false },
+  { tag_id: '2', x: 4.5, y: 1.5, base: { temperature: 24, humidity: 60, co2: 520, light: 600, soil_moisture: 50 }, phase: 0.7, species: 'tulip_white', anomaly: false },
+  { tag_id: '3', x: 1.5, y: 4.5, base: { temperature: 21, humidity: 65, co2: 460, light: 450, soil_moisture: 40 }, phase: 1.4, species: 'tulip_pink', anomaly: false },
+  { tag_id: '4', x: 4.5, y: 4.5, base: { temperature: 26, humidity: 70, co2: 700, light: 700, soil_moisture: 55 }, phase: 2.1, species: 'tulip_red', anomaly: false },
+  { tag_id: '5', x: 8.0, y: 2.5, base: { temperature: 19, humidity: 50, co2: 420, light: 350, soil_moisture: 35 }, phase: 2.8, species: 'tulip_white', anomaly: false },
+  { tag_id: '6', x: 8.0, y: 6.0, base: { temperature: 27, humidity: 78, co2: 950, light: 250, soil_moisture: 25 }, phase: 3.5, species: 'tulip_pink', anomaly: true },  // stressed + pest
+  { tag_id: '7', x: 5.5, y: 8.0, base: { temperature: 23, humidity: 58, co2: 540, light: 550, soil_moisture: 48 }, phase: 4.2, species: '', anomaly: false },  // unclassified yet
 ]
 
 const SENSOR_DRIFT_AMPLITUDES: Record<TwinSensor, number> = {
@@ -568,6 +581,9 @@ export function mockTwinState(): TwinState {
         nanosec: Math.floor((observedAtSec - Math.floor(observedAtSec)) * 1e9),
       },
       stale_seconds: stale,
+      species: seed.species,
+      species_confidence: seed.species ? 0.82 + 0.1 * Math.sin(t * 0.1 + seed.phase) : 0,
+      anomaly: seed.anomaly,
     })
   }
   return {

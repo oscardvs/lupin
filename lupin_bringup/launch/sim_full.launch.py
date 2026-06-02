@@ -401,6 +401,19 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── 8c3. gripper_action_bridge — HMI gripper service → controller ──
+    # Owns /lupin/gripper/set_angle_with_speed on both sim and hardware.
+    # Translates HMI degree commands into a GripperCommand action goal so
+    # the controller's commanded state stays aligned with the HMI request
+    # (without this, the hardware-side ros2_control HW interface re-asserts
+    # its stale 0 setpoint on every tick — see node docstring).
+    gripper_action_bridge = Node(
+        package='lupin_hmi', executable='gripper_action_bridge',
+        name='gripper_action_bridge',
+        parameters=[{'use_sim_time': True}],
+        output='log',
+    )
+
     # ── 8d. Xbox controller teleop ─────────────────────────────────────
     # Joy → teleop_twist_joy → /cmd_vel_joy (twist_mux input, priority 100).
     # Arm joints driven directly from /joy by lupin_hmi.arm_teleop.
@@ -437,6 +450,25 @@ def generate_launch_description() -> LaunchDescription:
         condition=_when('seed_amcl'),
     )
 
+    # ── 9. Sim battery publisher (sim-only) ────────────────────────────────
+    # Publishes a linearly draining sensor_msgs/BatteryState on
+    # /io/power/power_watcher so the BatteryMonitor in the mission
+    # orchestrator has data to work with. Hardware doesn't need this —
+    # the real MIRTE power watcher publishes on the same topic natively.
+    # Tune drain_rate_per_sec: 0.001 ≈ 17 min to empty (demo-safe);
+    # use 0.01 for fast testing (~90 s to the 20% low-battery threshold).
+    sim_battery_publisher = Node(
+        package='lupin_bringup',
+        executable='sim_battery_publisher',
+        name='sim_battery_publisher',
+        parameters=[{
+            'use_sim_time': True,
+            'initial_charge': 1.0,
+            'drain_rate_per_sec': 0.001,
+        }],
+        output='log',
+    )
+
     # HMI URL banner — printed before any process starts so the user can
     # scroll up to find it later. Modern terminals (gnome-terminal, kitty,
     # iTerm, VS Code) auto-detect http:// strings and make them
@@ -469,10 +501,12 @@ def generate_launch_description() -> LaunchDescription:
         rosbridge,
         web,
         seed,
+        sim_battery_publisher,
         twist_mux,
         xbox_teleop,
         arm_sim_shim,
         arm_preset_server,
+        gripper_action_bridge,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
         # message receipt. Their exit fires the next stage.

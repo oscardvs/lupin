@@ -119,6 +119,7 @@ def generate_launch_description():
                 'use_sim_time': use_sim_time,
                 'autostart': autostart,
                 'node_names': lifecycle_nodes_localization,
+                'bond_timeout': 20.0,  # see navigation manager below — WiFi discovery lag
             }],
             condition=UnlessCondition(slam),
         ),
@@ -186,6 +187,13 @@ def generate_launch_description():
                 'use_sim_time': use_sim_time,
                 'autostart': autostart,
                 'node_names': lifecycle_nodes_navigation,
+                # Raised from Nav2's 4.0s default: over the FastDDS discovery-server
+                # WiFi link the lifecycle<->server bond can take >4s to form on a cold
+                # bringup (discovery round-trips through the robot's server at :11811),
+                # which spuriously trips "unable to be reached after 4.00s by bond" and
+                # aborts bringup. 20s absorbs the lag; on a wired link the bond still
+                # forms in <1s so the larger ceiling is harmless.
+                'bond_timeout': 20.0,
             }],
         ),
     ])

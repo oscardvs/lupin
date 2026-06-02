@@ -2,12 +2,19 @@
 #
 # Rejected when:
 #   - lifecycle_state is FAULT (orchestrator unhealthy)
-#   - a mission is already running (lifecycle_state in {PREPARE, INSPECTING, RETURNING})
+#   - a mission is already running (lifecycle_state in
+#     {PREPARE, EXPLORING, INSPECTING, MONITORING, RETURNING})
 #   - mission_type is unknown to this build
 # Otherwise accepted; the orchestrator transitions READY → PREPARE.
 
-string mission_type              # "InspectionMission" only this MR
-string[] tag_sequence            # empty = use default (tag_locations.json, numeric order)
+string mission_type              # "InspectionMission" | "ExplorationMission"
+string[] tag_sequence            # InspectionMission: empty = all tags (tag_locations.json, numeric order)
+                                 # ExplorationMission: ignored (targets are discovered)
+
+# ExplorationMission only: number of distinct AprilTags to discover before
+# switching to the monitoring loop. 0 = use the orchestrator's discovery_goal
+# parameter default. Ignored for InspectionMission.
+uint16 discovery_goal
 ---
 bool accepted
 string mission_id                # populated on accept (mission_id_prefix + uuid hex)

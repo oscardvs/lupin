@@ -1,4 +1,4 @@
-import { Settings as SettingsIcon } from 'lucide-react'
+import { BookText, Settings as SettingsIcon } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { BatteryPill } from '@/components/BatteryPill'
@@ -12,6 +12,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 interface TopBarProps {
   onOpenSettings: () => void
 }
+
+/** Public operator handbook on the Vercel docs site. */
+const DOCS_URL = 'https://lupin-robot.vercel.app/docs/web-hmi'
 
 export function TopBar({ onOpenSettings }: TopBarProps) {
   return (
@@ -31,6 +34,20 @@ export function TopBar({ onOpenSettings }: TopBarProps) {
           <ConnectionPill />
           <BatteryPill />
           <ClockPill />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href={DOCS_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                aria-label="Documentation"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-sm border border-transparent text-muted-foreground transition-colors hover:border-hairline hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <BookText className="h-[18px] w-[18px]" />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Docs ↗</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

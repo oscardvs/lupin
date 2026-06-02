@@ -4,6 +4,7 @@ import {
   Pause,
   Play,
   Power,
+  Radar,
   SkipForward,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -44,6 +45,7 @@ export function MissionControls({ className }: MissionControlsProps) {
   const services = useMissionServices()
   const [busy, setBusy] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<{ tone: 'ok' | 'err'; msg: string } | null>(null)
+  const [discoveryGoal, setDiscoveryGoal] = useState(5)
 
   const lifecycle = state?.lifecycle_state ?? 'BOOT'
   const phaseLabel = formatMissionPhase(state)
@@ -109,6 +111,34 @@ export function MissionControls({ className }: MissionControlsProps) {
               : <Play className="h-4 w-4" />}
             Start patrol
           </Button>
+
+          {/* Autonomous explore-then-monitor: discover N tags, then loop. */}
+          <div className="inline-flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={startDisabled}
+              onClick={() => run('explore', () => services.startExploration(discoveryGoal))}
+              className="h-9"
+              title={`Explore until ${discoveryGoal} tags are discovered, then monitor them`}
+            >
+              {busy === 'explore'
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Radar className="h-4 w-4" />}
+              Explore
+            </Button>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={discoveryGoal}
+              disabled={startDisabled}
+              onChange={(e) => setDiscoveryGoal(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+              className="h-9 w-14 rounded-sm border border-hairline bg-background/40 px-2 text-center font-mono text-[12px] disabled:opacity-50"
+              title="number of tags to discover"
+              aria-label="discovery goal"
+            />
+          </div>
 
           {paused ? (
             <Button
@@ -209,12 +239,19 @@ function StatusRow({ state }: { state: ReturnType<typeof useMissionState> }) {
     targets_failed,
     targets_unreachable,
     targets_skipped,
+    tags_discovered,
+    discovery_goal,
     paused,
     estop_engaged,
   } = state
-  const progress = targets_total > 0
-    ? `${targets_completed} / ${targets_total}`
-    : '— / —'
+  const exploring = discovery_goal > 0
+  // During an exploration mission the meaningful progress metric is
+  // tags-discovered/N; otherwise it's the inspection completed/total.
+  const progress = exploring
+    ? `${tags_discovered} / ${discovery_goal} found`
+    : targets_total > 0
+      ? `${targets_completed} / ${targets_total}`
+      : '— / —'
   const issues = targets_failed + targets_unreachable + targets_skipped
 
   return (
@@ -223,7 +260,7 @@ function StatusRow({ state }: { state: ReturnType<typeof useMissionState> }) {
         <Cell label="lifecycle" value={lifecycle_state} accent />
         <Cell label="phase" value={mission_phase || '—'} />
         <Cell label="target" value={current_target || '—'} mono />
-        <Cell label="progress" value={progress} mono />
+        <Cell label={exploring ? 'discovered' : 'progress'} value={progress} mono />
       </div>
       {(paused || estop_engaged || issues > 0) && (
         <div className="flex flex-wrap gap-2">

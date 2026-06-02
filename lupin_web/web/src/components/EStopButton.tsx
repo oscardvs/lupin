@@ -28,7 +28,8 @@ export function EStopButton({ className }: EStopButtonProps) {
         'bg-[linear-gradient(135deg,_hsl(8_92%_55%)_0%,_hsl(8_92%_45%)_100%)] text-white',
         'shadow-[inset_0_-3px_0_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]',
         'hover:brightness-110 active:brightness-90',
-        isActive && 'animate-pulse',
+        'transition-[filter,box-shadow] duration-300',
+        isActive && 'animate-pulse shadow-[0_0_28px_-4px_hsl(8_92%_55%/0.85)]',
         className,
       )}
     >

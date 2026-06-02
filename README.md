@@ -1,12 +1,37 @@
-# MDP – Team Lupin – FloraNova Digital Twin
+# Lupin — FloraNova Greenhouse Digital Twin
 
-RO47007 Multidisciplinary Project, 2025–2026.
-Robot platform: MIRTE Master V2 (holonomic 4-mecanum base, 4-DOF arm).
-Client: FloraNova (commercial greenhouse).
+> An autonomous greenhouse-inspection robot: it navigates to AprilTag
+> stations, reads environmental sensors and flower health, and streams a
+> live digital twin to a browser HMI — in Gazebo and on real hardware.
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![ROS 2 Humble](https://img.shields.io/badge/ROS_2-Humble-22314E.svg?logo=ros)](https://docs.ros.org/en/humble/)
+[![Ubuntu 22.04](https://img.shields.io/badge/Ubuntu-22.04-E95420.svg?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
+[![Platform: MIRTE Master V2](https://img.shields.io/badge/Platform-MIRTE_Master_V2-2ea44f.svg)](https://docs.mirte.org/)
+[![Docs](https://img.shields.io/badge/docs-lupin--robot.vercel.app-000000.svg)](https://lupin-robot.vercel.app)
+
+RO47007 Multidisciplinary Project, 2025–2026 · Team **Lupin** · Client:
+FloraNova (commercial greenhouse). Robot platform: MIRTE Master V2
+(holonomic 4-mecanum base, 4-DOF arm + 1-DOF gripper).
+
+📖 **Full documentation & system overview:** <https://lupin-robot.vercel.app>
 
 > The team is called **Lupin**. The GitLab path is
 > `cor/ro47007/2026/group_14/lupin` — `group_14` is the course-assigned
 > subgroup, `lupin` is our project inside it.
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Cloning this repository](#cloning-this-repository)
+- [Branch model](#branch-model)
+- [Building](#building)
+- [Running](#running)
+- [Repository layout](#repository-layout)
+- [Contributing](#contributing)
+- [Team](#team)
+- [Course staff](#course-staff)
+- [License](#license)
 
 ## Prerequisites
 
@@ -225,18 +250,6 @@ The world's tag and table positions are derived from the
 so the Gazebo origin is the same as the bridge's coordinate frame —
 nav2, the bridge, and AprilTag detection all agree about positions.
 
-`lupin_perception` provides a lightweight AprilTag overlay helper for
-debugging camera perception. Launch it with:
-
-```bash
-ros2 launch lupin_perception perception.launch.py
-```
-
-This starts the `tag_annotator` node, which subscribes to `/camera/image_raw`
-and publishes `/camera/tag_detections_json` with AprilTag corner and distance
-metadata. The web HMI overlays AprilTag boxes on the live MJPEG camera stream
-instead of relying on a separate boxed-image topic.
-
 For autonomous navigation in this world, the greenhouse has no
 pre-built map — pair it with slam_toolbox + Nav2 in SLAM mode, see
 [Sim — Nav2 + slam_toolbox in a world without a saved map](#sim--nav2--slam_toolbox-in-a-world-without-a-saved-map)
@@ -256,6 +269,18 @@ colcon build --packages-select lupin_bringup --symlink-install
 By default the script reads `tag_locations.json` from the installed
 `greenhouse_sim` package (via `importlib.resources`); pass `--input` to
 point it elsewhere.
+
+#### Heads-up for perception integration
+
+The tag visuals in this world are deliberately ugly **bright magenta
+placeholders** (model names `apriltag_<id>_PLACEHOLDER`, visual names
+`TAG_<id>_PLACEHOLDER_NEEDS_TEXTURE`) — present at the right pose so
+the depth camera registers them, but **an AprilTag detector pointed at
+this world will not detect anything** until they're replaced with real
+`tag36h11` textures. Don't spend time debugging "why doesn't my
+detector find anything" — it's the textures. See the TODO inside
+`_render_tag` in `scripts/generate_greenhouse_world.py` for the
+swap-in path.
 
 ### Greenhouse sensor bridge (`lupin_greenhouse_bridge`)
 
@@ -551,12 +576,12 @@ expand once the chain is proven.
 | --- | --- |
 | `lupin_bringup` | Top-level launch files (`sim_full.launch.py`, `greenhouse_sim.launch.py`), the greenhouse SDF + generator, RViz config, and small system-glue helpers (`seed_amcl_pose`). |
 | `lupin_navigation` | Nav2 params + slam_toolbox config; saved KRR-house map; planned home for AprilTag pose corrections. |
-| `lupin_mission` | Mission orchestrator (v2). Hierarchical state machine via `transitions`: `BOOT → READY → PREPARE → INSPECTING → RETURNING → DONE / FAULT`. Polymorphic observation publisher on `/floranova/observations`, status on `/mission/state` (5 Hz), operator services `/mission/{start,pause,resume,abort,skip_current}`, cross-cutting `/e_stop_state` monitor. See `lupin_mission/README.md`. |
-| `lupin_msgs` | Custom messages and services: `Observation`, `MissionState`, `TagReading`, `SensorReading`, `FlowerObservation`, `AnomalyReport`; `GetTagReading`, `StartMission`. |
+| `lupin_mission` | Mission orchestrator (v2). Hierarchical state machine via `transitions`: `BOOT → READY → PREPARE → {INSPECTING \| EXPLORING → MONITORING} → RETURNING → DONE / FAULT`. Two mission types: `InspectionMission` (fixed tag list, once) and `ExplorationMission` (frontier-discover N tags, then monitor them in a loop). Polymorphic observation publisher on `/floranova/observations`, status on `/mission/state` (5 Hz), operator services `/mission/{start,pause,resume,abort,skip_current}`, `/e_stop_state` monitor. See `lupin_mission/README.md`. |
+| `lupin_msgs` | Custom messages and services: `Observation`, `MissionState`, `TagReading`, `SensorReading`, `FlowerObservation`, `AnomalyReport`, `TwinState`/`TwinTagState`, `DiscoveredTag`/`DiscoveredTags`; `GetTagReading`, `StartMission`, `ConfirmTag`, `GetField`. |
 | `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator. Single `~/get_tag_reading` service. Open-sourced separately at `lupin_greenhouse_ros/`. |
 | `lupin_hmi` | PS4 + keyboard teleop, `cmd_vel_mux` for arbitration between manual override / Nav2 / web. |
 | `lupin_web` | Browser HMI on `:8090` — Vite + React + shadcn/ui. Tabs: Teleop, Arm, Voice, Cameras, Telemetry, Logs, Map. Talks to rosbridge on `:9090`. The Voice tab is a Gemini Live agent with a 14-tool surface (`drive`, `nav_goto`, `nav_forward`, `rotate`, `arm_preset`, `query_state`, `engage_estop`, …) that drives the robot in natural language. |
-| `lupin_perception` | Vision package: AprilTag overlay and future flower detection pipelines. Includes `perception.launch.py`, `tag_annotator`, and `config/tags.yaml`. |
+| `lupin_perception` | Vision: `tag_annotator` (OpenCV ArUco) for AprilTag detection on the Orbbec stream; `yolo_detector` (Ultralytics) for tulip species + `bug` anomaly on the gripper cam; `perception_aggregator` fuses them into `/perception/discovered_tags`, `KIND_FLOWER` observations, and the `/perception/confirm_tag` service. See `lupin_perception/README.md`. |
 | `docs/` | Architecture diagrams, design notes. |
 
 ## Contributing
@@ -590,3 +615,12 @@ expand once the chain is proven.
 - Martijn Wisse — robot expert
 - Thijs Hoedemakers — lecturer
 - Gillian Saunders — course support, skills & reflection
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). See [`CHANGELOG.md`](CHANGELOG.md)
+for the release history.
+
+Built on the MIRTE Master vendor stack and other open-source ROS 2 packages,
+each retaining its own upstream license (see the upstream table under
+[Prerequisites](#prerequisites)).

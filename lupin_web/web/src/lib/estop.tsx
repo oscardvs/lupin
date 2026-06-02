@@ -9,9 +9,21 @@ import {
   type ReactNode,
 } from 'react'
 
-import { useRos, usePublisher } from '@/lib/ros'
+import { invertTwist } from '@/lib/polarity'
+import { useRos, usePublisher, useService } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import type { Twist } from '@/types/ros'
+
+// action_msgs/srv/CancelGoal request — empty goal_info cancels all active goals.
+// This is the canonical Nav2 cancel-everything pattern: hitting both
+// NavigateToPose and NavigateThroughPoses servers covers either entry point
+// from RViz or our HMI map widget.
+const CANCEL_ALL_REQ = {
+  goal_info: {
+    goal_id: { uuid: Array(16).fill(0) },
+    stamp: { sec: 0, nanosec: 0 },
+  },
+} as const
 
 const ZERO_TWIST: Twist = {
   linear: { x: 0, y: 0, z: 0 },
@@ -43,12 +55,27 @@ const EStopContext = createContext<EStopValue>({
   publishCmdVel: () => undefined,
 })
 
-const ESTOP_HEARTBEAT_HZ = 10
+// 20 Hz matches Nav2's velocity_smoother output rate — gives our zero Twists
+// parity on the cmd_vel bus during the ~100 ms while the cancel_goal service
+// call is in flight to Nav2 over rosbridge.
+const ESTOP_HEARTBEAT_HZ = 20
 
 export function EStopProvider({ children }: { children: ReactNode }) {
-  const [{ cmdVelTopic, cmdVelType, estopAutoOnFocusLoss }] = useSettings()
+  const [{ cmdVelTopic, cmdVelType, estopAutoOnFocusLoss, polarityInvertHmi }] = useSettings()
   const { status } = useRos()
   const publishTwist = usePublisher<Twist>(cmdVelTopic, cmdVelType)
+  // Nav2 cancel hooks — e-stop alone can't beat Nav2 on the cmd_vel bus
+  // (BEST_EFFORT, no QoS priority, both publish at 10–20 Hz). Cancelling
+  // the active goal is what actually stops Nav2's velocity_smoother from
+  // emitting Twists; heartbeat zeros then own the topic uncontested.
+  const cancelNavigateToPose = useService<typeof CANCEL_ALL_REQ>(
+    '/navigate_to_pose/_action/cancel_goal',
+    'action_msgs/srv/CancelGoal',
+  )
+  const cancelNavigateThroughPoses = useService<typeof CANCEL_ALL_REQ>(
+    '/navigate_through_poses/_action/cancel_goal',
+    'action_msgs/srv/CancelGoal',
+  )
 
   const [active, setActive] = useState<boolean>(true)
   const [reason, setReason] = useState<EStopReason | null>('startup')
@@ -57,7 +84,11 @@ export function EStopProvider({ children }: { children: ReactNode }) {
   const trigger = useCallback((r: EStopReason) => {
     setActive(true)
     setReason(r)
-  }, [])
+    // Fire and forget — both cancels run in parallel, errors swallowed
+    // (action server may not exist in mock mode or before Nav2 is up).
+    cancelNavigateToPose(CANCEL_ALL_REQ).catch(() => undefined)
+    cancelNavigateThroughPoses(CANCEL_ALL_REQ).catch(() => undefined)
+  }, [cancelNavigateToPose, cancelNavigateThroughPoses])
 
   const reset = useCallback(() => {
     setActive(false)
@@ -108,9 +139,9 @@ export function EStopProvider({ children }: { children: ReactNode }) {
   const publishCmdVel = useCallback(
     (t: Twist) => {
       if (active) return // gate everything: nothing else publishes while e-stop is on
-      publishTwist(t)
+      publishTwist(invertTwist(t, polarityInvertHmi))
     },
-    [active, publishTwist],
+    [active, publishTwist, polarityInvertHmi],
   )
 
   const value = useMemo<EStopValue>(

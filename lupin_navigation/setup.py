@@ -29,6 +29,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'slam_reset_node = lupin_navigation.slam_reset_node:main',
         ],
     },
 )

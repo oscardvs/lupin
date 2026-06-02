@@ -193,14 +193,64 @@ export const ROS_TYPE = {
 export const MIRTE_SRV = {
   SetServoAngleWithSpeed: 'mirte_msgs/srv/SetServoAngleWithSpeed',
   SetBool: 'std_srvs/srv/SetBool',
+  SetNeopixel: 'mirte_msgs/srv/SetNeopixel',
 } as const
+
+/** Status-light bridge service endpoints (lupin_hmi/light_strip_bridge).
+ * `setManual` holds a manual whole-strip colour and stops the bridge
+ * following mission state; `setAuto` hands colouring back to the FSM. */
+export const LED_SERVICE = {
+  setManual: '/lupin/leds/set',
+  setAuto: '/lupin/leds/auto',
+} as const
+
+/** Mirror of `mirte_msgs/msg/NeopixelColor` — whole-strip RGB, 0–255/channel. */
+export interface NeopixelColor {
+  r: number
+  g: number
+  b: number
+}
+
+/** Mirror of `mirte_msgs/srv/SetNeopixel`. */
+export interface SetNeopixelRequest {
+  color: NeopixelColor
+}
+
+export interface SetNeopixelResponse {
+  status: boolean
+}
 
 /** lupin_msgs service type strings. */
 export const LUPIN_SRV = {
   StartMission: 'lupin_msgs/srv/StartMission',
   Trigger: 'std_srvs/srv/Trigger',
   GetField: 'lupin_msgs/srv/GetField',
+  CalibrateArm: 'lupin_msgs/srv/CalibrateArm',
+  SetArmPreset: 'lupin_msgs/srv/SetArmPreset',
 } as const
+
+/** Mirror of `lupin_msgs/srv/CalibrateArm`. The single-srv-with-action
+ * shape (vs three separate srvs) mirrors the operator wizard 1:1: start
+ * disables servos, operator hand-poses the arm, commit samples positions
+ * and writes Hiwonder zero offsets, cancel re-enables without writing. */
+export type CalibrateArmAction = 'start' | 'commit' | 'cancel' | 'status'
+export type CalibrateArmState = 'IDLE' | 'AWAITING_POSE'
+
+export interface CalibrateArmRequest {
+  action: CalibrateArmAction
+}
+
+export interface CalibrateArmResponse {
+  success: boolean
+  state: CalibrateArmState | ''
+  message: string
+  /** Servo names in server-side order; populated only on commit. */
+  joint_names: string[]
+  /** Centidegrees actually written via _set_offset (per joint). */
+  offsets_applied: number[]
+  /** Raw-tick diff (position - home + curr_offset). */
+  diffs_observed: number[]
+}
 
 /** Sensor channels the digital twin understands. Order is the canonical
  * sensor-pill order in the HMI header. */
@@ -221,6 +271,13 @@ export interface TwinTagState {
   readings: SensorReading[]
   last_observed: Time
   stale_seconds: number
+  /** YOLO flower class co-located with this tag ("tulip_red"|"tulip_white"|
+   * "tulip_pink"), "" until perception classifies one. */
+  species: string
+  /** Confidence [0,1] for `species`; 0 when species is "". */
+  species_confidence: number
+  /** True when the YOLO "bug" anomaly was seen at this tag. */
+  anomaly: boolean
 }
 
 /** Mirror of `lupin_msgs/msg/TwinState`. */
@@ -261,7 +318,8 @@ export interface GetFieldResponse {
  * and PREPARE (empty otherwise).
  */
 export type MissionLifecycleState =
-  | 'BOOT' | 'READY' | 'PREPARE' | 'INSPECTING' | 'RETURNING' | 'DONE' | 'FAULT'
+  | 'BOOT' | 'READY' | 'PREPARE' | 'EXPLORING' | 'INSPECTING' | 'MONITORING'
+  | 'RETURNING' | 'DONE' | 'FAULT'
 
 export interface MissionState {
   header: Header
@@ -275,6 +333,10 @@ export interface MissionState {
   targets_failed: number
   targets_unreachable: number
   targets_skipped: number
+  /** ExplorationMission: distinct tags discovered so far, and the goal N.
+   * Both 0 for an InspectionMission. */
+  tags_discovered: number
+  discovery_goal: number
   last_error: string
   estop_engaged: boolean
   paused: boolean
@@ -304,7 +366,7 @@ export const OBSERVATION_STATUS = {
 } as const
 export type ObservationStatus = (typeof OBSERVATION_STATUS)[keyof typeof OBSERVATION_STATUS]
 
-/** Kind enum from `Observation.msg`. Only KIND_TAG_READING is populated this MR. */
+/** Kind enum from `Observation.msg`. */
 export const OBSERVATION_KIND = {
   TAG_READING: 0,
   FLOWER: 1,
@@ -312,11 +374,21 @@ export const OBSERVATION_KIND = {
 } as const
 export type ObservationKind = (typeof OBSERVATION_KIND)[keyof typeof OBSERVATION_KIND]
 
+/** Mirror of `lupin_msgs/msg/FlowerObservation`. Produced by the perception
+ * aggregator and carried inside an Observation with `kind === FLOWER`. */
+export interface FlowerObservation {
+  tag_id: string
+  pose: PoseStamped
+  species: string
+  confidence: number
+  anomaly: boolean
+}
+
 /**
  * Mirror of `lupin_msgs/msg/Observation`. `tag_reading` is meaningful only when
- * `kind === OBSERVATION_KIND.TAG_READING`. `flower` and `anomaly` are stubs in
- * the message but never populated in v1; we type them as `unknown` to avoid
- * pretending they exist.
+ * `kind === OBSERVATION_KIND.TAG_READING`; `flower` only when
+ * `kind === OBSERVATION_KIND.FLOWER`. `anomaly` (standalone KIND_ANOMALY) is
+ * still unused — typed `unknown` to avoid pretending it exists.
  */
 export interface Observation {
   header: Header
@@ -326,9 +398,13 @@ export interface Observation {
   status: ObservationStatus
   status_detail: string
   tag_reading: TagReading
-  flower: unknown
+  flower: FlowerObservation
   anomaly: unknown
 }
+
+/** Flower species → display palette. Keep in sync with best.pt classes. */
+export const FLOWER_SPECIES = ['tulip_red', 'tulip_white', 'tulip_pink'] as const
+export type FlowerSpecies = (typeof FLOWER_SPECIES)[number]
 
 export interface SetServoAngleWithSpeedRequest {
   /** Target angle, interpreted in degrees when `degrees: true`. */
@@ -358,14 +434,18 @@ export function quatToEuler(q: Quaternion): { roll: number; pitch: number; yaw: 
   return { roll, pitch, yaw }
 }
 
-// --- Added for AprilTag Overlays ---
+// ── AprilTag overlay (HMI Cameras view) ────────────────────────────────
+/** `std_msgs/String`. Only `data` is meaningful for our consumer; the
+ * AprilTag node packs a JSON array into it (see `TagDetection`). */
 export interface StdMsgsString {
-  data: string;
+  data: string
 }
 
+/** One tag in the JSON payload published by `lupin_perception/tag_annotator`
+ * on `/camera/tag_detections_json`. Pixel coordinates are in the original
+ * (un-resized) image frame; the HMI's overlay canvas is sized to match. */
 export interface TagDetection {
-  id: number;
-  corners: [[number, number], [number, number], [number, number], [number, number]];
-  dist: number;
+  id: number
+  corners: [[number, number], [number, number], [number, number], [number, number]]
+  dist: number
 }
-

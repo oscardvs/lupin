@@ -1,0 +1,32 @@
+[Unit]
+Description=Lupin onboard nodes (twist_mux + arm_preset_server + gripper_action_bridge)
+Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
+# These nodes connect HMI commands to the mirte_ros controllers and gripper
+# action server. They must come up after the controllers are loaded but they
+# also tolerate the controllers appearing late (the action client retries).
+After=mirte-ros.service network-online.target
+Wants=mirte-ros.service network-online.target
+PartOf=mirte-ros.service
+
+[Service]
+Type=simple
+User=mirte
+Group=mirte
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/mirte/mirte_ws/install/setup.bash && source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; exec ros2 launch lupin_bringup onboard.launch.py'
+Restart=on-failure
+RestartSec=4
+MemoryMax=256M
+# NOTE: ProtectSystem=strict was REMOVED. The vendor env script at
+# /home/mirte/mirte_ws/install/mirte_fastdds_discovery_setup/.../mirte_fastdds_discovery_setup.sh
+# does `sed ... > .../config/super_client_config.xml` when sourced; under
+# ProtectSystem=strict the write hits a "Read-only file system" error and
+# lupin-onboard ends up with a stale/missing super-client config. That's the
+# layered failure mode observed in the 2026-05-21 boot journal.
+PrivateTmp=true
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lupin-onboard
+
+[Install]
+WantedBy=multi-user.target

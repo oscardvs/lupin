@@ -21,6 +21,8 @@ set(msg_files
   "msg/MissionState.msg"
   "msg/TwinTagState.msg"
   "msg/TwinState.msg"
+  "msg/DiscoveredTag.msg"
+  "msg/DiscoveredTags.msg"
 )
 set(srv_files
   "srv/GetTagReading.srv"
@@ -28,6 +30,7 @@ set(srv_files
   "srv/SetArmPreset.srv"
   "srv/GetField.srv"
   "srv/ConfirmTag.srv"
+  "srv/CalibrateArm.srv"
 )
 set(action_files
 )

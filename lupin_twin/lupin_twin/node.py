@@ -57,6 +57,7 @@ from .idw import (
 )
 from .state import (
     DEFAULT_BUFFER_LEN,
+    FlowerUpdate,
     TagSensorEntry,
     TwinObservation,
     TwinStateStore,
@@ -198,9 +199,12 @@ class TwinNode(Node):
         recorded too — the operator wants to see SCAN_FAILED tags listed —
         but only OK observations carry a meaningful pose, so we leave the
         pose unset for the others (the store handles that gracefully)."""
+        if msg.kind == Observation.KIND_FLOWER:
+            self._ingest_flower(msg)
+            return
         if msg.kind != Observation.KIND_TAG_READING:
-            # Future-proofing: future kinds (flowers, anomalies) will get
-            # their own consumer. Silently drop here.
+            # KIND_ANOMALY (standalone anomalies) isn't modelled in the twin
+            # yet — the bug flag rides the flower path. Silently drop.
             return
 
         # Frame check — a silently-mismatched frame_id on hardware (the
@@ -255,6 +259,38 @@ class TwinNode(Node):
             # pairs we've answered, which is small.)
             pass
 
+    def _ingest_flower(self, msg: Observation) -> None:
+        """Record a KIND_FLOWER observation: merge species/anomaly onto the
+        co-located tag (keyed by flower.tag_id), pinning it from the flower
+        pose if the sensor-reading path hasn't already."""
+        flower = msg.flower
+        tag_id = flower.tag_id
+        if not tag_id:
+            return
+        # Frame check on the flower's own PoseStamped (falls back to the
+        # Observation header, then the expected frame).
+        expected = self._frame_id
+        msg_frame = flower.pose.header.frame_id or msg.header.frame_id or expected
+        if msg_frame != expected:
+            self.get_logger().warn(
+                f'Dropping flower observation in frame {msg_frame!r}; '
+                f'twin expects {expected!r}.'
+            )
+            return
+        pose = flower.pose.pose
+        has_pose = pose.orientation.w != 0.0
+        self._store.record_flower(FlowerUpdate(
+            tag_id=tag_id,
+            monotonic_at=self._monotonic_now(),
+            species=flower.species,
+            species_confidence=float(flower.confidence),
+            anomaly=bool(flower.anomaly),
+            pose_x=pose.position.x if has_pose else None,
+            pose_y=pose.position.y if has_pose else None,
+            pose_qz=pose.orientation.z if has_pose else None,
+            pose_qw=pose.orientation.w if has_pose else None,
+        ))
+
     # ─── periodic state publish ────────────────────────────────────────
 
     def _publish_state(self) -> None:
@@ -286,6 +322,12 @@ class TwinNode(Node):
                 r.name = name
                 r.value = float(value)
                 entry.readings.append(r)
+
+            # Flower classification co-located with this tag (empty/false
+            # until perception has classified one).
+            entry.species = buf.species
+            entry.species_confidence = float(buf.species_confidence)
+            entry.anomaly = bool(buf.anomaly)
 
             # Absolute observation timestamp — durable, survives serialisation
             # to disk, and is what off-line consumers (FloraNova export,

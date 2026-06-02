@@ -120,6 +120,32 @@ export function VoiceView() {
         </div>
       ) : null}
 
+      {/* Loud mock-session banner — the #1 "I told it to drive and nothing
+          happened" trap: with no Gemini key the session runs the scripted mock,
+          which never calls a motion tool, so commands silently never reach the
+          robot. Shown while a mock session is actually RUNNING (the pre-session
+          key hint below covers the not-yet-started case). */}
+      {sessionRunning && !session.isLive ? (
+        <div className="reticle relative flex flex-wrap items-center gap-3 rounded-sm border-2 border-amber-500 bg-amber-500/15 px-3 py-2.5 text-sm sm:px-4 sm:py-3">
+          <span className="reticle-bl" aria-hidden />
+          <span className="reticle-br" aria-hidden />
+          <AlertCircle className="h-5 w-5 shrink-0 text-amber-400" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold uppercase tracking-[0.14em] text-amber-300">
+                Mock session — robot will NOT move
+              </span>
+              <span className="tag">CFG-VOX-02</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              This is a scripted demo with no Gemini connection. Drive/nav/arm
+              commands are never sent to the robot. Add a Gemini API key in
+              Settings → Voice (and end + restart the session) to control Lupin.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Configuration warnings — only when likely to confuse the user. */}
       {!hasKey && !mock ? (
         <div className="reticle relative flex flex-wrap items-center gap-3 rounded-sm border border-amber-500/60 bg-amber-500/10 px-3 py-2.5 text-sm sm:px-4">
@@ -148,7 +174,11 @@ export function VoiceView() {
         <div className="mb-4 flex flex-wrap items-baseline gap-2">
           <span className="tag tag-strong">voice console</span>
           <span className="tag tag-accent">PNL-VOX-01</span>
-          <span className="tag">{session.isLive ? 'gemini live' : 'mock'}</span>
+          {session.isLive ? (
+            <span className="tag">gemini live</span>
+          ) : (
+            <span className="tag border-amber-500/60 text-amber-300">mock · no robot control</span>
+          )}
           <span className="tag">{settings.voiceLanguage}</span>
           <span
             className={cn(

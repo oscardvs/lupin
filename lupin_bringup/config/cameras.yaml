@@ -1,0 +1,73 @@
+# Lupin camera config — drives lupin-cameras.service (v2 native-FPS pipeline).
+#
+# Vendor mirte-ros starts USB and Orbbec cameras at default rates (~30 fps for
+# usb_cam, 10 fps for the Orbbec astra; full depth + pointcloud streams). On
+# the 4-core A55 Pi those producers alone consume ~85% of one core combined,
+# and they run at native rate regardless of subscribers.
+#
+# The v2 pipeline (lupin-cameras.service):
+#   1. ExecStartPre kills the vendor camera processes so the v4l/USB devices
+#      are released (see scripts/kill-vendor-cameras.sh).
+#   2. cameras.launch.py relaunches them with the params below. Topic names
+#      match the vendor's (`/camera/color/image_raw`, `/gripper_camera/image_raw`)
+#      so downstream consumers (HMI, AprilTag detector, web_video_server) see
+#      no change in interface — only lower-rate frames.
+#
+# After editing this file:
+#   colcon build --packages-select lupin_bringup
+#   sudo systemctl restart lupin-cameras
+#
+# Tuning hints:
+#   - For arm-aim work that needs fresh frames, bump `gripper.framerate`.
+#   - For perception research that uses depth, set `depth.enabled: true`.
+#   - To inspect the raw pointcloud, set `point_cloud.enabled: true`
+#     (depth must also be on — they're coupled at the driver).
+
+cameras:
+  # Orbbec astra (Mirte's depth cam — detected as /dev/astra_mini_pro).
+  # The driver wants colour enabled for camera_info / tf to flow, so we keep
+  # it on by default. Disabling depth + pointcloud is the single biggest
+  # producer-side CPU saving.
+  color:
+    enabled: true
+    # The Astra Mini Pro's color sensor only offers 10/15/30 fps at 640×480
+    # (and 7 fps only at 1280×960). 30 fps gives the HMI a smooth feed —
+    # at JPEG ≈ 50 kB × 30 fps ≈ 12 Mbps over WiFi, comfortable on the AP,
+    # and the in-process web_video_server avoids touching raw frames so
+    # the Pi cost is mostly USB drain + JPEG encode. Drop to 15 or 10 if
+    # you want to spare CPU for other onboard work.
+    fps: 30
+    width: 640
+    height: 480
+  depth:
+    enabled: false    # turn on for grasp/perception research
+    fps: 10           # mirror color — depth profiles map 1:1 on this device
+  point_cloud:
+    enabled: false    # heavy; only when offline analysis needs the cloud
+
+  # USB gripper camera (auto-detected /dev/videoN matching the vendor's name
+  # list). usb_cam pumps the v4l device at the framerate we ask for, so this
+  # also caps the producer-side CPU. No throttling node downstream.
+  gripper:
+    enabled: true
+    framerate: 20.0    # usb_cam default ~30; 20 keeps the tag detector fed during arm aim
+    pixel_format: yuyv2rgb
+    width: 640
+    height: 480
+
+  # web_video_server (HMI camera tab) — runs ON THE ROBOT so the in-process
+  # subscriber gets raw frames over loopback and only MJPEG crosses WiFi.
+  # Mirrors vendor `mirte_bringup/minimal_master.launch.py`'s 8181/localhost
+  # web_video_server (which we don't kill — it stays running but isolated to
+  # localhost behind their nginx). We expose 0.0.0.0:8091 so the laptop's
+  # Vite `/_video` proxy can hit us directly; nginx is not in the picture.
+  # `default_stream_type: ros_compressed` makes the server subscribe to
+  # `<topic>/compressed` (JPEG via image_transport) instead of raw — that's
+  # the load-bearing setting that matches what other groups see at
+  # mirte.local/ros-video/.
+  web_video_server:
+    enabled: true
+    port: 8091
+    address: 0.0.0.0
+    default_stream_type: ros_compressed
+    default_transport: compressed

@@ -1,0 +1,40 @@
+[Unit]
+Description=Lupin camera pipeline (kills vendor cams, relaunches at config-driven low FPS)
+Documentation=https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin
+After=mirte-ros.service network-online.target
+Wants=mirte-ros.service network-online.target
+# When mirte-ros restarts it respawns its own cameras. We must come back with
+# it so the kill+relaunch step runs again. PartOf chains stop/start lifecycle.
+PartOf=mirte-ros.service
+
+[Service]
+Type=simple
+User=mirte
+Group=mirte
+# ExecStartPre kills the vendor camera processes so the /dev/video* and USB
+# device handles are released before we relaunch. It blocks until the
+# devices are actually free (otherwise our launch fails to open them).
+ExecStartPre=/bin/bash -lc 'exec "$(ros2 pkg prefix lupin_bringup 2>/dev/null || echo /opt/ros/humble)/share/lupin_bringup/scripts/kill-vendor-cameras.sh"'
+# Source ROS + workspace overlays so `ros2 launch` resolves lupin_bringup,
+# orbbec_camera (vendor astra.launch.py), usb_cam, and v4l2-ctl.
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/mirte/mirte_ws/install/setup.bash && source /home/mirte/ros2_ws/install/setup.bash 2>/dev/null; exec ros2 launch lupin_bringup cameras.launch.py'
+# If the camera nodes crash (USB unplug mid-run, driver panic) bring the
+# whole pipeline back up — orderly restarts let ExecStartPre run again to
+# clean up any stragglers.
+Restart=on-failure
+RestartSec=4
+# Cameras + their image_transport plugins take real memory. 384M is sized
+# for color@5fps + (depth+pc when toggled on) on the A55 Pi — adjust if you
+# crank rates back up.
+MemoryMax=384M
+# Hardening — same shape as lupin-cameras-throttle's hardening, no extra
+# privileges needed beyond signalling fellow mirte-user processes.
+ProtectSystem=strict
+PrivateTmp=true
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lupin-cameras
+
+[Install]
+WantedBy=multi-user.target

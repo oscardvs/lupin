@@ -235,6 +235,29 @@ export class AudioPlayer {
     return this.ctx
   }
 
+  /**
+   * Eagerly create and resume the AudioContext. Must be called from inside a
+   * user-gesture handler (e.g. the click that starts the voice session).
+   *
+   * Why: ensureCtx is otherwise lazy — it would only create the context when
+   * the first audio chunk arrives from the server, which is well after the
+   * user's tap. Browsers (Chrome/Safari autoplay policy) suspend a context
+   * created outside a gesture, and the model's voice queues silently until
+   * the next gesture happens to resume it. The user-visible symptom is "the
+   * answer is in but gated by the next button press". Calling prepare() in
+   * the same call stack as the start-button click avoids that.
+   */
+  async prepare(): Promise<void> {
+    const ctx = this.ensureCtx()
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume()
+      } catch {
+        /* swallow — gesture may have already lapsed; ensureCtx will retry on enqueue */
+      }
+    }
+  }
+
   /** Live model-voice level in [0, 1]. Returns 0 when nothing is playing. */
   getLevel(): number {
     if (!this.analyser) return 0

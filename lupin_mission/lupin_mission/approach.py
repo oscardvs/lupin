@@ -180,6 +180,90 @@ def compute_approach(
     )
 
 
+def compute_discovered_approach(
+    tag_id: str,
+    pose_in_map: Mapping[str, float] | object,
+    *,
+    standoff_m: float,
+    fallback_yaw: float,
+    robot_xy: Optional[tuple[float, float]] = None,
+) -> TagApproach:
+    """Approach pose for a tag discovered live (no a-priori table geometry).
+
+    A discovered tag carries its own map pose (position + orientation) from
+    the detector's solvePnP + TF lookup, so — unlike :func:`compute_approach`,
+    which needs the table bbox — we derive the standoff from the tag's own
+    facing normal.
+
+    Geometry rule
+    -------------
+    The AprilTag's surface normal is its local +Z axis (OpenCV/ArUco marker
+    convention: +Z points out of the marker toward the camera that saw it,
+    i.e. into the aisle). The robot parks ``standoff`` metres along that
+    normal, projected onto the map's XY plane, yaw pointing back at the tag.
+
+    When the normal is near-vertical (tag facing up/down, or noisy
+    orientation), the projection degenerates; we fall back to approaching
+    along the vector from ``robot_xy`` to the tag (a side we can already
+    reach), and finally to ``fallback_yaw`` if no robot pose is available.
+
+    Parameters
+    ----------
+    pose_in_map:
+        A ``geometry_msgs/Pose`` (or any object with ``.position.{x,y}`` and
+        ``.orientation.{x,y,z,w}``). The tag's location in the map frame.
+    standoff_m, fallback_yaw, robot_xy:
+        As above. ``robot_xy`` is the robot's current map position, used only
+        for the degenerate-normal fallback.
+    """
+    tag_x = float(pose_in_map.position.x)
+    tag_y = float(pose_in_map.position.y)
+    standoff_used = _clamp_standoff(float(standoff_m))
+
+    # Tag local +Z axis expressed in the map frame (third column of the
+    # rotation matrix for quaternion (x, y, z, w)).
+    qx = float(pose_in_map.orientation.x)
+    qy = float(pose_in_map.orientation.y)
+    qz = float(pose_in_map.orientation.z)
+    qw = float(pose_in_map.orientation.w)
+    nx = 2.0 * (qx * qz + qw * qy)
+    ny = 2.0 * (qy * qz - qw * qx)
+    norm = math.hypot(nx, ny)
+
+    if norm >= _DEGENERATE_NORMAL_EPS:
+        nx /= norm
+        ny /= norm
+        derived = 'discovered_normal'
+    elif robot_xy is not None:
+        # Degenerate normal — approach from where the robot already is.
+        rx, ry = robot_xy
+        vx, vy = rx - tag_x, ry - tag_y
+        vnorm = math.hypot(vx, vy)
+        if vnorm >= _DEGENERATE_NORMAL_EPS:
+            nx, ny = vx / vnorm, vy / vnorm
+            derived = 'discovered_robot'
+        else:
+            return TagApproach(
+                tag_id=tag_id, goal_x=tag_x, goal_y=tag_y,
+                goal_yaw=float(fallback_yaw), standoff_m=0.0,
+                derived_from='fallback', table_id=None,
+            )
+    else:
+        return TagApproach(
+            tag_id=tag_id, goal_x=tag_x, goal_y=tag_y,
+            goal_yaw=float(fallback_yaw), standoff_m=0.0,
+            derived_from='fallback', table_id=None,
+        )
+
+    goal_x = tag_x + nx * standoff_used
+    goal_y = tag_y + ny * standoff_used
+    goal_yaw = math.atan2(tag_y - goal_y, tag_x - goal_x)
+    return TagApproach(
+        tag_id=tag_id, goal_x=goal_x, goal_y=goal_y, goal_yaw=goal_yaw,
+        standoff_m=standoff_used, derived_from=derived, table_id=None,
+    )
+
+
 def load_approach_overrides(path: str) -> dict:
     """Load the per-tag overrides yaml. Empty path → empty dict (no error).
 

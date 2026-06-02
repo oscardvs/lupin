@@ -221,7 +221,7 @@ const PINNED_LABELS: Record<string, string> = {
   '/camera/image_raw': 'RGB',
   '/camera/color/image_raw': 'RGB',
   '/camera/depth/image_raw': 'Depth',
-  '/camera/gripper/image_raw': 'Gripper',
+  '/gripper_camera/image_raw': 'Gripper',
   '/camera/ir/image_raw': 'IR',
 }
 

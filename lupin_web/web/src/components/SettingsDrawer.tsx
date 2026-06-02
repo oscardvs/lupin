@@ -103,12 +103,16 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
             </Section>
 
             <Section title="Arm">
-              <Field label="Servo namespace">
+              <Field label="Servo namespace (readback + enable)">
                 <Input
                   value={settings.armServoNamespace}
                   onChange={(e) => update({ armServoNamespace: e.target.value })}
                   placeholder="/io/servo/hiwonder"
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Position readback and enable/disable only. Slider commands always
+                  go to the fixed <span className="font-mono">/lupin/arm/*</span> bridge.
+                </p>
               </Field>
               <Field label="Default rate (deg/s)">
                 <Input
