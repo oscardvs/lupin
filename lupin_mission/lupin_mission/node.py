@@ -338,6 +338,12 @@ class MissionOrchestratorNode(Node):
         self.declare_parameter("nav_timeout_s", 60.0)
         self.declare_parameter("nav_max_attempts", 2)
         self.declare_parameter("scan_timeout_s", 5.0)
+        # Minimum time to dwell in SCANNING after a successful reading, so the
+        # patrol arm reaches the inspect pose and the flower detector +
+        # aggregator (which only attribute a bloom while mission_phase==SCANNING)
+        # can read the colour before we advance. 0 = no dwell (advance as soon
+        # as the bridge replies). sim sets this when arm patrol is on.
+        self.declare_parameter("flower_scan_dwell_s", 0.0)
         # Visual confirmation gate. False (default) = bridge oracle path,
         # which is what sim uses. True = call /perception/confirm_tag before
         # the bridge — for hardware where the camera must actually see the
@@ -428,6 +434,8 @@ class MissionOrchestratorNode(Node):
         self._nav_timeout = float(self.get_parameter("nav_timeout_s").value)
         self._nav_max_attempts = int(self.get_parameter("nav_max_attempts").value)
         self._scan_timeout = float(self.get_parameter("scan_timeout_s").value)
+        self._flower_scan_dwell = float(self.get_parameter("flower_scan_dwell_s").value)
+        self._scan_dwell_timer = None
         self._require_visual_confirmation = bool(
             self.get_parameter("require_visual_confirmation").value
         )
@@ -2173,11 +2181,37 @@ class MissionOrchestratorNode(Node):
         if response.status == GetTagReading.Response.STATUS_OK:
             result = self._mission.mark_scan_ok(response.reading)
             self._emit_observation_for(result)
-        else:
-            detail = response.error_message or f"bridge_status_{response.status}"
-            result = self._mission.mark_scan_failed(detail)
-            self._emit_observation_for(result)
+            # Hold SCANNING long enough for the arm to reach the inspect pose
+            # and the flower detector/aggregator to read the bloom colour.
+            self._finish_scan_with_dwell()
+            return
+        detail = response.error_message or f"bridge_status_{response.status}"
+        result = self._mission.mark_scan_failed(detail)
+        self._emit_observation_for(result)
         self.scan_done()  # type: ignore[attr-defined]
+
+    def _finish_scan_with_dwell(self) -> None:
+        """Advance out of SCANNING, but not before ``flower_scan_dwell_s`` has
+        elapsed since the scan started — gives the patrol arm time to strike the
+        inspect pose and the flower detector time to classify the bloom while the
+        aggregator's SCANNING-phase gate is still open. The scan-timeout watchdog
+        is already inert here (``_scan_future`` is None), so the dwell can't be
+        mistaken for a bridge hang."""
+        remaining = self._flower_scan_dwell - (self._monotonic() - self._scan_started_at)
+        if self._flower_scan_dwell <= 0.0 or remaining <= 0.0:
+            self.scan_done()  # type: ignore[attr-defined]
+            return
+        if self._scan_dwell_timer is not None:
+            self._scan_dwell_timer.cancel()
+        self._scan_dwell_timer = self.create_timer(remaining, self._on_scan_dwell_done)
+
+    def _on_scan_dwell_done(self) -> None:
+        if self._scan_dwell_timer is not None:
+            self._scan_dwell_timer.cancel()
+            self._scan_dwell_timer = None
+        # Only advance if we're still parked at this pot (not aborted/returned).
+        if self.state in ('INSPECTING_SCANNING', 'MONITORING_SCANNING'):
+            self.scan_done()  # type: ignore[attr-defined]
 
     # ─── returning: dock goal ──────────────────────────────────────────
     def _send_return_nav_goal(self) -> None:

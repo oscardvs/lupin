@@ -42,6 +42,7 @@ def generate_launch_description():
             'nav_localization_cov_threshold', default_value='0.25',
         ),
         DeclareLaunchArgument('scan_timeout_s', default_value='5.0'),
+        DeclareLaunchArgument('flower_scan_dwell_s', default_value='0.0'),
         # Exploration / monitoring (ExplorationMission)
         DeclareLaunchArgument('discovery_goal', default_value='5'),
         DeclareLaunchArgument('exploration_timeout_s', default_value='180.0'),
@@ -96,6 +97,7 @@ def generate_launch_description():
                 'nav_localization_cov_threshold',
             ),
             'scan_timeout_s': LaunchConfiguration('scan_timeout_s'),
+            'flower_scan_dwell_s': LaunchConfiguration('flower_scan_dwell_s'),
             'discovery_goal': LaunchConfiguration('discovery_goal'),
             'exploration_timeout_s': LaunchConfiguration('exploration_timeout_s'),
             'map_topic': LaunchConfiguration('map_topic'),

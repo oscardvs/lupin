@@ -359,6 +359,9 @@ def generate_launch_description() -> LaunchDescription:
             # `inspect` pose (gripper cam down on the bloom) for the flower
             # detector, then `home` between pots. Sim demo of the flower scan.
             ('arm_patrol_enabled', 'true'),
+            # Dwell ~4 s in SCANNING so the arm (3 s travel) reaches the inspect
+            # pose and the flower detector reads the bloom before advancing.
+            ('flower_scan_dwell_s', '4.0'),
         ],
     )
 
