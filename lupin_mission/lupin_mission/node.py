@@ -56,7 +56,7 @@ from tf2_ros import (
 from transitions.extensions import HierarchicalGraphMachine
 
 from lupin_msgs.msg import DiscoveredTags, MissionState, Observation
-from lupin_msgs.srv import ConfirmTag, GetTagReading, StartMission
+from lupin_msgs.srv import ConfirmTag, GetTagReading, SetArmPreset, StartMission
 
 from .estop_monitor import EStopMonitor
 from .battery_monitor import BatteryMonitor
@@ -387,6 +387,19 @@ class MissionOrchestratorNode(Node):
         # bootstrap wait while SLAM fills the first scans.
         self.declare_parameter('exploration_timeout_s', 180.0)
 
+        # ─── per-pot arm patrol (optional; sim flower-scan demo) ────────
+        # When enabled, the orchestrator strikes a named arm pose at each pot
+        # so the gripper/wrist camera frames the bloom for the flower
+        # detector, and returns to a travel pose between pots. Default OFF so
+        # hardware behaviour is unchanged unless explicitly enabled (the arm
+        # otherwise stays parked at home for the whole mission). sim_full
+        # turns it on. Fire-and-forget — a missing /lupin/arm/preset service
+        # never stalls a scan.
+        self.declare_parameter('arm_patrol_enabled', False)
+        self.declare_parameter('arm_preset_service', '/lupin/arm/preset')
+        self.declare_parameter('arm_inspect_preset', 'inspect')
+        self.declare_parameter('arm_travel_preset', 'home')
+
         self.declare_parameter("state_publish_rate_hz", 5.0)
         self.declare_parameter("mission_id_prefix", "lupin")
         self.declare_parameter("frame_id", "map")
@@ -630,6 +643,24 @@ class MissionOrchestratorNode(Node):
                 ConfirmTag,
                 self._visual_confirmation_service,
                 callback_group=self._cb_group,
+            )
+
+        # Per-pot arm patrol client (optional). Only created when enabled so
+        # there's no dangling client / discovery traffic on hardware runs that
+        # leave the arm parked.
+        self._arm_patrol_enabled = bool(self.get_parameter('arm_patrol_enabled').value)
+        self._arm_inspect_preset = str(self.get_parameter('arm_inspect_preset').value)
+        self._arm_travel_preset = str(self.get_parameter('arm_travel_preset').value)
+        self._arm_preset_client: Optional[Any] = None
+        if self._arm_patrol_enabled:
+            self._arm_preset_client = self.create_client(
+                SetArmPreset,
+                str(self.get_parameter('arm_preset_service').value),
+                callback_group=self._cb_group,
+            )
+            self.get_logger().info(
+                'arm patrol enabled — inspect="%s", travel="%s"'
+                % (self._arm_inspect_preset, self._arm_travel_preset)
             )
 
         # Observations: RELIABLE + TRANSIENT_LOCAL with depth 50 so a late
@@ -1551,6 +1582,9 @@ class MissionOrchestratorNode(Node):
             return
         if self._is_blocked():
             return
+        # Between pots: stow the arm in the travel pose so it isn't waving
+        # around mid-drive (and the gripper cam isn't pointed at the floor).
+        self._dispatch_arm_preset(self._arm_travel_preset)
         self._send_scan_nav_goal()
 
     def on_enter_INSPECTING_SCANNING(self, event_data) -> None:
@@ -1567,6 +1601,12 @@ class MissionOrchestratorNode(Node):
             return
         if self._is_blocked():
             return
+        # Per-pot patrol: strike the inspect pose so the gripper camera frames
+        # the bloom for the flower detector while we read the tag. The flower
+        # detector + aggregator attribute whatever they see now to the tag
+        # being scanned (temporal co-location), so the arm should be in pose
+        # for the duration of the scan.
+        self._dispatch_arm_preset(self._arm_inspect_preset)
         # Hardware-style flow: visually confirm the AprilTag is in frame
         # before trusting the bridge reading. Sim leaves the gate off and
         # goes straight to the bridge.
@@ -1574,6 +1614,28 @@ class MissionOrchestratorNode(Node):
             self._call_visual_confirm()
         else:
             self._call_bridge()
+
+    def _dispatch_arm_preset(self, preset_name: str) -> None:
+        """Fire-and-forget arm-preset move for per-pot patrol.
+
+        Never blocks the mission: if patrol is disabled or the
+        /lupin/arm/preset service isn't up we just return (the arm staying
+        put must not stall a scan or a drive). The preset server clamps the
+        pose to the canonical joint window, so a bad name is harmless.
+        """
+        if not self._arm_patrol_enabled or self._arm_preset_client is None:
+            return
+        if not self._arm_preset_client.service_is_ready():
+            self.get_logger().warn(
+                'arm patrol: %s not ready; leaving arm where it is'
+                % str(self.get_parameter('arm_preset_service').value),
+                throttle_duration_sec=10.0,
+            )
+            return
+        req = SetArmPreset.Request()
+        req.name = preset_name
+        self._arm_preset_client.call_async(req)  # fire-and-forget
+        self.get_logger().info('arm patrol → preset "%s"' % preset_name)
 
     def on_enter_INSPECTING_PUBLISHING(self, event_data) -> None:
         self._enter_publishing()

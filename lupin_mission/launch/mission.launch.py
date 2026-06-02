@@ -52,6 +52,11 @@ def generate_launch_description():
             'visual_confirmation_service', default_value='/perception/confirm_tag',
         ),
         DeclareLaunchArgument('visual_confirmation_timeout_s', default_value='3.0'),
+        # Per-pot arm patrol (optional; sim flower-scan demo — default off)
+        DeclareLaunchArgument('arm_patrol_enabled', default_value='false'),
+        DeclareLaunchArgument('arm_preset_service', default_value='/lupin/arm/preset'),
+        DeclareLaunchArgument('arm_inspect_preset', default_value='inspect'),
+        DeclareLaunchArgument('arm_travel_preset', default_value='home'),
         # Returning
         DeclareLaunchArgument('dock_timeout_s', default_value='60.0'),
         # Publishing
@@ -104,6 +109,10 @@ def generate_launch_description():
             'visual_confirmation_timeout_s': LaunchConfiguration(
                 'visual_confirmation_timeout_s',
             ),
+            'arm_patrol_enabled': LaunchConfiguration('arm_patrol_enabled'),
+            'arm_preset_service': LaunchConfiguration('arm_preset_service'),
+            'arm_inspect_preset': LaunchConfiguration('arm_inspect_preset'),
+            'arm_travel_preset': LaunchConfiguration('arm_travel_preset'),
             'dock_timeout_s': LaunchConfiguration('dock_timeout_s'),
             'state_publish_rate_hz': LaunchConfiguration('state_publish_rate_hz'),
             'mission_id_prefix': LaunchConfiguration('mission_id_prefix'),

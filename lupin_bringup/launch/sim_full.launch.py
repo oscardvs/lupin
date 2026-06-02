@@ -280,13 +280,52 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments=[('tag_file', widened_tag_locations)],
     )
 
-    # ── 4b. Perception Pipeline ─────────────────────────────────────────
-    # Starts the AprilTag detector and annotator for bounding boxes.
-    # Relies purely on the Gazebo camera stream which starts at t=0.
-    perception = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_perception, 'launch', 'perception.launch.py'),
-        )
+    # ── 4b. Perception pipeline (vision tag detection → map discovery) ──
+    # tag_annotator: OpenCV-ArUco detector on the Gazebo RGB stream. The
+    # Astra depth-camera plugin publishes /camera/image_raw +
+    # /camera/camera_info with frame_id `camera_depth_optical_frame`; its
+    # 60° HFOV gives K≈554. fallback_intrinsics is armed with that K in case
+    # the plugin's CameraInfo ships a zero K (it hard-zeros Cx/Cy/focalLength).
+    # tag_size_m = 0.144 = the rendered tag plate (0.16) × 0.9 texture plane,
+    # so the PnP distance — and the broadcast tag→camera TF — comes out metric.
+    tag_annotator = Node(
+        package='lupin_perception', executable='tag_annotator',
+        name='tag_annotator',
+        parameters=[{
+            'use_sim_time': True,
+            'image_topic': '/camera/image_raw',
+            'camera_info_topic': '/camera/camera_info',
+            'detections_topic': '/camera/tag_detections_json',
+            'tag_size_m': 0.144,
+            'tf_frame_prefix': 'tag_',
+            'image_qos': 'reliable',
+            'fallback_intrinsics': [554.254691191187, 554.254691191187, 320.5, 240.5],
+        }],
+        output='screen',
+    )
+
+    # perception_aggregator: debounces tag sightings (min_sightings TF
+    # lookups map→tag_<id>) and publishes /perception/discovered_tags
+    # (map-frame poses) — the feed ExplorationMission consumes to discover
+    # tags during frontier exploration — plus the /perception/confirm_tag
+    # service. Torch-free: the heavy yolo_detector is NOT run in sim, so
+    # flower readings come from the greenhouse bridge oracle instead.
+    perception_aggregator = Node(
+        package='lupin_perception', executable='perception_aggregator',
+        name='perception_aggregator',
+        parameters=[{
+            'use_sim_time': True,
+            'tag_detections_topic': '/camera/tag_detections_json',
+            'mission_state_topic': '/mission/state',
+            'discovered_tags_topic': '/perception/discovered_tags',
+            'observations_topic': '/floranova/observations',
+            'confirm_service': '/perception/confirm_tag',
+            'map_frame': 'map',
+            'tf_frame_prefix': 'tag_',
+            'min_sightings': 3,
+            'max_tag_distance_m': 2.5,
+        }],
+        output='screen',
     )
 
     # ── 5. Mission orchestrator ─────────────────────────────────────────
@@ -298,6 +337,10 @@ def generate_launch_description() -> LaunchDescription:
             ('dependency_timeout_s', LaunchConfiguration('dependency_timeout_s')),
             ('tag_locations_file', widened_tag_locations),
             ('approach_overrides_file', approach_overrides),
+            # Per-pot arm patrol: at each pot the orchestrator strikes the
+            # `inspect` pose (gripper cam down on the bloom) for the flower
+            # detector, then `home` between pots. Sim demo of the flower scan.
+            ('arm_patrol_enabled', 'true'),
         ],
     )
 
@@ -495,7 +538,8 @@ def generate_launch_description() -> LaunchDescription:
         # Phase 1 — fire-and-forget at t=0:
         greenhouse_sim,
         bridge,
-        perception,
+        tag_annotator,
+        perception_aggregator,
         mission,
         twin,
         rosbridge,

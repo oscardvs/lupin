@@ -43,6 +43,14 @@ Default preset values (radians)
              top-down approach.
 ``place``  — Arm extended forward, wrist raised so an item carried in the
              gripper clears table edges.
+``inspect``— Arm reaches forward and pitches the wrist DOWN so the
+             gripper/wrist camera looks into the pot from above. Used by the
+             mission orchestrator's per-pot arm patrol (arm_patrol_enabled):
+             the robot parks beside a pot, strikes this pose, and the flower
+             detector classifies the bloom while the arm holds it. Low lift
+             so the shoulder servo stays well inside its gravity-safe window
+             (project_arm_servo_thermal_trip). Tunable — verify the exact
+             camera framing in Gazebo and re-tune the angles there.
 
 These are conservative starting points — re-tune on the real robot once
 the arm is mounted in its final configuration. Values are clamped to the
@@ -78,6 +86,9 @@ PRESETS: Dict[str, Tuple[float, float, float, float]] = {
     'tuck':  (0.0,  -1.40,  1.40,  0.0),
     'pick':  (0.0,  -0.60,  0.80, -0.40),
     'place': (0.0,   0.20,  0.80, -0.40),
+    # Per-pot patrol pose: reach forward, pitch the wrist down so the
+    # gripper camera frames the bloom from above. Tune visually in Gazebo.
+    'inspect': (0.0, -0.40,  0.90, -0.80),
 }
 
 # Time the controller is given to reach each preset. Conservative — slow
