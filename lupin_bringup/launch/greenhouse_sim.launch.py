@@ -90,7 +90,13 @@ def generate_launch_description():
         # South aisle of the greenhouse, facing +Y (toward the tables).
         DeclareLaunchArgument('x', default_value='2.0'),
         DeclareLaunchArgument('y', default_value='1.5'),
-        DeclareLaunchArgument('z', default_value='0.05'),
+        # Wheels sit 0.0965 m below base_link (wheel joint -0.0455 − radius 0.051),
+        # so base_link must spawn at ≈0.097 m or the wheels start BELOW the ground
+        # plane → Gazebo ejects the penetration → robot launches + spins → NaN →
+        # Ogre AABB crash. 0.05 (penetrating) was only survivable while planar_move
+        # pinned the pose; with ros2_control driving the real wheels we must spawn
+        # grounded. 0.10 leaves a <1 cm settle drop.
+        DeclareLaunchArgument('z', default_value='0.10'),
         DeclareLaunchArgument('yaw', default_value='1.5708'),
     ]
 
