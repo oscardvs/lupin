@@ -3,9 +3,9 @@
 <package format="3">
   <name>lupin_hmi</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Teleop (PS4/Xbox + keyboard), cmd_vel arbitration mux, and arm/gripper bridges for the Lupin MIRTE Master stack.</description>
   <maintainer email="koeonvog@gmail.com">koen_vogels</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
