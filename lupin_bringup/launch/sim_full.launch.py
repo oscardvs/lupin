@@ -388,7 +388,10 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             os.path.join(pkg_web, 'launch', 'lupin_web.launch.py'),
         ),
-        launch_arguments=[('port', LaunchConfiguration('web_port'))],
+        launch_arguments=[
+            ('port', LaunchConfiguration('web_port')),
+            ('rosbridge', 'false'),  # we start rosbridge above; avoid :9090 clash
+        ],
         condition=_when('enable_web'),
     )
 

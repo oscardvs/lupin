@@ -40,11 +40,16 @@ def generate_launch_description() -> LaunchDescription:
         ),
     )
 
+    # lupin_web co-launches its own rosbridge on :9090; we already start one
+    # above, so tell it to skip (otherwise "Address already in use [9090]").
     web = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_web, 'launch', 'lupin_web.launch.py'),
         ),
-        launch_arguments=[('port', LaunchConfiguration('web_port'))],
+        launch_arguments=[
+            ('port', LaunchConfiguration('web_port')),
+            ('rosbridge', 'false'),
+        ],
     )
 
     rviz_config = os.path.join(pkg_bringup, 'rviz', 'full_bringup_viz.rviz')
