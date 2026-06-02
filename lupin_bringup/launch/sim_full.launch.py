@@ -286,8 +286,9 @@ def generate_launch_description() -> LaunchDescription:
     # /camera/camera_info with frame_id `camera_depth_optical_frame`; its
     # 60° HFOV gives K≈554. fallback_intrinsics is armed with that K in case
     # the plugin's CameraInfo ships a zero K (it hard-zeros Cx/Cy/focalLength).
-    # tag_size_m = 0.144 = the rendered tag plate (0.16) × 0.9 texture plane,
-    # so the PnP distance — and the broadcast tag→camera TF — comes out metric.
+    # tag_size_m = 0.036 = the rendered tag plate (0.04, real 4 cm tag) × 0.9
+    # texture plane, so the PnP distance — and the broadcast tag→camera TF —
+    # comes out metric.
     tag_annotator = Node(
         package='lupin_perception', executable='tag_annotator',
         name='tag_annotator',
@@ -296,7 +297,7 @@ def generate_launch_description() -> LaunchDescription:
             'image_topic': '/camera/image_raw',
             'camera_info_topic': '/camera/camera_info',
             'detections_topic': '/camera/tag_detections_json',
-            'tag_size_m': 0.144,
+            'tag_size_m': 0.036,
             'tf_frame_prefix': 'tag_',
             'image_qos': 'reliable',
             'fallback_intrinsics': [554.254691191187, 554.254691191187, 320.5, 240.5],

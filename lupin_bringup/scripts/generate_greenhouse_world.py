@@ -38,10 +38,13 @@ from typing import Any
 
 # --- Defaults ----------------------------------------------------------------
 
-DEFAULT_TAG_SIZE_M = 0.16          # square apriltag edge length
+DEFAULT_TAG_SIZE_M = 0.04          # real demo tags are 4×4 cm
 DEFAULT_TAG_THICKNESS_M = 0.005    # plane thickness (so depth camera sees it)
-DEFAULT_TAG_HEIGHT_M = 0.20        # mid-height on the table side, below table top
-DEFAULT_TABLE_HEIGHT_M = 0.70      # typical greenhouse bench top height
+DEFAULT_TAG_HEIGHT_M = 0.10        # on the low planter side, near the rim
+# Low planter so the short Mirte arm + gripper camera can actually reach and
+# see the blooms (the real pots are ≤15 cm). The "table" box stands in for the
+# planter body; flowers rise out of the trough on top of it.
+DEFAULT_TABLE_HEIGHT_M = 0.10      # planter body height (was a 0.70 m bench)
 DEFAULT_WALL_HEIGHT_M = 2.0
 DEFAULT_WALL_THICKNESS_M = 0.10
 DEFAULT_WALL_MARGIN_M = 0.50       # padding from outer tag/table extent
@@ -331,7 +334,7 @@ _FLOWER_SPECIES_CYCLE = ('red', 'white', 'pink')
 
 
 def _render_trough(name: str, rect: dict[str, float], table_height: float,
-                   *, wall_h: float = 0.06, inset: float = 0.05) -> str:
+                   *, wall_h: float = 0.03, inset: float = 0.05) -> str:
     """A shallow soil-brown planter box on the table top — the flower trough.
 
     Stands in for the laser-cut wooden planter; the blossoms rise out of it.
@@ -358,7 +361,7 @@ def _render_trough(name: str, rect: dict[str, float], table_height: float,
 
 
 def _render_flower(idx: int, fx: float, fy: float, top_z: float, species: str,
-                   *, stem_height: float = 0.10, blossom_radius: float = 0.045) -> str:
+                   *, stem_height: float = 0.05, blossom_radius: float = 0.03) -> str:
     """One flower: green stem + coloured emissive blossom, rising from the trough."""
     amb, dif, emi = _FLOWER_COLORS[species]
     stem_cz = top_z + stem_height / 2.0
@@ -417,7 +420,7 @@ def _render_table_planting(
     cluster. Returns (sdf_blocks, next_flower_idx).
     """
     blocks = [_render_trough(f"table_{table_index}", rect, table_height)]
-    top_z = table_height + 0.06  # trough top
+    top_z = table_height + 0.03  # trough top
     dom = _FLOWER_SPECIES_CYCLE[table_index % len(_FLOWER_SPECIES_CYCLE)]
     accents = [s for s in _FLOWER_SPECIES_CYCLE if s != dom]
 
