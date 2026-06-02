@@ -1,12 +1,37 @@
-# MDP – Team Lupin – FloraNova Digital Twin
+# Lupin — FloraNova Greenhouse Digital Twin
 
-RO47007 Multidisciplinary Project, 2025–2026.
-Robot platform: MIRTE Master V2 (holonomic 4-mecanum base, 4-DOF arm).
-Client: FloraNova (commercial greenhouse).
+> An autonomous greenhouse-inspection robot: it navigates to AprilTag
+> stations, reads environmental sensors and flower health, and streams a
+> live digital twin to a browser HMI — in Gazebo and on real hardware.
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![ROS 2 Humble](https://img.shields.io/badge/ROS_2-Humble-22314E.svg?logo=ros)](https://docs.ros.org/en/humble/)
+[![Ubuntu 22.04](https://img.shields.io/badge/Ubuntu-22.04-E95420.svg?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
+[![Platform: MIRTE Master V2](https://img.shields.io/badge/Platform-MIRTE_Master_V2-2ea44f.svg)](https://docs.mirte.org/)
+[![Docs](https://img.shields.io/badge/docs-lupin--robot.vercel.app-000000.svg)](https://lupin-robot.vercel.app)
+
+RO47007 Multidisciplinary Project, 2025–2026 · Team **Lupin** · Client:
+FloraNova (commercial greenhouse). Robot platform: MIRTE Master V2
+(holonomic 4-mecanum base, 4-DOF arm + 1-DOF gripper).
+
+📖 **Full documentation & system overview:** <https://lupin-robot.vercel.app>
 
 > The team is called **Lupin**. The GitLab path is
 > `cor/ro47007/2026/group_14/lupin` — `group_14` is the course-assigned
 > subgroup, `lupin` is our project inside it.
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Cloning this repository](#cloning-this-repository)
+- [Branch model](#branch-model)
+- [Building](#building)
+- [Running](#running)
+- [Repository layout](#repository-layout)
+- [Contributing](#contributing)
+- [Team](#team)
+- [Course staff](#course-staff)
+- [License](#license)
 
 ## Prerequisites
 
@@ -590,3 +615,12 @@ expand once the chain is proven.
 - Martijn Wisse — robot expert
 - Thijs Hoedemakers — lecturer
 - Gillian Saunders — course support, skills & reflection
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). See [`CHANGELOG.md`](CHANGELOG.md)
+for the release history.
+
+Built on the MIRTE Master vendor stack and other open-source ROS 2 packages,
+each retaining its own upstream license (see the upstream table under
+[Prerequisites](#prerequisites)).
