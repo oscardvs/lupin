@@ -30,8 +30,8 @@ republishes ``/io/servo/hiwonder/gripper/position`` for HMI feedback.
 
 Mapping notes
 -------------
-* Arm joints: HMI degrees → radians 1:1. The URDF declares ±π/2 for
-  all four arm joints, matching the HMI's ±90° slider range exactly.
+* Arm joints: HMI degrees → radians 1:1, then clamped to the canonical
+  per-joint window from ``arm_limits`` (parity with the hardware bridge).
 * JointTrajectoryController in this YAML has
   ``allow_partial_joints_goal: false``, so every published trajectory
   carries all four arm joint targets. We remember the last commanded
@@ -55,20 +55,15 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
 from std_srvs.srv import SetBool
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from builtin_interfaces.msg import Duration
+from trajectory_msgs.msg import JointTrajectory  # publisher message type
 
 from mirte_msgs.msg import ServoPosition
 from mirte_msgs.srv import SetServoAngleWithSpeed
 
+from lupin_hmi.arm_limits import ARM_JOINTS, ARM_JOINT_FULL, clamp_arm_joint
+from lupin_hmi.arm_traj import MIN_TRAJECTORY_TIME_S, build_arm_trajectory
 
-ARM_JOINTS = ('shoulder_pan', 'shoulder_lift', 'elbow', 'wrist')
-ARM_JOINT_FULL = {j: f'{j}_joint' for j in ARM_JOINTS}
 GRIPPER_JOINT = 'gripper_joint'
-
-# Floor on JointTrajectory time_from_start: zero is invalid, very small
-# values can race with the controller's own update period.
-MIN_TRAJECTORY_TIME_S = 0.05
 
 
 class ArmSimShim(Node):
@@ -176,8 +171,10 @@ class ArmSimShim(Node):
         req: SetServoAngleWithSpeed.Request,
         resp: SetServoAngleWithSpeed.Response,
     ) -> SetServoAngleWithSpeed.Response:
-        # Convert request angle to radians.
+        # Convert request angle to radians and clamp to the canonical window
+        # (parity with the hardware bridge — see arm_limits).
         angle_rad = float(req.angle) if not req.degrees else math.radians(float(req.angle))
+        angle_rad = clamp_arm_joint(joint_name, angle_rad)
         rate_rad_s = float(req.rate)
         if req.degrees:
             rate_rad_s = math.radians(rate_rad_s)
@@ -193,15 +190,10 @@ class ArmSimShim(Node):
 
         displacement = abs(angle_rad - current)
         time_s = max(MIN_TRAJECTORY_TIME_S, displacement / rate_rad_s)
-
-        traj = JointTrajectory()
-        traj.joint_names = [ARM_JOINT_FULL[j] for j in ARM_JOINTS]
-        point = JointTrajectoryPoint()
-        point.positions = [target_snapshot[n] for n in traj.joint_names]
-        point.time_from_start = self._duration_from_seconds(time_s)
-        traj.points = [point]
-
-        self._traj_pub.publish(traj)
+        joint_names = [ARM_JOINT_FULL[j] for j in ARM_JOINTS]
+        self._traj_pub.publish(
+            build_arm_trajectory(joint_names, [target_snapshot[n] for n in joint_names], time_s)
+        )
 
         resp.status = True
         return resp
@@ -219,16 +211,6 @@ class ArmSimShim(Node):
         resp.message = 'sim shim: ros2_control controllers always active'
         _ = req  # unused — sim has no per-servo torque toggle
         return resp
-
-    # ── helpers ─────────────────────────────────────────────────────────
-    @staticmethod
-    def _duration_from_seconds(seconds: float) -> Duration:
-        sec = int(seconds)
-        nsec = int(round((seconds - sec) * 1e9))
-        d = Duration()
-        d.sec = sec
-        d.nanosec = nsec
-        return d
 
 
 def main() -> None:

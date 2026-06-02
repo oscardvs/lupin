@@ -63,7 +63,10 @@ from control_msgs.action import GripperCommand
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from sensor_msgs.msg import JointState, Joy
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from trajectory_msgs.msg import JointTrajectory  # publisher message type
+
+from lupin_hmi.arm_limits import ARM_JOINTS, clamp_arm_joint
+from lupin_hmi.arm_traj import build_arm_trajectory
 
 
 class ArmTeleop(Node):
@@ -433,9 +436,10 @@ class ArmTeleop(Node):
                     if seed is not None:
                         self.current_positions[i] = seed
                 self.current_positions[i] += self.joy_cmds[i] * self._signs[i] * self._step
-                # URDF clamp — keep the joint inside ±π/2 so JTC doesn't
-                # silently refuse the trajectory point.
-                self.current_positions[i] = max(-1.5707, min(1.5707, self.current_positions[i]))
+                # Per-joint canonical clamp (arm_limits) — the real asymmetric
+                # servo window intersected with ±π/2, so a joystick hold can't
+                # drive the joint into a pose the servo silently rejects.
+                self.current_positions[i] = clamp_arm_joint(ARM_JOINTS[i], self.current_positions[i])
                 moved = True
                 active[i] = True
         # Edge-triggered debug: log when the set of moving joints changes.
@@ -473,20 +477,15 @@ class ArmTeleop(Node):
         self._last_gripper_goal = new_pos
 
     def send_trajectory(self) -> None:
-        traj = JointTrajectory()
-        traj.joint_names = self.joint_names
-
-        point = JointTrajectoryPoint()
-        point.positions = list(self.current_positions)
-        # joint_velocity > 0 bypasses the Telemetrix 0.0 error on real hardware.
-        # In sim it's the JTC's velocity hint along the trajectory.
-        point.velocities = [self._joint_vel] * 4
-        tfs_ns = int(self._tfs_s * 1e9)
-        point.time_from_start.sec = tfs_ns // 1_000_000_000
-        point.time_from_start.nanosec = tfs_ns % 1_000_000_000
-
-        traj.points.append(point)
-        self.publisher_.publish(traj)
+        # Shared builder (arm_traj) so xbox teleop, the HMI bridge and presets
+        # all shape the JTC trajectory identically. joint_velocity > 0 also
+        # bypasses the Telemetrix 0.0-velocity error on real hardware.
+        self.publisher_.publish(
+            build_arm_trajectory(
+                self.joint_names, self.current_positions, self._tfs_s,
+                velocity=self._joint_vel,
+            )
+        )
 
 
 def main(args=None):
