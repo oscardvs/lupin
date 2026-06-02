@@ -226,6 +226,7 @@ export const LUPIN_SRV = {
   Trigger: 'std_srvs/srv/Trigger',
   GetField: 'lupin_msgs/srv/GetField',
   CalibrateArm: 'lupin_msgs/srv/CalibrateArm',
+  SetArmPreset: 'lupin_msgs/srv/SetArmPreset',
 } as const
 
 /** Mirror of `lupin_msgs/srv/CalibrateArm`. The single-srv-with-action

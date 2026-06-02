@@ -77,6 +77,7 @@ from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
+from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Duration
 from control_msgs.action import GripperCommand
 from sensor_msgs.msg import JointState
@@ -279,10 +280,39 @@ class LupinArmCommandBridge(Node):
         goal = GripperCommand.Goal()
         goal.command.position = target_rad
         goal.command.max_effort = GRIPPER_MAX_EFFORT
-        self._gripper_client.send_goal_async(goal)
+        # Fire-and-forget by design (the HMI does not await execution), but
+        # attach callbacks so a rejected/aborted goal — e.g. a Hiwonder
+        # effort/thermal stall — is logged instead of silently masked
+        # behind status:true. The synchronous resp.status only reports that
+        # the command was dispatched, not that the jaw reached the target.
+        future = self._gripper_client.send_goal_async(goal)
+        future.add_done_callback(self._on_gripper_goal_response)
 
         resp.status = True
         return resp
+
+    def _on_gripper_goal_response(self, future) -> None:
+        try:
+            handle = future.result()
+        except Exception as exc:  # noqa: BLE001 - log and move on
+            self.get_logger().warn(f'gripper goal dispatch failed: {exc}')
+            return
+        if not handle.accepted:
+            self.get_logger().warn('gripper goal REJECTED by controller')
+            return
+        handle.get_result_async().add_done_callback(self._on_gripper_result)
+
+    def _on_gripper_result(self, future) -> None:
+        try:
+            status = future.result().status
+        except Exception as exc:  # noqa: BLE001 - log and move on
+            self.get_logger().warn(f'gripper result unavailable: {exc}')
+            return
+        if status != GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().warn(
+                f'gripper goal did not succeed (GoalStatus={status}) — '
+                'jaw may not have reached the commanded position'
+            )
 
     # ── /lupin/arm/init ──────────────────────────────────────────────
     def _handle_init(
@@ -326,6 +356,12 @@ class LupinArmCommandBridge(Node):
         return positions, current_target_value
 
     def _publish_arm_trajectory(self, positions: list[float], time_s: float) -> None:
+        # NOTE: /mirte_master_arm_controller/joint_trajectory is shared with
+        # arm_teleop (xbox), arm_preset_server, and (in sim) arm_sim_shim.
+        # There is no arbiter/mux on the arm topic (unlike the chassis'
+        # twist_mux): the JTC treats each trajectory as a new goal that
+        # preempts the in-flight one. Single-input is expected — drive the
+        # arm from ONE surface at a time (HMI sliders / xbox / voice presets).
         traj = JointTrajectory()
         traj.joint_names = [ARM_JOINT_FULL[j] for j in ARM_JOINTS]
         point = JointTrajectoryPoint()

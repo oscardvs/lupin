@@ -1,5 +1,5 @@
 import { Activity, Camera, Compass, Grip, Home, Power, RotateCcw, Square } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import { RobotTwin } from '@/components/system/RobotTwin'
 import { ArmCalibrateDialog } from '@/components/widgets/ArmCalibrateDialog'
@@ -21,6 +21,36 @@ import {
 
 const RAD2DEG = 180 / Math.PI
 const DEG2RAD = Math.PI / 180
+
+// The gripper readback is on a DIFFERENT scale than the gripper slider:
+// gripper_action_bridge maps the HMI ±30° window LINEARLY onto the URDF
+// gripper_joint range [-0.20, +0.25] rad. A raw rad→deg of the joint angle
+// (what every other joint uses) would therefore never converge to the
+// commanded ±30° "target" — current would read ~[-11.5,+14.3]° forever.
+// Mirror the bridge's map in reverse so the gripper "current" is shown back
+// in the same ±30° HMI window. Exact in sim (arm_sim_shim republishes the
+// gripper_joint angle 1:1); on hardware the vendor servo .angle frame still
+// needs the live tuning pass the "range unverified" badge already flags.
+// KEEP IN SYNC with gripper_action_bridge.py GRIPPER_* constants.
+const GRIPPER_HMI_MIN_DEG = -30
+const GRIPPER_HMI_MAX_DEG = 30
+const GRIPPER_URDF_MIN_RAD = -0.2
+const GRIPPER_URDF_MAX_RAD = 0.25
+function gripperRadToHmiDeg(rad: number): number {
+  const ratio = (rad - GRIPPER_URDF_MIN_RAD) / (GRIPPER_URDF_MAX_RAD - GRIPPER_URDF_MIN_RAD)
+  return GRIPPER_HMI_MIN_DEG + ratio * (GRIPPER_HMI_MAX_DEG - GRIPPER_HMI_MIN_DEG)
+}
+function gripperHmiDegToRad(deg: number): number {
+  const clamped = Math.max(GRIPPER_HMI_MIN_DEG, Math.min(GRIPPER_HMI_MAX_DEG, deg))
+  const ratio = (clamped - GRIPPER_HMI_MIN_DEG) / (GRIPPER_HMI_MAX_DEG - GRIPPER_HMI_MIN_DEG)
+  return GRIPPER_URDF_MIN_RAD + ratio * (GRIPPER_URDF_MAX_RAD - GRIPPER_URDF_MIN_RAD)
+}
+// Joint readback (ServoPosition.angle, rad) → the HMI-degree scale the
+// slider uses. Gripper goes through the bridge's linear map; every other
+// joint is a straight rad→deg.
+function servoAngleToHmiDeg(jointId: string, rad: number): number {
+  return jointId === 'gripper' ? gripperRadToHmiDeg(rad) : rad * RAD2DEG
+}
 
 interface ArmJointSpec {
   /** Servo name as it appears in `/io/servo/hiwonder/<id>/...`. */
@@ -120,11 +150,6 @@ export function ArmView() {
 
   const [enableStatus, setEnableStatus] = useState<CallStatus>('idle')
   const [enableError, setEnableError] = useState<string | null>(null)
-  /** Bumped whenever Init/safe-pose is pressed so each ServoSlider snaps
-   *  its target visual to 0. The actual motion is driven by ONE
-   *  /lupin/arm/init service call (handled below) so the four joints move
-   *  via a single JTC trajectory instead of four racing slider commands. */
-  const [homeTick, setHomeTick] = useState(0)
   const [initStatus, setInitStatus] = useState<CallStatus>('idle')
   const [initError, setInitError] = useState<string | null>(null)
   const [calibOpen, setCalibOpen] = useState(false)
@@ -153,14 +178,19 @@ export function ArmView() {
   const goToSafePose = useCallback(async () => {
     setInitStatus('sending')
     setInitError(null)
-    // Snap slider visuals to 0 immediately so the UI tracks the move.
-    setHomeTick((t) => t + 1)
     try {
-      await callService<Record<string, never>, { success: boolean; message?: string }>(
-        '/lupin/arm/init',
-        LUPIN_SRV.Trigger,
-        {},
+      // Drive to the SAME measured safe rest pose the robot uses on boot
+      // (auto_home → /lupin/arm/preset {home}) and that the voice agent
+      // uses, so "go to a known pose" means one thing everywhere. The home
+      // tuple is owned by arm_preset_server — never duplicated here. We do
+      // NOT snap the target thumbs (home is not the zero pose); the live
+      // ghost-bar readback tracks the move instead.
+      const res = await callService<{ name: string }, { success: boolean; message?: string }>(
+        '/lupin/arm/preset',
+        LUPIN_SRV.SetArmPreset,
+        { name: 'home' },
       )
+      if (res.success === false) throw new Error(res.message || 'preset rejected')
       setInitStatus('ok')
     } catch (e) {
       setInitStatus('error')
@@ -241,10 +271,10 @@ export function ArmView() {
             size="sm"
             onClick={goToSafePose}
             disabled={blocked || initStatus === 'sending'}
-            title="Drive all 4 arm joints to (0,0,0,0) via JTC over 5s"
+            title="Drive the arm to the measured safe rest pose (same as boot auto-home) via JTC over ~3s"
           >
             <Home className="mr-2 h-4 w-4" />
-            Init (home, 5s)
+            Home (safe · 3s)
           </Button>
           <Button
             variant="outline"
@@ -262,11 +292,11 @@ export function ArmView() {
             <span className="tag text-primary">enable ack</span>
           ) : null}
           {initStatus === 'sending' ? (
-            <span className="tag">init sending…</span>
+            <span className="tag">home sending…</span>
           ) : initStatus === 'error' && initError ? (
-            <span className="tag text-destructive" title={initError}>init failed</span>
+            <span className="tag text-destructive" title={initError}>home failed</span>
           ) : initStatus === 'ok' ? (
-            <span className="tag text-primary">init ack</span>
+            <span className="tag text-primary">home ack</span>
           ) : null}
         </div>
 
@@ -302,7 +332,6 @@ export function ArmView() {
             spec={joint}
             namespace={armServoNamespace}
             rateDegPerSec={armRateDegPerSec}
-            homeTick={homeTick}
             disabled={blocked}
           />
         ))}
@@ -312,7 +341,7 @@ export function ArmView() {
         <Activity className="h-3 w-3 text-primary/80" />
         <span className="tag">srv</span>
         <span className="font-mono text-foreground/80">
-          {armServoNamespace}/&lt;joint&gt;/set_angle_with_speed
+          /lupin/arm/&lt;joint&gt;/set_angle_with_speed · /lupin/gripper/set_angle_with_speed
         </span>
         <span className="tag">·</span>
         <span className="ticker">on release</span>
@@ -327,11 +356,10 @@ interface ServoSliderProps {
   spec: ArmJointSpec
   namespace: string
   rateDegPerSec: number
-  homeTick: number
   disabled: boolean
 }
 
-function ServoSlider({ spec, namespace, rateDegPerSec, homeTick, disabled }: ServoSliderProps) {
+function ServoSlider({ spec, namespace, rateDegPerSec, disabled }: ServoSliderProps) {
   const positionTopic = `${namespace}/${spec.id}/position`
   // All slider commands go through the lupin command bridge so the
   // JointTrajectoryController / GripperActionController stay aligned with
@@ -343,7 +371,16 @@ function ServoSlider({ spec, namespace, rateDegPerSec, homeTick, disabled }: Ser
       ? '/lupin/gripper/set_angle_with_speed'
       : `/lupin/arm/${spec.id}/set_angle_with_speed`
 
-  const positionRef = useTopic<ServoPosition>(positionTopic, ROS_TYPE.ServoPosition)
+  // Record arrival time of each ServoPosition so we can flag a frozen feed
+  // (rosbridge silent-wedge / lazy-publisher) instead of showing the last
+  // angle as if it were live. useThrottledRender(8) re-evaluates freshness
+  // at 8 Hz, so no separate interval is needed (cf. RobotTwin's stale tag).
+  const lastMsgRef = useRef(0)
+  const positionRef = useTopic<ServoPosition>(positionTopic, ROS_TYPE.ServoPosition, {
+    onMessage: () => {
+      lastMsgRef.current = performance.now()
+    },
+  })
   useThrottledRender(8)
 
   const { callService } = useRos()
@@ -354,42 +391,56 @@ function ServoSlider({ spec, namespace, rateDegPerSec, homeTick, disabled }: Ser
   const [errMsg, setErrMsg] = useState<string | null>(null)
   const inFlightRef = useRef(0)
 
-  // Snap target visual to 0 whenever the parent fires Init. The actual
-  // motion is driven by ONE /lupin/arm/init call upstream — we do NOT
-  // call send() per slider here, because four racing single-joint
-  // trajectories would each preempt the previous and could leave the
-  // arm in an awkward intermediate pose.
-  useEffect(() => {
-    if (homeTick === 0) return
-    setTarget(0)
-  }, [homeTick])
-
   const send = useCallback(
     async (angleDeg: number) => {
       const id = ++inFlightRef.current
       setStatus('sending')
       setErrMsg(null)
+      // On a failed/rejected command, snap the thumb back to the live
+      // readback so the slider never sits at a pose that was never
+      // commanded. No auto-retry — the operator re-commits to retry.
+      const revertToLive = () => {
+        const live = positionRef.current?.angle
+        if (live != null) setTarget(Math.round(servoAngleToHmiDeg(spec.id, live)))
+      }
       try {
-        await callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
+        const res = await callService<SetServoAngleWithSpeedRequest, { status: boolean }>(
           setAngleService,
           MIRTE_SRV.SetServoAngleWithSpeed,
           { angle: angleDeg, rate: rateDegPerSec, degrees: true },
         )
         if (id !== inFlightRef.current) return // a newer call superseded us
+        if (res?.status === false) {
+          // RPC succeeded but the bridge rejected the command (e.g.
+          // /joint_states not yet seen, so the joint is unseeded).
+          setStatus('error')
+          setErrMsg('rejected by bridge')
+          revertToLive()
+          return
+        }
         setLastSent(angleDeg)
         setStatus('ok')
       } catch (e) {
         if (id !== inFlightRef.current) return
         setStatus('error')
         setErrMsg(e instanceof Error ? e.message : String(e))
+        revertToLive()
       }
     },
-    [callService, setAngleService, rateDegPerSec],
+    [callService, setAngleService, rateDegPerSec, spec.id],
   )
 
   const currentRad = positionRef.current?.angle ?? null
-  const currentDeg = currentRad === null ? null : currentRad * RAD2DEG
-  const targetRad = target * DEG2RAD
+  // Readback mapped onto the same HMI-degree scale as "target" so the two
+  // converge (gripper goes through the bridge's linear map — see
+  // servoAngleToHmiDeg).
+  const currentDeg = currentRad === null ? null : servoAngleToHmiDeg(spec.id, currentRad)
+  // Stale once the feed stops; /position should update at the servo poll
+  // rate, so >2 s without a message means the readout is no longer live.
+  const fresh = currentRad !== null && performance.now() - lastMsgRef.current < 2000
+  // Show the radians the bridge actually commands. For the gripper that is
+  // the linear ±30°→[-0.20,+0.25] map, not target×DEG2RAD.
+  const targetRad = spec.id === 'gripper' ? gripperHmiDegToRad(target) : target * DEG2RAD
   const range = spec.maxDeg - spec.minDeg
 
   const currentPct =
@@ -424,15 +475,22 @@ function ServoSlider({ spec, namespace, rateDegPerSec, homeTick, disabled }: Ser
           <span className="tag tag-accent">{targetRad.toFixed(2)} rad</span>
           <span className="ml-auto flex items-baseline gap-2">
             <span className="tag">current</span>
-            <span className="ticker text-base text-foreground">
+            <span className={cn('ticker text-base', fresh ? 'text-foreground' : 'text-muted-foreground/60')}>
               {currentDeg === null ? '—' : `${currentDeg >= 0 ? '+' : ''}${currentDeg.toFixed(1)}°`}
             </span>
+            {currentDeg !== null && !fresh ? (
+              <span className="tag text-warning" title="No position update in >2s — readout may be stale">
+                ○ stale
+              </span>
+            ) : null}
           </span>
         </div>
 
-        {/* Slider with a faint ghost bar showing live position underneath. */}
+        {/* Slider with a faint ghost bar showing live position underneath.
+            Hidden when the feed is stale so a frozen position isn't shown
+            as if it were live. */}
         <div className="relative">
-          {currentPct !== null ? (
+          {currentPct !== null && fresh ? (
             <div
               aria-hidden
               className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"

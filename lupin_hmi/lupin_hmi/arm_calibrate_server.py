@@ -48,9 +48,9 @@ from lupin_msgs.srv import CalibrateArm
 
 # Per-servo calibration data. Lifted from
 # mirte-ros-packages/mirte_test/mirte_test/mirte_master_calibrate.py (the
-# values the teaching team ship). shoulder_pan (id 2) is included with a
-# guessed home value at the midpoint of its 0..24000 raw range — verify on
-# the real robot before trusting it. Other rows match upstream.
+# values the teaching team ship). shoulder_pan (id 2) is intentionally
+# OMITTED — see the note above the SERVOS list below. All rows present
+# here match upstream.
 #
 # `home` is the raw encoder value the servo should report when the arm is
 # in its mechanical home pose. `min`/`max` are unused at runtime; kept here

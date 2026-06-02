@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
@@ -19,9 +21,17 @@ const ARM_JOINT_NAMES = new Set([
 
 export function ArmJointsCard({ className }: { className?: string } = {}) {
   const [{ jointStatesTopic }] = useSettings()
-  const ref = useTopic<JointState>(jointStatesTopic, ROS_TYPE.JointState)
+  const lastMsgRef = useRef(0)
+  const ref = useTopic<JointState>(jointStatesTopic, ROS_TYPE.JointState, {
+    onMessage: () => {
+      lastMsgRef.current = performance.now()
+    },
+  })
   useThrottledRender(10)
   const js = ref.current
+  // Flag a frozen joint_states feed instead of rendering the last sample
+  // as if it were live (8 Hz re-render re-evaluates this; no interval).
+  const stale = js !== null && performance.now() - lastMsgRef.current > 2000
 
   const arm = js
     ? js.name
@@ -37,7 +47,12 @@ export function ArmJointsCard({ className }: { className?: string } = {}) {
       <CardHeader>
         <CardTitle>
           Arm joints
-          <span className="tag tag-accent ml-auto">PNL-ARM-01</span>
+          {stale ? (
+            <span className="tag ml-auto text-warning" title="No joint_states update in >2s — readout may be stale">
+              ○ stale
+            </span>
+          ) : null}
+          <span className={cn('tag tag-accent', stale ? 'ml-2' : 'ml-auto')}>PNL-ARM-01</span>
         </CardTitle>
         <CardDescription>{jointStatesTopic}</CardDescription>
       </CardHeader>
