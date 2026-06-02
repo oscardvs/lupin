@@ -137,6 +137,15 @@ function mockServiceResponse(serviceType: string, request: unknown): unknown {
   switch (serviceType) {
     case 'lupin_msgs/srv/GetField':
       return mockTwinField(request as Parameters<typeof mockTwinField>[0])
+    case 'mirte_msgs/srv/SetNeopixel':
+      // SetNeopixel responds with `status` (not `success`) — return the
+      // typed field so the LightControl widget reads a manual set as OK.
+      return { status: true }
+    case 'std_srvs/srv/Trigger':
+      // Trigger responds with {success, message}. Keep the message empty so
+      // every Trigger consumer (mission pause/resume/abort/skip, LED auto)
+      // falls back to its own default label rather than a borrowed one.
+      return { success: true, message: '' }
     case 'lupin_msgs/srv/CalibrateArm': {
       // Stateless mock — the dialog's local state drives the wizard; the
       // service response just has to be shape-correct. Return AWAITING_POSE

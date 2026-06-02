@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 
 import { GreenhouseStateCard } from '@/components/widgets/GreenhouseStateCard'
+import { LightControl } from '@/components/widgets/LightControl'
 import { MapCanvas } from '@/components/widgets/MapCanvas'
 import { MissionControls } from '@/components/widgets/MissionControls'
 import { pulseTag } from '@/lib/twin-events'
@@ -16,7 +17,10 @@ const TulipHealthIndicator = lazy(() =>
 export function MapView() {
   return (
     <div className="flex min-h-full w-full flex-col gap-3 p-3 sm:p-4">
-      <MissionControls />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
+        <MissionControls className="lg:flex-1" />
+        <LightControl className="lg:w-[360px]" />
+      </div>
       <div className="flex min-h-[24rem] flex-1">
         <MapCanvas />
       </div>

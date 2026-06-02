@@ -1,6 +1,7 @@
 import { Activity, Camera, Compass, Grip, Home, Power, RotateCcw, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { RobotTwin } from '@/components/system/RobotTwin'
 import { ArmCalibrateDialog } from '@/components/widgets/ArmCalibrateDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -197,6 +198,14 @@ export function ArmView() {
           </Button>
         </div>
       ) : null}
+
+      {/* Live digital twin — mirrors joint_states + odom in real time. */}
+      <div
+        className="relative h-[240px] w-full overflow-hidden rounded-sm border border-hairline sm:h-[300px] lg:h-[360px]"
+        style={{ background: 'radial-gradient(130% 100% at 50% -10%, hsl(var(--ink-2)), hsl(var(--ink-0)) 72%)' }}
+      >
+        <RobotTwin className="absolute inset-0" />
+      </div>
 
       {/* arm console controls — enable / home / rate */}
       <div className="reticle relative flex flex-col gap-3 rounded-sm border border-hairline bg-card/60 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5 sm:px-5 sm:py-4">
