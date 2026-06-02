@@ -127,6 +127,12 @@ def generate_launch_description() -> LaunchDescription:
             ('approach_overrides_file', approach_overrides),
             ('arm_patrol_enabled', 'true'),
             ('flower_scan_dwell_s', '4.0'),
+            # Compact travel pose between pots ('home' is arm-horizontal-forward,
+            # ~0.28 m reach → it clips the pots while driving).
+            ('arm_travel_preset', 'tuck'),
+            # Sim runs on /clock — keep the orchestrator's observation stamps on
+            # sim time so the twin doesn't treat the map pins as stale.
+            ('use_sim_time', 'true'),
         ],
     )
 
@@ -134,6 +140,7 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             os.path.join(pkg_twin, 'launch', 'twin.launch.py'),
         ),
+        launch_arguments=[('use_sim_time', 'true')],
     )
 
     return LaunchDescription([

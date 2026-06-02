@@ -28,6 +28,10 @@ def generate_launch_description():
         DeclareLaunchArgument('idw_power', default_value='2.0'),
         DeclareLaunchArgument('idw_falloff_radius_m', default_value='1.5'),
         DeclareLaunchArgument('idw_max_distance_m', default_value='1.5'),
+        # Sim must run on /clock or the twin's staleness (now - last_seen) is
+        # computed wall-clock vs sim-time-stamped observations → pins read as
+        # maximally stale and fade out of the HMI map.
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
     ]
     node = Node(
         package='lupin_twin',
@@ -45,6 +49,7 @@ def generate_launch_description():
             'idw_power': LaunchConfiguration('idw_power'),
             'idw_falloff_radius_m': LaunchConfiguration('idw_falloff_radius_m'),
             'idw_max_distance_m': LaunchConfiguration('idw_max_distance_m'),
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
         }],
     )
     return LaunchDescription([*args, node])

@@ -64,6 +64,9 @@ def generate_launch_description():
         DeclareLaunchArgument('state_publish_rate_hz', default_value='5.0'),
         DeclareLaunchArgument('mission_id_prefix', default_value='lupin'),
         DeclareLaunchArgument('frame_id', default_value='map'),
+        # In sim, pass true so the orchestrator stamps observations on /clock —
+        # otherwise the twin (sim time) sees them as stale and the map pins fade.
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
     ]
     # tag_sequence and dock_pose are array-typed parameters that don't
     # round-trip cleanly through LaunchConfiguration string parsing — we
@@ -119,6 +122,7 @@ def generate_launch_description():
             'state_publish_rate_hz': LaunchConfiguration('state_publish_rate_hz'),
             'mission_id_prefix': LaunchConfiguration('mission_id_prefix'),
             'frame_id': LaunchConfiguration('frame_id'),
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
         }],
     )
     return LaunchDescription([*args, node])

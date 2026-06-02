@@ -1452,11 +1452,20 @@ class MissionOrchestratorNode(Node):
         if self._mission is None:
             return
         stamp = self.get_clock().now().to_msg()
-        # Only meaningful when the orchestrator successfully reached the
-        # tag pose, i.e. STATUS_OK. AMCL may be None if the gate hasn't
-        # cleared yet; make_tag_observation handles None gracefully.
+        # Pin the tag where it physically is: the discovered-tags feed carries
+        # each tag's map-frame pose (perception_aggregator resolves it via TF).
+        # Only for OK results — for non-OK we never actually read the tag, so
+        # leave the pose unset (the twin drops orientation.w==0 as "missing").
+        tag_map_pose = None
+        if result.status == Observation.STATUS_OK:
+            discovered = self._discovered.get(result.tag_id)
+            if discovered is not None:
+                tag_map_pose = discovered.pose_in_map
+        # Legacy fallback only if we somehow lack the tag's own pose.
         amcl_at_obs = (
-            self._latest_amcl_pose if result.status == Observation.STATUS_OK else None
+            self._latest_amcl_pose
+            if (result.status == Observation.STATUS_OK and tag_map_pose is None)
+            else None
         )
         msg = make_tag_observation(
             mission_id=self._mission.mission_id,
@@ -1467,6 +1476,7 @@ class MissionOrchestratorNode(Node):
             status_detail=result.detail,
             frame_id=self._frame_id,
             amcl_pose=amcl_at_obs,
+            tag_map_pose=tag_map_pose,
         )
         self._obs_pub.publish(msg)
 

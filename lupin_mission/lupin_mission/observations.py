@@ -26,6 +26,7 @@ def make_tag_observation(
     status_detail: str = '',
     frame_id: str = 'map',
     amcl_pose: Optional[PoseWithCovarianceStamped] = None,
+    tag_map_pose: Optional[Pose] = None,
 ) -> Observation:
     """Build an Observation with KIND_TAG_READING.
 
@@ -53,10 +54,21 @@ def make_tag_observation(
     msg.status_detail = status_detail
     if tag_reading is not None:
         msg.tag_reading = tag_reading
-    if amcl_pose is not None:
-        # Copy the inner Pose so the twin doesn't have to crack the
-        # PoseWithCovariance envelope downstream.
+    # Prefer the tag's OWN map-frame pose (from the discovered-tags feed, which
+    # perception_aggregator resolves via TF) so the operator map pins the tag
+    # where it physically is — not where the robot stood. Fall back to the
+    # robot's AMCL pose only if the tag pose is unknown.
+    pose = tag_map_pose if tag_map_pose is not None else (
+        amcl_pose.pose.pose if amcl_pose is not None else None
+    )
+    if pose is not None:
         msg.tag_pose_in_map = Pose()
-        msg.tag_pose_in_map.position = amcl_pose.pose.pose.position
-        msg.tag_pose_in_map.orientation = amcl_pose.pose.pose.orientation
+        msg.tag_pose_in_map.position = pose.position
+        msg.tag_pose_in_map.orientation = pose.orientation
+        # The twin treats orientation.w==0 as "no pose" and drops the pin; if
+        # the source left the quaternion unset, normalise to identity so a
+        # valid position still renders.
+        q = msg.tag_pose_in_map.orientation
+        if q.x == 0.0 and q.y == 0.0 and q.z == 0.0 and q.w == 0.0:
+            q.w = 1.0
     return msg
