@@ -99,33 +99,21 @@ export function MissionControls({ className }: MissionControlsProps) {
         <StatusRow state={state} />
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="default"
-            disabled={startDisabled}
-            onClick={() => run('start', () => services.start())}
-            className="h-9 px-4"
-          >
-            {busy === 'start'
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Play className="h-4 w-4" />}
-            Start patrol
-          </Button>
-
-          {/* Autonomous explore-then-monitor: discover N tags, then loop. */}
+          {/* PRIMARY — the full autonomous run: discover N tags, then monitor each.
+              This is the demo button, so it gets the filled/accent variant. */}
           <div className="inline-flex items-center gap-1">
             <Button
               size="sm"
-              variant="secondary"
+              variant="default"
               disabled={startDisabled}
               onClick={() => run('explore', () => services.startExploration(discoveryGoal))}
-              className="h-9"
-              title={`Explore until ${discoveryGoal} tags are discovered, then monitor them`}
+              className="h-9 px-4"
+              title={`Autonomous run: explore the greenhouse until ${discoveryGoal} tags are found, then monitor each one. No prior map needed — this is the full demo run.`}
             >
               {busy === 'explore'
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <Radar className="h-4 w-4" />}
-              Explore
+              Explore &amp; monitor
             </Button>
             <input
               type="number"
@@ -135,10 +123,26 @@ export function MissionControls({ className }: MissionControlsProps) {
               disabled={startDisabled}
               onChange={(e) => setDiscoveryGoal(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
               className="h-9 w-14 rounded-sm border border-hairline bg-background/40 px-2 text-center font-mono text-[12px] disabled:opacity-50"
-              title="number of tags to discover"
-              aria-label="discovery goal"
+              title="number of tags to discover before switching to monitoring"
+              aria-label="discovery goal (tags to find)"
             />
           </div>
+
+          {/* SECONDARY — revisit already-known tags, no discovery phase. Muted so it
+              doesn't read as the primary action (it is NOT the demo run). */}
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={startDisabled}
+            onClick={() => run('start', () => services.start())}
+            className="h-9 px-4"
+            title="Patrol the already-known tags in order (InspectionMission). It does NOT explore — use only when the tags are already on the map."
+          >
+            {busy === 'start'
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Play className="h-4 w-4" />}
+            Patrol known tags
+          </Button>
 
           {paused ? (
             <Button
@@ -194,6 +198,13 @@ export function MissionControls({ className }: MissionControlsProps) {
             Abort
           </Button>
         </div>
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          <span className="font-medium text-foreground">Explore &amp; monitor</span>{' '}
+          runs the full autonomous mission (discover N tags, then monitor each) — use this
+          for the demo.{' '}
+          <span className="font-medium text-foreground">Patrol known tags</span>{' '}
+          only revisits tags already on the map.
+        </p>
 
         {feedback && (
           <div
