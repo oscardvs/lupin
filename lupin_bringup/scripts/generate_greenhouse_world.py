@@ -302,6 +302,157 @@ def _bounds(layout: dict[str, Any]) -> tuple[float, float, float, float]:
 # --- Top-level ---------------------------------------------------------------
 
 
+# Flower blossom palette keyed by species (matches FlowerObservation.species +
+# the sim HSV detector class ids 0/1/2). The physical demo uses dahlias in three
+# colours, so we reproduce THOSE, not literal RGB primaries:
+#   'red'   -> vivid MAGENTA / hot-pink  (HSV: pink-magenta hue, HIGH saturation)
+#   'white' -> white                     (HSV: ~zero saturation, high value)
+#   'pink'  -> pale / light pink         (HSV: pink hue, LOW saturation, high V)
+# 'red' and 'pink' share a hue family (as the real magenta vs pale-pink dahlias
+# do), so the detector separates them by SATURATION — magenta high, pale-pink
+# low — and 'white' by ~zero saturation. All emissive so the colour the gripper
+# camera sees stays stable under Gazebo lighting. Re-tune in lockstep with the
+# sim flower detector's HSV bands.
+_FLOWER_COLORS: dict[str, tuple] = {
+    # species: (ambient_rgb, diffuse_rgb, emissive_rgb). Emissive is kept
+    # CHROMATIC (low green) for red/pink so it doesn't wash the hue toward
+    # white. Magenta sits at very high saturation, pale-pink at a clear mid
+    # saturation, white at ~zero — a wide gap so the HSV detector separates
+    # them cleanly even after Gazebo lighting desaturates a little.
+    'red':   ((0.32, 0.02, 0.15), (0.86, 0.05, 0.40), (0.40, 0.00, 0.18)),  # magenta, very high S
+    'white': ((0.42, 0.42, 0.42), (0.95, 0.95, 0.95), (0.40, 0.40, 0.40)),  # white, ~zero S
+    'pink':  ((0.40, 0.26, 0.31), (0.93, 0.62, 0.74), (0.18, 0.06, 0.11)),  # pale pink, mid S
+}
+# Dominant blossom colour per table cycles through this order; accent blossoms
+# of the other two colours fill the trough so each station is a CLUSTER of mixed
+# flowers with more blossoms than tags — matching the hardware (no 1:1 tag↔flower
+# mapping). Perception attributes the DOMINANT colour seen while scanning a tag.
+_FLOWER_SPECIES_CYCLE = ('red', 'white', 'pink')
+
+
+def _render_trough(name: str, rect: dict[str, float], table_height: float,
+                   *, wall_h: float = 0.06, inset: float = 0.05) -> str:
+    """A shallow soil-brown planter box on the table top — the flower trough.
+
+    Stands in for the laser-cut wooden planter; the blossoms rise out of it.
+    """
+    cx = (rect["x0"] + rect["x1"]) / 2.0
+    cy = (rect["y0"] + rect["y1"]) / 2.0
+    sx = max(abs(rect["x1"] - rect["x0"]) - 2 * inset, 0.05)
+    sy = max(abs(rect["y1"] - rect["y0"]) - 2 * inset, 0.05)
+    cz = table_height + wall_h / 2.0
+    safe = name.replace(" ", "_").lower()
+    return f"""    <model name="trough_{safe}">
+      <static>true</static>
+      <pose>{cx:.4f} {cy:.4f} {cz:.4f} 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>{sx:.4f} {sy:.4f} {wall_h:.4f}</size></box></geometry>
+          <material>
+            <ambient>0.20 0.12 0.05 1</ambient>
+            <diffuse>0.30 0.18 0.08 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>"""
+
+
+def _render_flower(idx: int, fx: float, fy: float, top_z: float, species: str,
+                   *, stem_height: float = 0.10, blossom_radius: float = 0.045) -> str:
+    """One flower: green stem + coloured emissive blossom, rising from the trough."""
+    amb, dif, emi = _FLOWER_COLORS[species]
+    stem_cz = top_z + stem_height / 2.0
+    blossom_cz = top_z + stem_height + blossom_radius * 0.55
+    return f"""    <model name="flower_{idx}_{species}">
+      <static>true</static>
+      <pose>{fx:.4f} {fy:.4f} 0 0 0 0</pose>
+      <link name="link">
+        <visual name="stem">
+          <pose>0 0 {stem_cz:.4f} 0 0 0</pose>
+          <geometry><cylinder><radius>0.009</radius><length>{stem_height:.4f}</length></cylinder></geometry>
+          <material><ambient>0.05 0.40 0.05 1</ambient><diffuse>0.05 0.52 0.05 1</diffuse></material>
+        </visual>
+        <visual name="blossom">
+          <pose>0 0 {blossom_cz:.4f} 0 0 0</pose>
+          <geometry><sphere><radius>{blossom_radius:.4f}</radius></sphere></geometry>
+          <material>
+            <ambient>{amb[0]:.2f} {amb[1]:.2f} {amb[2]:.2f} 1</ambient>
+            <diffuse>{dif[0]:.2f} {dif[1]:.2f} {dif[2]:.2f} 1</diffuse>
+            <emissive>{emi[0]:.2f} {emi[1]:.2f} {emi[2]:.2f} 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>"""
+
+
+def _render_bug(idx: int, fx: float, fy: float, top_z: float, *, plate: float = 0.05) -> str:
+    """A small black 'bug' anomaly marker among the flowers (the pest target,
+    like the printed spider tags in the real planter). Detected as the dark
+    low-value 'bug' class so the aggregator raises the anomaly flag."""
+    cz = top_z + 0.015
+    return f"""    <model name="bug_{idx}">
+      <static>true</static>
+      <pose>{fx:.4f} {fy:.4f} {cz:.4f} 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>{plate:.4f} {plate:.4f} 0.008</size></box></geometry>
+          <material>
+            <ambient>0.02 0.02 0.02 1</ambient>
+            <diffuse>0.02 0.02 0.02 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>"""
+
+
+def _render_table_planting(
+    table_index: int, rect: dict[str, float], table_height: float,
+    *, flower_start_idx: int, with_bug: bool,
+) -> tuple[list[str], int]:
+    """Trough + a cluster of mixed-colour flowers (+ optional bug) for one table.
+
+    Lays a row of blossoms along the table's longer axis: a DOMINANT colour
+    (cycling red/white/pink by table) with periodic accents of the other two,
+    so the station reads as one colour to perception while still being a mixed
+    cluster. Returns (sdf_blocks, next_flower_idx).
+    """
+    blocks = [_render_trough(f"table_{table_index}", rect, table_height)]
+    top_z = table_height + 0.06  # trough top
+    dom = _FLOWER_SPECIES_CYCLE[table_index % len(_FLOWER_SPECIES_CYCLE)]
+    accents = [s for s in _FLOWER_SPECIES_CYCLE if s != dom]
+
+    x0, x1, y0, y1 = rect["x0"], rect["x1"], rect["y0"], rect["y1"]
+    span_x, span_y = abs(x1 - x0), abs(y1 - y0)
+    along_x = span_x >= span_y
+    length = max(span_x, span_y)
+    n = max(3, min(8, int(length / 0.16)))
+    margin = 0.07
+
+    idx = flower_start_idx
+    for k in range(n):
+        t = (k + 0.5) / n
+        if along_x:
+            fx = x0 + margin + t * (span_x - 2 * margin)
+            fy = (y0 + y1) / 2.0
+        else:
+            fy = y0 + margin + t * (span_y - 2 * margin)
+            fx = (x0 + x1) / 2.0
+        # ~1 in 3 blossoms is an accent colour; the rest are the dominant.
+        species = accents[k % len(accents)] if (k % 3 == 1) else dom
+        blocks.append(_render_flower(idx, fx, fy, top_z, species))
+        idx += 1
+
+    if with_bug:
+        if along_x:
+            bx, by = (x0 + x1) / 2.0, (y0 + y1) / 2.0 + 0.045
+        else:
+            bx, by = (x0 + x1) / 2.0 + 0.045, (y0 + y1) / 2.0
+        blocks.append(_render_bug(idx, bx, by, top_z))
+        idx += 1
+
+    return blocks, idx
+
+
 def build_world(
     layout: dict[str, Any],
     *,
@@ -352,6 +503,19 @@ def build_world(
                 height=tag_height,
             )
         )
+
+    # Planting: one trough + a mixed-colour flower cluster per table (the
+    # gripper-cam flower-scan targets), with a bug anomaly marker on every
+    # 4th table. More blossoms than tags — no 1:1 mapping, like the hardware.
+    flower_blocks = []
+    _flower_idx = 0
+    for ti, (tname, rect) in enumerate(sorted(tables.items())):
+        blocks, _flower_idx = _render_table_planting(
+            ti, rect, table_height,
+            flower_start_idx=_flower_idx,
+            with_bug=(ti % 4 == 3),
+        )
+        flower_blocks.extend(blocks)
     walls = [
         _render_wall("wall_south", cx, wy0, width, wall_thickness, wall_height),
         _render_wall("wall_north", cx, wy1, width, wall_thickness, wall_height),
@@ -359,7 +523,7 @@ def build_world(
         _render_wall("wall_east", wx1, cy, wall_thickness, depth, wall_height),
     ]
 
-    body = "\n".join(walls + table_blocks + tag_blocks)
+    body = "\n".join(walls + table_blocks + flower_blocks + tag_blocks)
     return f"""<?xml version="1.0" ?>
 <!--
   Generated by lupin_bringup/scripts/generate_greenhouse_world.py from

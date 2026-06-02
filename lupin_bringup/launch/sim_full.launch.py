@@ -328,6 +328,24 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
     )
 
+    # sim flower detector: HSV colour stand-in for the real YOLO (best.pt is
+    # trained on real dahlias, fires on nothing in Gazebo). Publishes the SAME
+    # /yolo/detections contract, so perception_aggregator/twin/HMI are identical
+    # sim vs hardware — the detector is the only swap. On the robot, run
+    # perception_stack.launch.py (real yolo_detector) instead of this node.
+    sim_flower_detector = Node(
+        package='lupin_perception', executable='sim_flower_detector',
+        name='sim_flower_detector',
+        parameters=[{
+            'use_sim_time': True,
+            'image_topic': '/gripper_camera/image_raw',
+            'detections_topic': '/yolo/detections',
+            'image_qos': 'reliable',
+            'publish_overlay': True,
+        }],
+        output='screen',
+    )
+
     # ── 5. Mission orchestrator ─────────────────────────────────────────
     mission = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -540,6 +558,7 @@ def generate_launch_description() -> LaunchDescription:
         bridge,
         tag_annotator,
         perception_aggregator,
+        sim_flower_detector,
         mission,
         twin,
         rosbridge,
