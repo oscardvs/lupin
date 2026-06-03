@@ -89,6 +89,11 @@ export function useVoiceSession(): VoiceSession {
     mapPoseRef.current = mapPose
   }, [mapPose])
 
+  // Saved arm pose/sequence names, fetched once at session start so
+  // buildSystemInstruction can list them for the model and arm_save_pose can
+  // append new names mid-session.
+  const armLibraryRef = useRef<{ poses: string[]; sequences: string[] }>({ poses: [], sequences: [] })
+
   const liveRef = useRef<GeminiLiveClient | null>(null)
   const micRef = useRef<MicCapture | null>(null)
   const playerRef = useRef<AudioPlayer | null>(null)
@@ -468,6 +473,105 @@ export function useVoiceSession(): VoiceSession {
             }
           }
 
+          case 'arm_goto_pose': {
+            if (estop.active) {
+              return finish({ ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` })
+            }
+            const poseName = String(args.name ?? '').trim().toLowerCase()
+            if (!poseName) return finish({ ok: false, error: 'arm_goto_pose: name is required' })
+            const builtin = ['home', 'zero', 'tuck', 'pick', 'place', 'inspect'].includes(poseName)
+            const svc = builtin ? '/lupin/arm/preset' : '/lupin/arm/library/goto_pose'
+            try {
+              const r = await ros.callService<{ name: string }, { success: boolean; message: string }>(
+                svc, 'lupin_msgs/srv/SetArmPreset', { name: poseName })
+              return finish({ ok: !!r.success, action: 'arm_goto_pose', name: poseName, message: r.message,
+                ...(r.success ? {} : { error: r.message }) })
+            } catch (e) {
+              return finish({ ok: false, error: `arm library unavailable: ${e instanceof Error ? e.message : String(e)}` })
+            }
+          }
+
+          case 'arm_save_pose': {
+            const poseName = String(args.name ?? '').trim()
+            if (!poseName) return finish({ ok: false, error: 'arm_save_pose: name is required' })
+            try {
+              const r = await ros.callService<
+                { name: string; from_current: boolean; arm_rad: number[]; gripper_rad: number; has_gripper: boolean; overwrite: boolean },
+                { success: boolean; message: string }
+              >('/lupin/arm/library/save_pose', 'lupin_msgs/srv/SaveArmPose',
+                { name: poseName, from_current: true, arm_rad: [], gripper_rad: 0, has_gripper: false, overwrite: true })
+              if (r.success) armLibraryRef.current.poses = Array.from(new Set([...armLibraryRef.current.poses, poseName.toLowerCase()]))
+              return finish({ ok: !!r.success, action: 'arm_save_pose', name: poseName, message: r.message,
+                ...(r.success ? {} : { error: r.message }) })
+            } catch (e) {
+              return finish({ ok: false, error: `arm library unavailable: ${e instanceof Error ? e.message : String(e)}` })
+            }
+          }
+
+          case 'arm_run_sequence': {
+            if (estop.active) {
+              return finish({ ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` })
+            }
+            const seqName = String(args.name ?? '').trim().toLowerCase()
+            if (!seqName) return finish({ ok: false, error: 'arm_run_sequence: name is required' })
+            const speed = clampNumber(args.speed, 0.25, 2, 1)
+            try {
+              const r = await ros.callService<{ name: string; speed: number }, { success: boolean; message: string }>(
+                '/lupin/arm/library/play', 'lupin_msgs/srv/PlayArmSequence', { name: seqName, speed })
+              return finish({ ok: !!r.success, action: 'arm_run_sequence', name: seqName, speed, message: r.message,
+                ...(r.success ? {} : { error: r.message }) })
+            } catch (e) {
+              return finish({ ok: false, error: `arm library unavailable: ${e instanceof Error ? e.message : String(e)}` })
+            }
+          }
+
+          case 'arm_record': {
+            const action = String(args.action ?? '').trim().toLowerCase()
+            if (!['start', 'save', 'cancel'].includes(action))
+              return finish({ ok: false, error: "arm_record: action must be start|save|cancel" })
+            const mode = String(args.mode ?? 'teleop').trim().toLowerCase()
+            if (action === 'start' && estop.active) {
+              return finish({ ok: false, error: `e-stop active: ${estop.reason}` },
+                { blocked: true, error: `e-stop active: ${estop.reason}` })
+            }
+            try {
+              const r = await ros.callService<
+                { action: string; name: string; mode: string; include_gripper: boolean; overwrite: boolean },
+                { success: boolean; message: string; duration_s: number; n_waypoints: number }
+              >('/lupin/arm/library/record', 'lupin_msgs/srv/ArmRecord',
+                { action, name: String(args.name ?? ''), mode: action === 'start' ? mode : '',
+                  include_gripper: true, overwrite: true })
+              return finish({ ok: !!r.success, action: `arm_record_${action}`, message: r.message,
+                ...(action === 'save' ? { duration_s: r.duration_s, n_waypoints: r.n_waypoints } : {}),
+                ...(r.success ? {} : { error: r.message }) })
+            } catch (e) {
+              return finish({ ok: false, error: `arm library unavailable: ${e instanceof Error ? e.message : String(e)}` })
+            }
+          }
+
+          case 'arm_list_library': {
+            try {
+              const r = await ros.callService<Record<string, never>, { success: boolean; json: string }>(
+                '/lupin/arm/library/list', 'lupin_msgs/srv/GetArmLibrary', {})
+              const lib = JSON.parse(r.json || '{}')
+              return finish({ ok: true, poses: lib.poses ?? [], sequences: lib.sequences ?? [] })
+            } catch (e) {
+              return finish({ ok: false, error: `arm library unavailable: ${e instanceof Error ? e.message : String(e)}` })
+            }
+          }
+
+          case 'arm_stop': {
+            try {
+              const r = await ros.callService<Record<string, never>, { success: boolean; message: string }>(
+                '/lupin/arm/library/stop', 'std_srvs/srv/Trigger', {})
+              return finish({ ok: !!r.success, action: 'arm_stop', message: r.message })
+            } catch (e) {
+              return finish({ ok: false, error: `arm library unavailable: ${e instanceof Error ? e.message : String(e)}` })
+            }
+          }
+
           case 'calibrate_arm': {
             const action = String(args.action ?? '')
             if (!['start', 'commit', 'cancel', 'status'].includes(action)) {
@@ -601,7 +705,14 @@ export function useVoiceSession(): VoiceSession {
     const locLine = names.length
       ? `Known named locations: ${names.join(', ')}.`
       : 'No named locations are configured yet.'
-    return `${settings.voiceSystemPrompt}\n\n${locLine}`
+    const { poses, sequences } = armLibraryRef.current
+    const poseLine = poses.length
+      ? `Saved arm poses: ${poses.join(', ')}.`
+      : 'No saved arm poses yet.'
+    const seqLine = sequences.length
+      ? `Saved arm sequences: ${sequences.join(', ')}.`
+      : 'No saved arm sequences yet.'
+    return `${settings.voiceSystemPrompt}\n\n${locLine}\n${poseLine}\n${seqLine}`
   }, [settings.voiceSystemPrompt, settings.voiceNamedLocations])
 
   const start = useCallback(async () => {
@@ -634,6 +745,19 @@ export function useVoiceSession(): VoiceSession {
     // silently until the next gesture happens to resume it — which is what
     // surfaces as "the answer is in but gated by the next button press".
     await playerRef.current.prepare()
+
+    // Fetch the saved arm library so buildSystemInstruction can list the pose
+    // and sequence names for the model. Best-effort: if the node is down we
+    // start with an empty library rather than failing the session.
+    try {
+      const res = await ros.callService<Record<string, never>, { json: string }>(
+        '/lupin/arm/library/list', 'lupin_msgs/srv/GetArmLibrary', {})
+      const lib = JSON.parse(res.json || '{}')
+      armLibraryRef.current = {
+        poses: (lib.poses ?? []).map((p: { name: string }) => p.name),
+        sequences: (lib.sequences ?? []).map((s: { name: string }) => s.name),
+      }
+    } catch { armLibraryRef.current = { poses: [], sequences: [] } }
 
     const client = new GeminiLiveClient({
       apiKey: settings.geminiApiKey.trim(),
