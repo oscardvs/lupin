@@ -98,6 +98,7 @@ class ArmLibraryServer(Node):
         srv(ArmLibraryEdit, "/lupin/arm/library/delete", self._on_edit)
 
         self._play_timer = None
+        self._play_done_timer = None
         self._gripper_timers: List = []
         self.create_timer(0.2, self._publish_state)
         self.get_logger().info(
@@ -266,11 +267,86 @@ class ArmLibraryServer(Node):
         return resp
 
     def _on_play(self, req, resp):
-        resp.success, resp.message = False, "play not implemented yet"
+        if self._recording is not None:
+            resp.success, resp.message = False, "cannot play while recording"
+            return resp
+        if self._playing_name:
+            resp.success, resp.message = False, f'already playing "{self._playing_name}"'
+            return resp
+        try:
+            seq = self.store.get_sequence(req.name)
+        except ArmLibraryError as e:
+            resp.success, resp.message = False, str(e)
+            return resp
+        if not seq.waypoints:
+            resp.success, resp.message = False, "sequence has no waypoints"
+            return resp
+        speed = max(0.25, min(2.0, req.speed if req.speed else 1.0))
+
+        self._set_torque(True)  # force torque on + re-pin before motion
+
+        names = ARM_JOINT_NAMES
+        wps = [(w.t, [clamp_arm_joint(j, v) for j, v in zip(ARM_JOINTS, w.arm)])
+               for w in seq.waypoints]
+        self._traj_pub.publish(build_arm_trajectory_multi(names, wps, speed=speed))
+
+        # Gripper events on a timeline (cancel any previous timers first).
+        self._clear_gripper_timers()
+        if seq.include_gripper:
+            for t, grip in extract_gripper_events(seq.waypoints):
+                delay = max(0.0, t / speed)
+                self._gripper_timers.append(
+                    self.create_timer(delay, self._make_gripper_cb(grip), callback_group=self._cb))
+
+        total = max(0.1, seq.duration_s / speed)
+        self._playing_name = req.name
+        self._play_start_clock = self.get_clock().now()
+        self._play_total_s = total
+        self._play_done_timer = self.create_timer(total, self._on_play_done, callback_group=self._cb)
+        resp.success, resp.message = True, f'playing "{req.name}" at {speed:.2f}x'
         return resp
 
+    def _make_gripper_cb(self, grip: float):
+        fired = {"done": False}
+        def _cb():
+            if not fired["done"]:
+                fired["done"] = True
+                self._send_gripper(grip)
+        return _cb
+
+    def _clear_gripper_timers(self) -> None:
+        for tmr in self._gripper_timers:
+            tmr.cancel()
+        self._gripper_timers = []
+
+    def _on_play_done(self) -> None:
+        if getattr(self, "_play_done_timer", None) is not None:
+            self._play_done_timer.cancel()
+            self._play_done_timer = None
+        self._clear_gripper_timers()
+        self._playing_name = ""
+        self._play_start_clock = None
+
     def _on_stop(self, req, resp):
-        resp.success, resp.message = True, "idle"
+        # Abort any in-flight replay and hold at the current pose.
+        was_playing = bool(self._playing_name)
+        if getattr(self, "_play_done_timer", None) is not None:
+            self._play_done_timer.cancel()
+            self._play_done_timer = None
+        self._clear_gripper_timers()
+        self._playing_name = ""
+        self._play_start_clock = None
+        if was_playing and self._latest is not None:
+            arm = self._extract_arm(self._latest)
+            if arm is not None:
+                hold = [clamp_arm_joint(j, v) for j, v in zip(ARM_JOINTS, arm)]
+                self._traj_pub.publish(build_arm_trajectory(ARM_JOINT_NAMES, hold, 0.3))
+        # If a kinesthetic record was somehow active, restore torque defensively.
+        if self._recording is not None and self._rec_mode == "kinesthetic":
+            self._set_torque(True)
+            self._recording = None
+            self._rec_mode = ""
+        resp.success, resp.message = True, "stopped"
         return resp
 
     # ── helpers used by later tasks ─────────────────────────────────────
