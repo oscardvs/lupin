@@ -46,6 +46,9 @@ Flags (all booleans, default in parens):
     web (true)        lupin_web — Vite preview (HTTPS :8090) +
                       rosbridge_websocket :9090 + web_video_server :8091.
                       Open https://<laptop-ip>:8090 to use the HMI.
+    robot_ip          Robot address for the HMI camera-tab video proxy
+                      (defaults to the ROS_DISCOVERY_SERVER IP, else the AP
+                      192.168.42.1). Pass robot_ip:=10.42.0.1 for wired.
     slam (true)       slam_toolbox + slam_reset_node. Owns /map.
     nav2 (true)       Nav2 stack. Waits for /map before activating.
     twin (true)       lupin_twin aggregator. Cheap; HMI consumes it.
@@ -141,7 +144,26 @@ def _apply_dds_env_from_ros_env_sh() -> str | None:
     return f'[lupin_bringup] applied DDS env from {path}: {", ".join(applied)}'
 
 
+def _default_robot_ip() -> str:
+    """Best-effort robot IP for laptop→robot links that need an explicit
+    address (currently the HMI camera-tab video proxy target).
+
+    Derives it from ROS_DISCOVERY_SERVER when set — that env var is the
+    robot's FastDDS discovery-server endpoint ('<ip>:11811', written by
+    setup-laptop-dds-env.sh and already applied to this process by
+    _apply_dds_env_from_ros_env_sh() above). So whichever IP the operator
+    pointed DDS at — robot AP 192.168.42.1, or a wired 10.42.0.1 — is
+    reused for the video target automatically, with no second place to edit
+    when going wired. Falls back to the robot's own AP address.
+    """
+    ds = os.environ.get('ROS_DISCOVERY_SERVER', '')
+    host = ds.split(':')[0].strip() if ds else ''
+    return host or '192.168.42.1'
+
+
 def generate_launch_description() -> LaunchDescription:
+    # Apply the DDS env first so _default_robot_ip() below can read the
+    # discovery-server IP it sets.
     dds_env_banner = _apply_dds_env_from_ros_env_sh()
     pkg_bringup = get_package_share_directory('lupin_bringup')
     pkg_bridge = get_package_share_directory('lupin_greenhouse_bridge')
@@ -188,6 +210,17 @@ def generate_launch_description() -> LaunchDescription:
                         'the JSON-encoding path — that load lives here. '
                         'Vendor rosbridge :9090 on the robot stays running '
                         'but sits idle.',
+        ),
+        DeclareLaunchArgument(
+            'robot_ip', default_value=_default_robot_ip(),
+            description='Robot address the laptop HMI uses for the camera-tab '
+                        'video proxy: Vite forwards /_video to '
+                        'http://<robot_ip>:8091, where lupin-cameras.service '
+                        'serves MJPEG. Defaults to the IP in '
+                        'ROS_DISCOVERY_SERVER (so a wired link reuses its '
+                        'wired IP automatically), else the robot AP '
+                        '192.168.42.1. Override for an unusual link, e.g. '
+                        'robot_ip:=10.42.0.1 for the wired demo.',
         ),
         DeclareLaunchArgument(
             'rviz', default_value='true',
@@ -440,7 +473,17 @@ def generate_launch_description() -> LaunchDescription:
             ('tls', 'true'),
             ('rosbridge', 'true'),
             ('video', 'false'),
-            ('video_target', 'http://192.168.42.1:8091'),
+            # Retarget the Vite /_video proxy at the robot's web_video_server.
+            # robot_ip defaults to the discovery-server IP, so this follows the
+            # link automatically (AP 192.168.42.1 or wired 10.42.0.1) — the old
+            # hardcoded AP IP broke the camera tab over a wired-only connection.
+            ('video_target', ['http://', LaunchConfiguration('robot_ip'), ':8091']),
+            # The robot's lupin-onboard.service already runs light_strip_bridge.
+            # Don't start a second one on the laptop — two instances collide on
+            # the node name and the /lupin/leds/{set,auto} override services.
+            # The HMI LightControl card still works: it reaches the robot's
+            # bridge over DDS.
+            ('leds', 'false'),
         ],
         condition=IfCondition(LaunchConfiguration('web')),
     )
