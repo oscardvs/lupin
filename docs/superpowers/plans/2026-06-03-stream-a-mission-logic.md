@@ -26,7 +26,7 @@
 - **Run pure tests** (no rebuild needed for `.py`-only changes):
   ```bash
   cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-  python -m pytest test/<file>::<test> -v
+  python3 -m pytest test/<file>::<test> -v
   ```
 - Commit messages: conventional style, **no `Co-Authored-By` trailer**.
 
@@ -77,7 +77,7 @@ def test_target_cycles_allows_multiple_sweeps():
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_monitoring_mission.py::test_one_sweep_then_complete test/test_monitoring_mission.py::test_target_cycles_allows_multiple_sweeps -v
+python3 -m pytest test/test_monitoring_mission.py::test_one_sweep_then_complete test/test_monitoring_mission.py::test_target_cycles_allows_multiple_sweeps -v
 ```
 Expected: FAIL — `test_one_sweep_then_complete` fails at `assert m.is_complete()` (currently always False); `test_target_cycles_allows_multiple_sweeps` fails with `TypeError: __init__() got an unexpected keyword argument 'target_cycles'`.
 
@@ -115,7 +115,7 @@ Replace `is_complete`:
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_monitoring_mission.py -v
+python3 -m pytest test/test_monitoring_mission.py -v
 ```
 Expected: PASS (all tests, including the unchanged `test_empty_discovered_is_complete`, `test_fresh_result_each_visit_and_tally`, `test_tags_sorted_and_cursor_starts_at_first`).
 
@@ -169,7 +169,7 @@ def test_monitoring_uses_nearest_order():
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_monitoring_mission.py::test_order_numeric_when_no_start test/test_monitoring_mission.py::test_order_nearest_neighbour_from_start test/test_monitoring_mission.py::test_monitoring_uses_nearest_order -v
+python3 -m pytest test/test_monitoring_mission.py::test_order_numeric_when_no_start test/test_monitoring_mission.py::test_order_nearest_neighbour_from_start test/test_monitoring_mission.py::test_monitoring_uses_nearest_order -v
 ```
 Expected: FAIL — `ImportError: cannot import name 'order_tags_nearest_first'`.
 
@@ -233,7 +233,7 @@ with:
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_monitoring_mission.py -v
+python3 -m pytest test/test_monitoring_mission.py -v
 ```
 Expected: PASS. (`test_tags_sorted_and_cursor_starts_at_first` still passes: no `start_xy` → numeric sort of `('3','1','2')` → `['1','2','3']`.)
 
@@ -295,7 +295,7 @@ In `test_orchestrator_v2.py`, REPLACE the body of `test_exploration_discovers_th
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_orchestrator_v2.py::TestOrchestratorV2::test_exploration_discovers_then_monitors -v
+python3 -m pytest test/test_orchestrator_v2.py::TestOrchestratorV2::test_exploration_discovers_then_monitors -v
 ```
 Expected: FAIL — the orchestrator never reaches `DONE` (monitoring loops forever), so the `_wait_until(... == 'DONE')` assertion times out.
 
@@ -349,8 +349,8 @@ In `on_enter_MONITORING` (~line 1751), the `MonitoringMission(...)` call gains t
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_orchestrator_v2.py::TestOrchestratorV2::test_exploration_discovers_then_monitors -v
-python -m pytest test/ -v
+python3 -m pytest test/test_orchestrator_v2.py::TestOrchestratorV2::test_exploration_discovers_then_monitors -v
+python3 -m pytest test/ -v
 ```
 Expected: PASS for the updated test and the whole suite (the InspectionMission path is unchanged; `test_exploration_no_tags_returns_home` still passes).
 
@@ -410,7 +410,7 @@ def test_non_battery_dock_failure_is_done():
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_return_policy.py -v
+python3 -m pytest test/test_return_policy.py -v
 ```
 Expected: FAIL — `ModuleNotFoundError: No module named 'lupin_mission.return_policy'`.
 
@@ -450,7 +450,7 @@ def decide_failed_dock(
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_return_policy.py -v
+python3 -m pytest test/test_return_policy.py -v
 ```
 Expected: PASS.
 
@@ -551,7 +551,7 @@ In the SUCCESS path of the same method, reset the counter — in the block that 
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/ -v
+python3 -m pytest test/ -v
 ```
 Expected: PASS (existing battery/abort/return tests unaffected; the policy change only alters the battery-dock-FAILURE path, which no current test exercises).
 
@@ -618,7 +618,7 @@ def test_unknown_code_is_warn_and_passes_through():
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_events.py -v
+python3 -m pytest test/test_events.py -v
 ```
 Expected: FAIL — `ModuleNotFoundError: No module named 'lupin_mission.events'`.
 
@@ -677,7 +677,7 @@ def classify_event(code):
 
 ```bash
 cd /home/oskrt/worktrees/mission-redesign/lupin_mission
-python -m pytest test/test_events.py -v
+python3 -m pytest test/test_events.py -v
 ```
 Expected: PASS.
 
@@ -725,7 +725,7 @@ source /home/oskrt/ros2_ws/install/setup.bash
 cd /home/oskrt/worktrees/mission-redesign
 colcon build --symlink-install --packages-select lupin_msgs lupin_mission
 source install/setup.bash
-cd lupin_mission && python -m pytest test/ -v
+cd lupin_mission && python3 -m pytest test/ -v
 ```
 Expected: build succeeds; all mission tests PASS.
 
@@ -799,7 +799,7 @@ git commit -m "feat(mission): classify mission events; HMI shows tone not 'orche
 
 ## Verification (end of phase)
 
-- [ ] Full mission test suite green: `cd /home/oskrt/worktrees/mission-redesign/lupin_mission && python -m pytest test/ -v`
+- [ ] Full mission test suite green: `cd /home/oskrt/worktrees/mission-redesign/lupin_mission && python3 -m pytest test/ -v`
 - [ ] HMI builds: `cd /home/oskrt/worktrees/mission-redesign/lupin_web/web && npm run build`
 - [ ] Manual sim run: exploration → monitoring does exactly one nearest-neighbour sweep → RETURNING → DONE (no infinite loop); HMI event log shows "battery low" (warn), not "orchestrator error" (err).
 - [ ] Manual sim run (battery): battery low + failed dock → retry then `paused` in RETURNING, not DONE (Task 4 note).
