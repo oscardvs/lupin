@@ -1,5 +1,5 @@
 import {
-  AlertOctagon, ChevronRight, CircleDot, Flag, Hand, Inbox,
+  AlertOctagon, AlertTriangle, ChevronRight, CircleDot, Flag, Hand, Inbox,
   Loader2, Pause, Play, Power, Radio,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -422,6 +422,7 @@ function iconForKind(kind: MissionEvent['kind']) {
     case 'pause': return Pause
     case 'estop': return Power
     case 'fault': return AlertOctagon
+    case 'notice': return AlertTriangle
     case 'observation': return Inbox
   }
 }
