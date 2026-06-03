@@ -70,6 +70,7 @@ from .approach import (
     compute_discovered_approach,
     load_approach_overrides,
 )
+from .return_policy import decide_failed_dock
 from .tag_locations import (
     load_default_tables,
     load_default_tag_locations,
@@ -410,6 +411,7 @@ class MissionOrchestratorNode(Node):
         # the arm doesn't sweep through the pots mid-trajectory.
         self.declare_parameter('arm_travel_settle_s', 0.0)
         self.declare_parameter('monitoring_sweeps', 1)
+        self.declare_parameter('dock_retry_max', 3)
 
         self.declare_parameter("state_publish_rate_hz", 5.0)
         self.declare_parameter("mission_id_prefix", "lupin")
@@ -768,6 +770,8 @@ class MissionOrchestratorNode(Node):
         # so no new nav goals are issued while the robot heads to the dock.
         self._battery_low: bool = False
         self._docked_for_battery: bool = False
+        self._dock_retry_max = max(0, int(self.get_parameter('dock_retry_max').value))
+        self._dock_retry_count = 0
         self.battery_monitor = BatteryMonitor(
             self,
             str(self.get_parameter("battery_topic").value),
@@ -923,6 +927,7 @@ class MissionOrchestratorNode(Node):
 
         self._manual_dock_requested = False
         self._docked_for_battery = True
+        self._dock_retry_count = 0
         self._return_resumable = True
         self._return_requested = True
         self._cancel_inflight_nav("battery_low")
@@ -2332,9 +2337,32 @@ class MissionOrchestratorNode(Node):
                 self._send_return_nav_goal()
                 return
 
-            # Per spec: failures while returning to dock are non-fatal. End the
-            # mission so the operator can start a fresh one instead of getting
-            # stuck forever in RETURNING.
+            decision = decide_failed_dock(
+                battery_low=self._battery_low,
+                docked_for_battery=self._docked_for_battery,
+                resumable=self._return_resumable,
+                retry_count=self._dock_retry_count,
+                retry_max=self._dock_retry_max,
+            )
+            if decision == 'retry':
+                self._dock_retry_count += 1
+                self.get_logger().warn(
+                    f"RETURN: battery dock status {status}; "
+                    f"retry {self._dock_retry_count}/{self._dock_retry_max}."
+                )
+                self._send_return_nav_goal()
+                return
+            if decision == 'pause':
+                self.get_logger().warn(
+                    f"RETURN: battery dock failed {self._dock_retry_count} time(s); "
+                    "pausing in place, awaiting charge + /mission/resume."
+                )
+                self._paused = True
+                self._last_error = "dock_unreachable"
+                return
+
+            # 'done': non-battery return — failed dock is non-fatal, end the
+            # mission so the operator isn't stuck in RETURNING.
             self.get_logger().warn(
                 f"RETURN: dock goal ended with status {status}; transitioning to DONE"
             )
@@ -2353,6 +2381,7 @@ class MissionOrchestratorNode(Node):
             and self._return_resumable
         ):
             self._paused = True
+            self._dock_retry_count = 0
             self.get_logger().info(
                 "Docked due to low battery. Awaiting charge + /mission/resume."
             )
