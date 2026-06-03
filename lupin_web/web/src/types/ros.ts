@@ -187,6 +187,7 @@ export const ROS_TYPE = {
   MissionState: 'lupin_msgs/msg/MissionState',
   Observation: 'lupin_msgs/msg/Observation',
   TwinState: 'lupin_msgs/msg/TwinState',
+  String: 'std_msgs/msg/String',
 } as const
 
 /** mirte_msgs service type strings. */
@@ -227,6 +228,11 @@ export const LUPIN_SRV = {
   GetField: 'lupin_msgs/srv/GetField',
   CalibrateArm: 'lupin_msgs/srv/CalibrateArm',
   SetArmPreset: 'lupin_msgs/srv/SetArmPreset',
+  GetArmLibrary: 'lupin_msgs/srv/GetArmLibrary',
+  SaveArmPose: 'lupin_msgs/srv/SaveArmPose',
+  ArmRecord: 'lupin_msgs/srv/ArmRecord',
+  PlayArmSequence: 'lupin_msgs/srv/PlayArmSequence',
+  ArmLibraryEdit: 'lupin_msgs/srv/ArmLibraryEdit',
 } as const
 
 /** Mirror of `lupin_msgs/srv/CalibrateArm`. The single-srv-with-action
@@ -250,6 +256,36 @@ export interface CalibrateArmResponse {
   offsets_applied: number[]
   /** Raw-tick diff (position - home + curr_offset). */
   diffs_observed: number[]
+}
+
+// ── Arm library (lupin_msgs/srv/* — see arm_library_server) ──────────────
+export interface ArmLibraryPoseMeta { name: string; note: string; has_gripper: boolean }
+export interface ArmLibrarySeqMeta {
+  name: string; mode: 'kinesthetic' | 'teleop'; duration_s: number
+  n_waypoints: number; include_gripper: boolean
+}
+export interface ArmLibraryList { poses: ArmLibraryPoseMeta[]; sequences: ArmLibrarySeqMeta[] }
+
+export interface GetArmLibraryResponse { success: boolean; json: string }
+export interface SaveArmPoseRequest {
+  name: string; from_current: boolean; arm_rad: number[]
+  gripper_rad: number; has_gripper: boolean; overwrite: boolean
+}
+export interface ArmRecordRequest {
+  action: 'start' | 'save' | 'cancel'; name: string
+  mode: '' | 'kinesthetic' | 'teleop'; include_gripper: boolean; overwrite: boolean
+}
+export interface ArmRecordResponse {
+  success: boolean; message: string; duration_s: number; n_waypoints: number
+}
+export interface PlayArmSequenceRequest { name: string; speed: number }
+export interface ArmLibraryEditRequest { kind: 'pose' | 'sequence'; name: string; new_name: string }
+export interface SimpleAck { success: boolean; message: string }
+
+/** The arm_library_server /lupin/arm/library/state topic JSON (std_msgs/String). */
+export interface ArmLibraryState {
+  recording: boolean; playing: boolean; name: string; mode: string
+  progress: number; elapsed_s: number; n_waypoints: number; torque: boolean
 }
 
 /** Sensor channels the digital twin understands. Order is the canonical
