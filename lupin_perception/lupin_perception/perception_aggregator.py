@@ -42,7 +42,7 @@ from collections import deque
 from typing import Optional
 
 import rclpy
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Point, Point32, Polygon, Pose
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import (
@@ -52,6 +52,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from rclpy.time import Time
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Header, String
 from tf2_ros import (
     Buffer,
@@ -65,10 +66,18 @@ from lupin_msgs.msg import (
     DiscoveredTag,
     DiscoveredTags,
     FlowerObservation,
+    FlowerPoint,
     MissionState,
     Observation,
 )
 from lupin_msgs.srv import ConfirmTag
+from .box_geometry import (
+    FlowerPointData,
+    StandardBox,
+    bin_detections,
+    box_from_tag,
+    lateral_fraction,
+)
 
 
 # Lifecycle/phase strings (from MissionState) during which a flower seen on the
@@ -84,6 +93,7 @@ class _TagRecord:
         'tag_id', 'pose', 'best_dist', 'sightings',
         'last_seen_mono', 'last_seen_ros',
         'species', 'species_confidence', 'anomaly', 'flower_dirty',
+        'flower_count',
     )
 
     def __init__(self, tag_id: str) -> None:
@@ -97,6 +107,7 @@ class _TagRecord:
         self.species_confidence = 0.0
         self.anomaly = False
         self.flower_dirty = False       # flower fields changed since last emit
+        self.flower_count = 0           # blooms placed at the last emit
 
 
 class PerceptionAggregator(Node):
@@ -135,6 +146,26 @@ class PerceptionAggregator(Node):
         self.declare_parameter('anomaly_class_name', 'bug')
         self.declare_parameter('publish_rate_hz', 2.0)
 
+        # ── flower localization (Stream B) ──────────────────────────────
+        self.declare_parameter('joint_states_topic', '/joint_states')
+        self.declare_parameter('pan_joint_name', 'shoulder_pan_joint')
+        # Gripper-cam width (px) — only used to normalize bbox centre-x to
+        # [-1, 1]. 640 matches the sim Gazebo camera; tune if the real cam
+        # differs (affects lateral spread magnitude, not correctness).
+        self.declare_parameter('detection_image_width', 640.0)
+        self.declare_parameter('lateral_columns', 7)
+        self.declare_parameter('box_width', 0.80)
+        self.declare_parameter('box_depth', 0.40)
+        self.declare_parameter('box_height', 0.30)
+        self.declare_parameter('tag_mount_height', 0.10)
+        self.declare_parameter('tag_lateral_offset', 0.0)
+        self.declare_parameter('flower_base_depth_frac', 0.5)
+        self.declare_parameter('flower_depth_jitter_frac', 0.18)
+        # Half the arm pan-sweep amplitude (rad); matches Stream C's sweep so
+        # pan maps cleanly to lateral position once the sweep lands.
+        self.declare_parameter('pan_half_span', 0.5)
+        self.declare_parameter('camera_half_fov', 0.5)
+
         self._map_frame = str(self.get_parameter('map_frame').value)
         self._tf_prefix = str(self.get_parameter('tf_frame_prefix').value)
         self._min_sightings = int(self.get_parameter('min_sightings').value)
@@ -145,6 +176,20 @@ class PerceptionAggregator(Node):
         self._class_names = [str(n) for n in self.get_parameter('flower_class_names').value]
         self._anomaly_name = str(self.get_parameter('anomaly_class_name').value)
         publish_rate = float(self.get_parameter('publish_rate_hz').value)
+        self._pan_joint = str(self.get_parameter('pan_joint_name').value)
+        self._image_width = max(1.0, float(self.get_parameter('detection_image_width').value))
+        self._lateral_columns = max(1, int(self.get_parameter('lateral_columns').value))
+        self._box = StandardBox(
+            width=float(self.get_parameter('box_width').value),
+            depth=float(self.get_parameter('box_depth').value),
+            height=float(self.get_parameter('box_height').value),
+            tag_mount_height=float(self.get_parameter('tag_mount_height').value),
+            tag_lateral_offset=float(self.get_parameter('tag_lateral_offset').value),
+        )
+        self._flower_base_depth = float(self.get_parameter('flower_base_depth_frac').value)
+        self._flower_depth_jitter = float(self.get_parameter('flower_depth_jitter_frac').value)
+        self._pan_half_span = float(self.get_parameter('pan_half_span').value)
+        self._camera_half_fov = float(self.get_parameter('camera_half_fov').value)
 
         # ── runtime state ──────────────────────────────────────────────
         self._registry: dict[str, _TagRecord] = {}
@@ -156,6 +201,15 @@ class PerceptionAggregator(Node):
         # Latest mission state, for the SCANNING-phase association gate.
         self._mission_state: Optional[MissionState] = None
         self._mission_state_seen = False
+        # Latest arm pan angle (rad) — the lateral cue for bloom placement.
+        self._shoulder_pan = 0.0
+        # Per-scan detection accumulator for the tag currently being scanned:
+        # (lateral_fraction f, class_name, confidence). Reset when the focus
+        # tag changes so one box's blooms don't bleed into the next.
+        self._scan_tag: Optional[str] = None
+        # Bounded so a long dwell / stuck current_target can't grow it without
+        # limit (mirrors the _yolo_window cap); a real scan holds far fewer.
+        self._scan_dets: deque = deque(maxlen=512)
 
         # ── TF ──────────────────────────────────────────────────────────
         self._tf_buffer = Buffer()
@@ -207,6 +261,10 @@ class PerceptionAggregator(Node):
             MissionState, str(self.get_parameter('mission_state_topic').value),
             self._on_mission_state, latched,
         )
+        self.create_subscription(
+            JointState, str(self.get_parameter('joint_states_topic').value),
+            self._on_joint_states, det_qos,
+        )
         self._confirm_srv = self.create_service(
             ConfirmTag, str(self.get_parameter('confirm_service').value),
             self._handle_confirm_tag,
@@ -256,6 +314,15 @@ class PerceptionAggregator(Node):
                 continue
             self._record_tag(tag_id, pose, dist, now_mono)
         self._last_frame = frame
+
+    def _on_joint_states(self, msg: JointState) -> None:
+        """Track the arm pan angle — the lateral cue for bloom placement."""
+        try:
+            i = list(msg.name).index(self._pan_joint)
+        except ValueError:
+            return
+        if i < len(msg.position):
+            self._shoulder_pan = float(msg.position[i])
 
     def _lookup_tag_pose(self, tag_id: str) -> Optional[Pose]:
         """Look up the tag's pose in the map frame, or None if unavailable.
@@ -308,6 +375,7 @@ class PerceptionAggregator(Node):
         if not isinstance(detections, list):
             return
         now_mono = self._monotonic()
+        frame_dets: list[tuple[float, str, float]] = []
         for det in detections:
             try:
                 cls = int(det['class'])
@@ -316,9 +384,27 @@ class PerceptionAggregator(Node):
                 continue
             if conf < self._yolo_min_conf:
                 continue
-            if 0 <= cls < len(self._class_names):
-                self._yolo_window.append((now_mono, self._class_names[cls], conf))
-        self._fuse_flower(now_mono)
+            if not (0 <= cls < len(self._class_names)):
+                continue
+            name = self._class_names[cls]
+            self._yolo_window.append((now_mono, name, conf))
+            # Lateral cue: normalize the bbox centre-x to [-1, 1], combine
+            # with the arm pan angle (box_geometry.lateral_fraction).
+            bbox = det.get('bbox_xyxy')
+            bbox_cx_norm = 0.0
+            if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                try:
+                    cx = (float(bbox[0]) + float(bbox[2])) / 2.0
+                    bbox_cx_norm = max(-1.0, min(1.0, (cx / self._image_width - 0.5) * 2.0))
+                except (TypeError, ValueError):
+                    bbox_cx_norm = 0.0
+            f = lateral_fraction(
+                self._shoulder_pan, bbox_cx_norm,
+                pan_half_span=self._pan_half_span,
+                camera_half_fov=self._camera_half_fov,
+            )
+            frame_dets.append((f, name, conf))
+        self._fuse_flower(now_mono, frame_dets)
 
     def _focus_tag(self) -> Optional[str]:
         """Which discovered tag a fresh flower detection belongs to.
@@ -343,12 +429,11 @@ class PerceptionAggregator(Node):
         nearest = min(self._last_frame, key=lambda t: t[1] if t[1] > 0 else math.inf)
         return nearest[0] if nearest[0] in self._registry else None
 
-    def _fuse_flower(self, now_mono: float) -> None:
-        # Prune the window.
+    def _fuse_flower(self, now_mono: float,
+                     frame_dets: list[tuple[float, str, float]]) -> None:
+        # Prune the time window used for the dominant-species summary.
         while self._yolo_window and now_mono - self._yolo_window[0][0] > self._yolo_window_s:
             self._yolo_window.popleft()
-        if not self._yolo_window:
-            return
         tag_id = self._focus_tag()
         if tag_id is None:
             return
@@ -356,7 +441,15 @@ class PerceptionAggregator(Node):
         if rec is None:
             return
 
-        # Dominant tulip species (best confidence over the window) + bug flag.
+        # Per-scan accumulation: reset when the scanned tag changes so one
+        # box's blooms never bleed into the next.
+        if tag_id != self._scan_tag:
+            self._scan_tag = tag_id
+            self._scan_dets.clear()
+        self._scan_dets.extend(frame_dets)
+
+        # Dominant tulip species (best confidence over the window) + bug flag,
+        # for the summary fields (unchanged contract).
         best_species, best_conf = '', 0.0
         anomaly = False
         for _, name, conf in self._yolo_window:
@@ -366,19 +459,34 @@ class PerceptionAggregator(Node):
             if conf > best_conf:
                 best_species, best_conf = name, conf
 
+        # Locate the blooms inside the box from the accumulated detections.
+        geom = box_from_tag(rec.pose, self._box) if rec.pose is not None else None
+        flowers = bin_detections(
+            self._scan_dets, geom,
+            lateral_columns=self._lateral_columns,
+            base_depth_frac=self._flower_base_depth,
+            depth_jitter_frac=self._flower_depth_jitter,
+            anomaly_class=self._anomaly_name,
+        )
+
+        # Re-emit on a summary change or a change in the column COUNT.
+        # Position-only shifts (same count) are intentionally not a trigger —
+        # the twin is latest-wins and the next summary/count update carries them.
         changed = (
             rec.species != best_species
             or rec.anomaly != anomaly
             or abs(rec.species_confidence - best_conf) > 0.1
+            or rec.flower_count != len(flowers)
         )
         rec.species = best_species
         rec.species_confidence = best_conf
         rec.anomaly = anomaly
+        rec.flower_count = len(flowers)
         if changed:
             rec.flower_dirty = True
-            self._emit_flower_observation(rec)
+            self._emit_flower_observation(rec, flowers, geom)
 
-    def _emit_flower_observation(self, rec: _TagRecord) -> None:
+    def _emit_flower_observation(self, rec: _TagRecord, flowers, geom) -> None:
         if rec.pose is None:
             return
         stamp = self.get_clock().now().to_msg()
@@ -393,10 +501,34 @@ class PerceptionAggregator(Node):
         flower = FlowerObservation()
         flower.tag_id = rec.tag_id
         flower.pose.header = Header(stamp=stamp, frame_id=self._map_frame)
-        flower.pose.pose = rec.pose
+        flower.pose.pose = rec.pose                 # TAG anchor (not a bloom)
         flower.species = rec.species
         flower.confidence = rec.species_confidence
         flower.anomaly = rec.anomaly
+
+        # Located blooms. Degenerate tag normal (geom is None) -> fall back to
+        # a single bloom at the tag so a classified tag still shows a dot.
+        placed = list(flowers)
+        if not placed and rec.species:
+            placed = [FlowerPointData(
+                x=rec.pose.position.x, y=rec.pose.position.y,
+                species=rec.species, confidence=rec.species_confidence,
+                anomaly=rec.anomaly,
+            )]
+        for fp in placed:
+            point = FlowerPoint()
+            point.position = Point(x=float(fp.x), y=float(fp.y), z=0.0)
+            point.species = fp.species
+            point.confidence = float(fp.confidence)
+            point.anomaly = bool(fp.anomaly)
+            flower.flowers.append(point)
+
+        if geom is not None:
+            poly = Polygon()
+            for (x, y) in geom.footprint():
+                poly.points.append(Point32(x=float(x), y=float(y), z=0.0))
+            flower.box_footprint = poly
+
         obs.flower = flower
         obs.tag_pose_in_map = rec.pose      # so the twin can pin from either path
         self._obs_pub.publish(obs)

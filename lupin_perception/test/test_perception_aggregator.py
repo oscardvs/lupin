@@ -12,7 +12,8 @@ import rclpy
 from geometry_msgs.msg import Pose
 from std_msgs.msg import String
 
-from lupin_msgs.msg import MissionState
+from lupin_msgs.msg import MissionState, Observation
+from sensor_msgs.msg import JointState
 from lupin_msgs.srv import ConfirmTag
 from lupin_perception.perception_aggregator import PerceptionAggregator
 
@@ -136,3 +137,76 @@ def test_confirm_tag_service(node):
     res = node._handle_confirm_tag(req, res)
     assert res.detected is True
     assert res.tag_pose_in_map.position.x == pytest.approx(1.0)
+
+
+def _forward_facing_pose():
+    # Tag at (1,2) facing +X so box_geometry yields a non-degenerate normal
+    # (the default fixture's identity orientation would be degenerate).
+    p = Pose()
+    p.position.x, p.position.y = 1.0, 2.0
+    p.orientation.y = 0.70710678
+    p.orientation.w = 0.70710678
+    return p
+
+
+def _scanning(node, tag_id):
+    ms = MissionState()
+    ms.lifecycle_state = 'MONITORING'
+    ms.mission_phase = 'MONITORING_SCANNING'
+    ms.current_target = tag_id
+    ms.mission_id = 'm-test'
+    node._on_mission_state(ms)
+
+
+def _joints(node, pan):
+    js = JointState()
+    js.name = ['shoulder_pan_joint', 'shoulder_lift_joint']
+    js.position = [float(pan), 0.0]
+    node._on_joint_states(js)
+
+
+def _yolo_cx(*cls_conf_cx):
+    # each arg: (class, confidence, bbox_centre_x_px) in a 640-wide image
+    return String(data=json.dumps([
+        {'class': c, 'confidence': f, 'bbox_xyxy': [cx - 5, 100, cx + 5, 140]}
+        for (c, f, cx) in cls_conf_cx
+    ]))
+
+
+def test_flowers_localized_inside_box_not_on_tag(node):
+    node._lookup_tag_pose = lambda tag_id: _forward_facing_pose()
+    # Discover tag 8 (>= min_sightings).
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((8, 1.0)))
+    _scanning(node, '8')
+    _joints(node, 0.0)
+    # Two lateral clusters in image-x: left (cx=80) red, right (cx=560) white.
+    node._on_yolo_detections(_yolo_cx((0, 0.9, 80), (1, 0.85, 560)))
+    node._on_yolo_detections(_yolo_cx((0, 0.92, 90), (1, 0.88, 550)))
+
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs, 'expected a KIND_FLOWER Observation carrying flowers[]'
+    obs = flower_obs[-1]
+    # Box footprint emitted as a 4-corner polygon (on the FlowerObservation).
+    assert len(obs.flower.box_footprint.points) == 4
+    fps = obs.flower.flowers
+    assert len(fps) >= 2, 'two lateral clusters -> at least two columns'
+    # No bloom is pinned on the tag (1.0, 2.0).
+    for fp in fps:
+        assert (round(fp.position.x, 3), round(fp.position.y, 3)) != (1.0, 2.0)
+    species = {fp.species for fp in fps}
+    assert 'tulip_red' in species and 'tulip_white' in species
+
+
+def test_bug_sets_anomaly_on_localized_flower(node):
+    node._lookup_tag_pose = lambda tag_id: _forward_facing_pose()
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((8, 1.0)))
+    _scanning(node, '8')
+    _joints(node, 0.0)
+    node._on_yolo_detections(_yolo_cx((2, 0.9, 320), (3, 0.8, 320)))  # pink + bug, centre
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs
+    assert any(fp.anomaly for fp in flower_obs[-1].flower.flowers)
