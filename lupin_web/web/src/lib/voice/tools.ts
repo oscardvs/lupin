@@ -187,6 +187,65 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'arm_goto_pose',
+    description:
+      "Move the arm to a pose the operator saved earlier (NOT the built-in presets — for home/zero/tuck/pick/place/inspect use arm_preset). The set of saved pose names is listed in the system prompt. If the name is unknown the tool returns ok=false with the known names.",
+    parameters: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'Saved pose name.' } },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'arm_save_pose',
+    description:
+      "Snapshot the arm's CURRENT joint positions and save them under a name so future arm_goto_pose calls return here. Use when the user says 'save this pose as <name>'. Overwrites if the name exists.",
+    parameters: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'Name for the new pose.' } },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'arm_run_sequence',
+    description:
+      "Replay a saved arm motion sequence by name (the names are listed in the system prompt). speed scales playback (1.0 = as recorded; clamped to 0.25–2.0). Forces torque on before moving. Gated by e-stop.",
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Saved sequence name.' },
+        speed: { type: 'number', description: 'Playback speed factor, 0.25–2.0. Default 1.0.' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'arm_record',
+    description:
+      "Record an arm motion sequence. action='start' begins recording; mode='teleop' keeps torque ON (jog the arm via controller/sliders) while mode='kinesthetic' DISABLES torque so the arm can be hand-guided — for kinesthetic you MUST first tell the user out loud to support the arm because it will go limp. action='save' with a name stops and stores the recording; action='cancel' discards it. Only one recording at a time; cannot record while a sequence is playing.",
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'save', 'cancel'], description: 'Recording step.' },
+        name: { type: 'string', description: "Name to store under (action='save')." },
+        mode: { type: 'string', enum: ['teleop', 'kinesthetic'], description: "Recording mode (action='start')." },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'arm_list_library',
+    description:
+      'Return the current saved arm poses and sequences. Use to discover what exists before arm_goto_pose / arm_run_sequence, or when the user asks "what poses/sequences do you have?".',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'arm_stop',
+    description:
+      'Abort an in-flight arm sequence replay (or an active recording) and hold the arm at its current pose. Safe and idempotent.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'calibrate_arm',
     description:
       "CRITICAL: NEVER call this with action='commit' in the same turn as 'start'. You MUST wait for an explicit operator utterance like 'go ahead', 'commit', 'save it', or 'I've moved the arm' before calling 'commit'. Calling commit immediately leaves the arm calibrated to whatever pose it happened to be in when start fired — i.e. broken. Hiwonder zero-offset arm calibration is operator-in-the-loop: (1) action='start' disables the servos and the arm goes limp — tell the user to physically support the arm and move it into its mechanical home pose. (2) After the user confirms they have hand-posed the arm, action='commit' samples positions for ~2 s and writes new zero offsets. (3) action='cancel' aborts and re-enables without writing. (4) action='status' queries state without side effects. Hardware-only; in sim this returns synthetic results.",
@@ -250,6 +309,12 @@ export type ToolName =
   | 'save_named_location'
   | 'gripper'
   | 'arm_preset'
+  | 'arm_goto_pose'
+  | 'arm_save_pose'
+  | 'arm_run_sequence'
+  | 'arm_record'
+  | 'arm_list_library'
+  | 'arm_stop'
   | 'calibrate_arm'
   | 'engage_estop'
   | 'query_state'
