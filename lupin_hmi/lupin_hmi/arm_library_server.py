@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -68,6 +69,7 @@ class ArmLibraryServer(Node):
         self.store.load()
 
         self._cb = ReentrantCallbackGroup()
+        self._state_lock = threading.Lock()
         self._latest: Optional[JointState] = None
         self._recording: Optional[RecordingBuffer] = None
         self._rec_mode = ""
@@ -97,7 +99,6 @@ class ArmLibraryServer(Node):
         srv(Trigger, "/lupin/arm/library/stop", self._on_stop)
         srv(ArmLibraryEdit, "/lupin/arm/library/delete", self._on_edit)
 
-        self._play_timer = None
         self._play_done_timer = None
         self._gripper_timers: List = []
         self.create_timer(0.2, self._publish_state)
@@ -107,11 +108,14 @@ class ArmLibraryServer(Node):
     # ── feedback + state ────────────────────────────────────────────────
     def _on_joint_states(self, msg: JointState) -> None:
         self._latest = msg
-        if self._recording is not None:
-            arm = self._extract_arm(msg)
-            grip = self._extract_gripper(msg)
-            if arm is not None:
-                self._recording.add(self._stamp(msg), arm, grip)
+        # Extract outside the lock — this only reads the message.
+        arm = self._extract_arm(msg)
+        grip = self._extract_gripper(msg)
+        t = self._stamp(msg)
+        if arm is not None:
+            with self._state_lock:
+                if self._recording is not None:
+                    self._recording.add(t, arm, grip)
 
     def _stamp(self, msg: JointState) -> float:
         return msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
@@ -138,20 +142,26 @@ class ArmLibraryServer(Node):
 
     def _publish_state(self) -> None:
         now = self.get_clock().now()
+        with self._state_lock:
+            recording = self._recording is not None
+            n = len(self._recording.waypoints) if recording else 0
+            rec_start = self._rec_start_clock
+            playing_name = self._playing_name
+            play_start = self._play_start_clock
+            play_total_s = self._play_total_s
+            rec_mode = self._rec_mode
+            torque_on = self._torque_on
         elapsed = 0.0
-        n = 0
-        if self._recording is not None:
-            n = len(self._recording.waypoints)
-            if self._rec_start_clock is not None:
-                elapsed = (now - self._rec_start_clock).nanoseconds * 1e-9
+        if recording and rec_start is not None:
+            elapsed = (now - rec_start).nanoseconds * 1e-9
         progress = 0.0
-        if self._playing_name and self._play_start_clock is not None and self._play_total_s > 0:
-            progress = min(1.0, (now - self._play_start_clock).nanoseconds * 1e-9 / self._play_total_s)
+        if playing_name and play_start is not None and play_total_s > 0:
+            progress = min(1.0, (now - play_start).nanoseconds * 1e-9 / play_total_s)
         payload = {
-            "recording": self._recording is not None, "playing": bool(self._playing_name),
-            "name": self._playing_name, "mode": self._rec_mode,
+            "recording": recording, "playing": bool(playing_name),
+            "name": playing_name, "mode": rec_mode,
             "progress": progress, "elapsed_s": elapsed, "n_waypoints": n,
-            "torque": self._torque_on,
+            "torque": torque_on,
         }
         self._state_pub.publish(String(data=json.dumps(payload)))
 
@@ -210,19 +220,20 @@ class ArmLibraryServer(Node):
     def _on_record(self, req, resp):
         action = (req.action or "").strip().lower()
         if action == "start":
-            if self._playing_name:
-                resp.success, resp.message = False, "cannot record while a sequence is playing"
-                return resp
-            if self._recording is not None:
-                resp.success, resp.message = False, "already recording"
-                return resp
             mode = (req.mode or "teleop").strip().lower()
             if mode not in ("kinesthetic", "teleop"):
                 resp.success, resp.message = False, f'unknown mode "{req.mode}"'
                 return resp
-            self._recording = RecordingBuffer(mode=mode, include_gripper=req.include_gripper)
-            self._rec_mode = mode
-            self._rec_start_clock = self.get_clock().now()
+            with self._state_lock:
+                if self._playing_name:
+                    resp.success, resp.message = False, "cannot record while a sequence is playing"
+                    return resp
+                if self._recording is not None:
+                    resp.success, resp.message = False, "already recording"
+                    return resp
+                self._recording = RecordingBuffer(mode=mode, include_gripper=req.include_gripper)
+                self._rec_mode = mode
+                self._rec_start_clock = self.get_clock().now()
             if mode == "kinesthetic":
                 self._set_torque(False)  # consumer shows the "support the arm" countdown first
             resp.success = True
@@ -230,14 +241,15 @@ class ArmLibraryServer(Node):
             return resp
 
         if action in ("save", "cancel"):
-            if self._recording is None:
-                resp.success, resp.message = False, "not recording"
-                return resp
-            buf = self._recording
-            mode = self._rec_mode
-            self._recording = None
-            self._rec_mode = ""
-            self._rec_start_clock = None
+            with self._state_lock:
+                if self._recording is None:
+                    resp.success, resp.message = False, "not recording"
+                    return resp
+                buf = self._recording
+                mode = self._rec_mode
+                self._recording = None
+                self._rec_mode = ""
+                self._rec_start_clock = None
             if mode == "kinesthetic":
                 self._set_torque(True)  # restore + re-pin
             if action == "cancel":
@@ -267,12 +279,7 @@ class ArmLibraryServer(Node):
         return resp
 
     def _on_play(self, req, resp):
-        if self._recording is not None:
-            resp.success, resp.message = False, "cannot play while recording"
-            return resp
-        if self._playing_name:
-            resp.success, resp.message = False, f'already playing "{self._playing_name}"'
-            return resp
+        # Validate (read-only) outside the lock.
         try:
             seq = self.store.get_sequence(req.name)
         except ArmLibraryError as e:
@@ -282,27 +289,35 @@ class ArmLibraryServer(Node):
             resp.success, resp.message = False, "sequence has no waypoints"
             return resp
         speed = max(0.25, min(2.0, req.speed if req.speed else 1.0))
+        total = max(0.1, seq.duration_s / speed)
 
+        # Atomically check the guards and commit the playing state + timers so two
+        # near-simultaneous calls can't both pass the guard (TOCTOU).
+        with self._state_lock:
+            if self._recording is not None:
+                resp.success, resp.message = False, "cannot play while recording"
+                return resp
+            if self._playing_name:
+                resp.success, resp.message = False, f'already playing "{self._playing_name}"'
+                return resp
+            self._playing_name = req.name
+            self._play_start_clock = self.get_clock().now()
+            self._play_total_s = total
+            # Gripper events on a timeline (cancel any previous timers first).
+            self._clear_gripper_timers()
+            if seq.include_gripper:
+                for t, grip in extract_gripper_events(seq.waypoints):
+                    delay = max(0.0, t / speed)
+                    self._gripper_timers.append(
+                        self.create_timer(delay, self._make_gripper_cb(grip), callback_group=self._cb))
+            self._play_done_timer = self.create_timer(total, self._on_play_done, callback_group=self._cb)
+
+        # Motion commands operate on the local seq — safe to run after release.
         self._set_torque(True)  # force torque on + re-pin before motion
-
         names = ARM_JOINT_NAMES
         wps = [(w.t, [clamp_arm_joint(j, v) for j, v in zip(ARM_JOINTS, w.arm)])
                for w in seq.waypoints]
         self._traj_pub.publish(build_arm_trajectory_multi(names, wps, speed=speed))
-
-        # Gripper events on a timeline (cancel any previous timers first).
-        self._clear_gripper_timers()
-        if seq.include_gripper:
-            for t, grip in extract_gripper_events(seq.waypoints):
-                delay = max(0.0, t / speed)
-                self._gripper_timers.append(
-                    self.create_timer(delay, self._make_gripper_cb(grip), callback_group=self._cb))
-
-        total = max(0.1, seq.duration_s / speed)
-        self._playing_name = req.name
-        self._play_start_clock = self.get_clock().now()
-        self._play_total_s = total
-        self._play_done_timer = self.create_timer(total, self._on_play_done, callback_group=self._cb)
         resp.success, resp.message = True, f'playing "{req.name}" at {speed:.2f}x'
         return resp
 
@@ -320,32 +335,36 @@ class ArmLibraryServer(Node):
         self._gripper_timers = []
 
     def _on_play_done(self) -> None:
-        if getattr(self, "_play_done_timer", None) is not None:
-            self._play_done_timer.cancel()
-            self._play_done_timer = None
-        self._clear_gripper_timers()
-        self._playing_name = ""
-        self._play_start_clock = None
+        with self._state_lock:
+            if getattr(self, "_play_done_timer", None) is not None:
+                self._play_done_timer.cancel()
+                self._play_done_timer = None
+            self._clear_gripper_timers()
+            self._playing_name = ""
+            self._play_start_clock = None
 
     def _on_stop(self, req, resp):
         # Abort any in-flight replay and hold at the current pose.
-        was_playing = bool(self._playing_name)
-        if getattr(self, "_play_done_timer", None) is not None:
-            self._play_done_timer.cancel()
-            self._play_done_timer = None
-        self._clear_gripper_timers()
-        self._playing_name = ""
-        self._play_start_clock = None
+        with self._state_lock:
+            was_playing = bool(self._playing_name)
+            if getattr(self, "_play_done_timer", None) is not None:
+                self._play_done_timer.cancel()
+                self._play_done_timer = None
+            self._clear_gripper_timers()
+            self._playing_name = ""
+            self._play_start_clock = None
+            # If a kinesthetic record was somehow active, clear it (restore torque below).
+            restore_torque = self._recording is not None and self._rec_mode == "kinesthetic"
+            if restore_torque:
+                self._recording = None
+                self._rec_mode = ""
         if was_playing and self._latest is not None:
             arm = self._extract_arm(self._latest)
             if arm is not None:
                 hold = [clamp_arm_joint(j, v) for j, v in zip(ARM_JOINTS, arm)]
                 self._traj_pub.publish(build_arm_trajectory(ARM_JOINT_NAMES, hold, 0.3))
-        # If a kinesthetic record was somehow active, restore torque defensively.
-        if self._recording is not None and self._rec_mode == "kinesthetic":
+        if restore_torque:
             self._set_torque(True)
-            self._recording = None
-            self._rec_mode = ""
         resp.success, resp.message = True, "stopped"
         return resp
 
