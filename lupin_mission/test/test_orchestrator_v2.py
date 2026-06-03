@@ -693,8 +693,6 @@ class TestOrchestratorV2(unittest.TestCase):
             self.collector, mission_type='ExplorationMission', discovery_goal=2,
         )
         self.assertTrue(resp.accepted, resp.error_message)
-
-        # Reaches EXPLORING (PREPARE localizes off the seeded AMCL pose).
         self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0),
                         f'state={self.orch.state}')
 
@@ -704,30 +702,17 @@ class TestOrchestratorV2(unittest.TestCase):
             lambda: self.orch.state.startswith('MONITORING'), 10.0,
         ), f'state={self.orch.state}')
 
-        # The monitoring loop re-scans the discovered tags: OK observations
-        # accumulate beyond the 2 tags (it loops), proving it doesn't complete.
-        self.assertTrue(_wait_until(
-            lambda: sum(1 for o in self.collector.observations
-                        if o.status == Observation.STATUS_OK) >= 3,
-            15.0,
-        ), 'monitoring loop did not re-scan tags')
-
-        # mission_type stays ExplorationMission across the model swap.
-        self.assertTrue(_wait_until(
-            lambda: self.collector.latest_state
-            and self.collector.latest_state.mission_type == 'ExplorationMission',
-            2.0,
-        ))
-        st = self.collector.latest_state
-        self.assertEqual(st.lifecycle_state, 'MONITORING')
-        self.assertEqual(st.discovery_goal, 2)
-        self.assertEqual(st.tags_discovered, 2)
-
-        # Abort stops the loop and returns home.
-        abort = _call_trigger(self.collector, '/mission/abort')
-        self.assertTrue(abort.success, abort.message)
-        self.assertTrue(_wait_until(lambda: self.orch.state == 'DONE', 15.0),
+        # One full sweep over the 2 discovered tags, then RETURNING → DONE.
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'DONE', 30.0),
                         f'state={self.orch.state}')
+
+        ok_obs = [o for o in self.collector.observations
+                  if o.status == Observation.STATUS_OK]
+        self.assertEqual(len(ok_obs), 2,
+                         'expected exactly one monitoring sweep of 2 tags')
+        # mission_type stayed ExplorationMission across the model swap.
+        seen_types = {s.mission_type for s in self.collector.states if s.mission_type}
+        self.assertIn('ExplorationMission', seen_types)
 
     def test_exploration_no_tags_returns_home(self):
         # Goal never met and no map → exploration times out, and with nothing

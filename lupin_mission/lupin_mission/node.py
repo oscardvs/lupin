@@ -156,7 +156,7 @@ def build_hsm_spec() -> dict:
         },
         {
             "trigger": "inspection_complete",
-            "source": "INSPECTING_PUBLISHING",
+            "source": ["INSPECTING_PUBLISHING", "MONITORING_PUBLISHING"],
             "dest": "RETURNING",
         },
         # MONITORING sub-machine — same triggers, different source states, and
@@ -409,6 +409,7 @@ class MissionOrchestratorNode(Node):
         # (0 = drive immediately, the hardware default). Sim patrol sets ~3.2 so
         # the arm doesn't sweep through the pots mid-trajectory.
         self.declare_parameter('arm_travel_settle_s', 0.0)
+        self.declare_parameter('monitoring_sweeps', 1)
 
         self.declare_parameter("state_publish_rate_hz", 5.0)
         self.declare_parameter("mission_id_prefix", "lupin")
@@ -663,6 +664,7 @@ class MissionOrchestratorNode(Node):
         self._arm_patrol_enabled = bool(self.get_parameter('arm_patrol_enabled').value)
         self._arm_inspect_preset = str(self.get_parameter('arm_inspect_preset').value)
         self._arm_travel_preset = str(self.get_parameter('arm_travel_preset').value)
+        self._monitoring_sweeps = max(1, int(self.get_parameter('monitoring_sweeps').value))
         self._arm_travel_settle_s = float(
             self.get_parameter('arm_travel_settle_s').value
         )
@@ -1704,9 +1706,10 @@ class MissionOrchestratorNode(Node):
     def _enter_publishing(self) -> None:
         # PUBLISHING is a named gate. The actual publish already happened in
         # _on_scan_response / nav-failure / abort paths. Here we advance the
-        # cursor and decide where to go next. For InspectionMission the cursor
-        # runs out (→ inspection_complete → RETURNING); MonitoringMission
-        # wraps and is_complete() stays False, so it always loops via next_tag.
+        # cursor and decide where to go next. Both mission types finish the
+        # same way: when is_complete() (InspectionMission's list runs out, or
+        # MonitoringMission completes its target_cycles sweeps) →
+        # inspection_complete → RETURNING; otherwise next_tag loops on.
         if self._mission is None:
             self.get_logger().warn(
                 "on_enter PUBLISHING with no active mission; holding state."
@@ -1755,6 +1758,8 @@ class MissionOrchestratorNode(Node):
             nav_max_attempts=self._nav_max_attempts,
             approach_yaw=self._approach_yaw,
             standoff_m=self._approach_standoff,
+            target_cycles=self._monitoring_sweeps,
+            start_xy=self._robot_xy(),
         )
         self.get_logger().info(
             f'MONITORING: continuous re-scan loop over '
