@@ -16,6 +16,39 @@ from typing import Optional
 from lupin_msgs.msg import Observation
 
 from .inspection_mission import Mission, TagResult
+from .tag_locations import numeric_string_sort_key
+
+
+def order_tags_nearest_first(discovered, start_xy):
+    """Visiting order over the discovered tags.
+
+    Greedy nearest-neighbour from ``start_xy`` (the robot's map position) when
+    every discovered pose exposes an (x, y); otherwise a deterministic numeric
+    tag-id sort. Pure (no ROS) so it is unit-testable.
+    """
+    ids = list(discovered.keys())
+
+    def _xy(pose):
+        try:
+            return (float(pose.position.x), float(pose.position.y))
+        except AttributeError:
+            return None
+
+    if start_xy is None or any(_xy(discovered[t]) is None for t in ids):
+        return sorted(ids, key=numeric_string_sort_key)
+
+    remaining = list(ids)
+    order: list[str] = []
+    cx, cy = float(start_xy[0]), float(start_xy[1])
+    while remaining:
+        def _key(t, _cx=cx, _cy=cy):
+            x, y = _xy(discovered[t])
+            return ((x - _cx) ** 2 + (y - _cy) ** 2, numeric_string_sort_key(t))
+        nxt = min(remaining, key=_key)
+        order.append(nxt)
+        remaining.remove(nxt)
+        cx, cy = _xy(discovered[nxt])
+    return order
 
 
 class ExplorationMission(Mission):
@@ -83,6 +116,7 @@ class MonitoringMission(Mission):
         approach_yaw: float,
         standoff_m: float,
         target_cycles: int = 1,
+        start_xy: Optional[tuple[float, float]] = None,
     ):
         self.mission_id = mission_id
         self.nav_max_attempts = max(1, int(nav_max_attempts))
@@ -92,8 +126,9 @@ class MonitoringMission(Mission):
         # completes (→ RETURNING). 1 = visit every tag once. Operator can
         # raise it for repeated monitoring.
         self._target_cycles = max(1, int(target_cycles))
-        # Deterministic order so the loop is predictable run-to-run.
-        self._tags: list[str] = sorted(discovered.keys())
+        # Nearest-neighbour from the robot's start pose (falls back to a
+        # numeric tag-id sort) so the sweep is a coherent path, not a zig-zag.
+        self._tags: list[str] = order_tags_nearest_first(discovered, start_xy)
         self._poses: dict[str, object] = dict(discovered)
         self._index = 0
         self.cycles = 0

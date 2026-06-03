@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 from lupin_msgs.msg import Observation, SensorReading, TagReading
 
-from lupin_mission.exploration_mission import ExplorationMission, MonitoringMission
+from lupin_mission.exploration_mission import (
+    ExplorationMission, MonitoringMission, order_tags_nearest_first,
+)
 
 
 def _pose(x, y):
@@ -104,3 +106,23 @@ def test_exploration_is_complete_at_goal():
     assert e.counters() == {
         'total': 2, 'completed': 2, 'failed': 0, 'unreachable': 0, 'skipped': 0,
     }
+
+
+def test_order_numeric_when_no_start():
+    discovered = {'10': _pose(0.0, 0.0), '2': _pose(9.0, 0.0), '1': _pose(8.0, 0.0)}
+    assert order_tags_nearest_first(discovered, None) == ['1', '2', '10']
+
+
+def test_order_nearest_neighbour_from_start():
+    discovered = {'A': _pose(0.0, 0.0), 'B': _pose(5.0, 0.0), 'C': _pose(10.0, 0.0)}
+    # Start near x=11 -> visit C(10), B(5), A(0).
+    assert order_tags_nearest_first(discovered, (11.0, 0.0)) == ['C', 'B', 'A']
+
+
+def test_monitoring_uses_nearest_order():
+    discovered = {'A': _pose(0.0, 0.0), 'B': _pose(5.0, 0.0), 'C': _pose(10.0, 0.0)}
+    m = MonitoringMission(
+        mission_id='m', discovered=discovered, nav_max_attempts=1,
+        approach_yaw=0.0, standoff_m=0.5, start_xy=(11.0, 0.0),
+    )
+    assert m.current_tag_id() == 'C'
