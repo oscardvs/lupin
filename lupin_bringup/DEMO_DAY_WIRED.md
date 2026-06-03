@@ -72,12 +72,30 @@ ip -br addr show eth0           # expect: UP  10.42.0.1/24
 > ```
 > then `sudo netplan apply`.
 
-**3. Leave the AP enabled.** Keeping `Mirte-247264` up costs nothing and gives
-you an SSH fallback if a cable/adapter dies. The laptop simply won't associate
-to it during a wired demo. (See §6 for the one multi-homing caveat.)
+**3. Disable the robot AP for wired sessions — REQUIRED, not optional.**
+Counter-intuitive but **proven live 2026-06-03**: if `wlan0`/the AP stays up, the
+robot advertises BOTH its wired (`10.42.0.1`) and AP (`192.168.42.1`) DDS
+locators, and the **laptop→robot data path silently dies** — discovery still
+works and robot→laptop telemetry still flows, so the HMI looks `LIVE`, but you
+**cannot drive, the arm services time out, and `ros2 control list_controllers`
+hangs**. Disable it and reboot so every participant re-announces `eth0`-only:
+
+```bash
+ssh lupin-wired 'sudo systemctl disable --now mirte-ap mirte-wifi-watchdog'
+ssh lupin-wired sudo reboot
+```
+
+After reboot the robot is single-homed on `eth0` (the `lupin-wired` NM profile
+autoconnects — verified persistent). You lose the AP as an SSH fallback for the
+session, which is fine on a cable. **Better fix that keeps the AP as a fallback,
+but NOT yet implemented:** pin the robot's FastDDS to `eth0` via an
+`interfaceWhiteList` so the AP can stay up without poisoning DDS — see §6.
 
 That's the entire robot-side delta. `MIRTE_FASTDDS=true` is already set on
-Mirte-247264 (the discovery server is already running) — nothing else changes.
+Mirte-247264. The discovery server is *supposed* to come up at boot, but the
+vendor's start is a fire-and-forget one-shot that can lose a cold-boot race and
+silently leave **nothing on `:11811`** while `mirte-ros` still reports `active`.
+§1 verifies it; §1's "nothing on 11811" recovery fixes it without a stack restart.
 
 ---
 
@@ -129,6 +147,16 @@ sudo nmcli connection up lupin-wired
 
 If you only ever use one adapter, this persists. Swap adapters → re-run with the
 new `enx…` name (the MAC, hence the name, is per-adapter).
+
+> **Substitute the real `enx…` name — don't paste `enxXXXXXXXXXXXX` literally.**
+> nmcli will happily create a profile bound to the placeholder, which then fails
+> to activate with `No suitable device found … profile is not compatible with
+> device (mismatching interface name)`. With **two** adapters plugged (e.g. one to
+> the robot, one to an iPhone tether on `172.20.10.x`), pick the robot-facing one
+> by link speed — it's the gigabit one:
+> `for d in /sys/class/net/enx*; do echo "$(basename $d) $(cat $d/speed 2>/dev/null)"; done`.
+> Repair a mis-bound profile in place (no need to delete it):
+> `sudo nmcli con mod lupin-wired connection.interface-name enxREAL && sudo nmcli con up lupin-wired enxREAL`.
 
 **B4. DDS env pointed at the WIRED IP.** The DDS env that wires the laptop to the
 robot's discovery server lives in `~/.config/lupin/ros-env.sh` (not in the repo —
@@ -217,6 +245,31 @@ the AP and it won't answer on the cable: `ros2 topic list` will return 2 even
 with a good `ping`. For this session, fall back to `DEMO_DAY.md` (AP); the
 durable fix is on the robot side (the discovery server should listen on the
 wildcard) — flag it to the team.
+
+**If `ss` shows *nothing* on `:11811`** (empty, not a wrong address), the vendor's
+boot-time start lost the cold-boot race and never bound — its log shows
+`Discovery Server wasn't able to allocate the specified listening port` +
+`fast-discovery-server tool not found!` (check:
+`ssh lupin-wired 'sudo journalctl -u mirte-ros -b --no-pager | grep -iE "discovery|11811|allocate"'`).
+`mirte-ros` still says `active`; it lied. You do **not** need to restart the
+stack — the robot's nodes are clients retrying `127.0.0.1:11811`, so launch the
+server standalone and they attach within seconds (verified 2026-06-03: 69 topics
+on the laptop, no restart):
+
+```bash
+ssh lupin-wired 'env -u FASTRTPS_DEFAULT_PROFILES_FILE setsid bash -c \
+  "exec fast-discovery-server -i 0 -l 0.0.0.0 -p 11811" >/tmp/lupin-disc.log 2>&1 </dev/null &'
+ssh lupin-wired 'sudo ss -lnup | grep 11811'   # expect: UNCONN 0.0.0.0:11811 users:(("fast-discovery-",…))
+```
+
+Two traps: `env -u FASTRTPS_DEFAULT_PROFILES_FILE` is **required** — with the
+vendor super_client profile in env the server inherits a pinned locator and fails
+"couldn't allocate port" even with the port free; and **never** clean up strays
+with `pkill -f fast-discovery-server` — the `-f` pattern matches your own ssh
+shell's argv and SIGTERMs the session (`exit 255`). Use `pkill -x
+fast-discovery-server` (process-name match) or kill by PID. This manual server
+**dies on reboot/power-cycle** — re-run the line after any robot restart. Durable
+fix: a `lupin-discovery-server.service` (designed, not yet installed).
 
 The clock sync matters: the Orange Pi has no RTC and over a direct cable there's
 no NTP, so it boots with whatever clock it had at shutdown. `post-boot-sync.sh`
@@ -511,12 +564,25 @@ Mission rows (need T7 full stack + T9): **Flower→map**, **Pest→map**,
   `MULTICAST`, that's the bug. Confirm:
   `tr '\0' '\n' </proc/$(pgrep -f rosbridge_websocket)/environ | grep ROS_DISCOVERY_SERVER`
   (empty = bug). Fix: Ctrl-C T1, re-source both lines, relaunch, reload browser.
-- **Multi-homing: the robot announces both its wired (`10.42.0.1`) and AP
-  (`192.168.42.1`) DDS locators** if the AP is up. The laptop reaches the wired
-  one fine and ignores the unreachable AP one — normally harmless. If you ever see
-  discovery flakiness or stalls, bring the robot AP down for the demo
-  (`ssh lupin-wired sudo systemctl stop mirte-ap` — confirm the unit name first)
-  so only wired locators are announced.
+- **Multi-homing is a HARD BLOCKER, not a caveat (proven live 2026-06-03).** If
+  the robot's AP (`wlan0` `192.168.42.1`) is up alongside the cable, the robot
+  advertises both DDS locators and the laptop does **not** cleanly ignore the
+  unreachable AP one: **laptop→robot DATA silently fails** — no drive, arm/service
+  calls time out, `ros2 control list_controllers` hangs — while discovery and
+  robot→laptop telemetry keep working, so the HMI looks `LIVE`. **Dropping only
+  the laptop's WiFi association is NOT enough** — the robot still advertises the
+  AP locator regardless of what the laptop is associated to. The fix is
+  **robot-side**: disable the AP and reboot so every participant re-announces
+  `eth0`-only (see §A.3 — `disable --now mirte-ap mirte-wifi-watchdog` + reboot).
+  Signature to recognise it: `ros2 topic echo /scan` (robot→laptop) works but
+  `ros2 control list_controllers` (laptop→robot round-trip) times out; a
+  robot-side packet capture shows the laptop's user-data hitting the wrong ports,
+  never the subscriber's. **Durable fix that keeps the AP as a fallback (TODO, not
+  yet implemented):** give the robot a FastDDS profile with an `interfaceWhiteList`
+  of `127.0.0.1` + the `eth0` IP and `useBuiltinTransports=false`, applied to all
+  robot nodes, so DDS only ever advertises the wired locator. A USB→ethernet
+  iPhone tether on a *separate* `enx…` is fine to keep (internet only) — it never
+  carries robot traffic.
 - **Don't let the laptop route internet over the cable.** B3 sets
   `ipv4.never-default yes`, so the WiFi default route wins and the cable carries
   only robot traffic. If you skipped that, `nmcli con mod lupin-wired
