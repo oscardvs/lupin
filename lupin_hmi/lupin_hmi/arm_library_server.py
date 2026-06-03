@@ -207,7 +207,62 @@ class ArmLibraryServer(Node):
 
     # ── record / play / stop are filled in by Tasks 7 & 8 ──────────────
     def _on_record(self, req, resp):
-        resp.success, resp.message = False, "record not implemented yet"
+        action = (req.action or "").strip().lower()
+        if action == "start":
+            if self._playing_name:
+                resp.success, resp.message = False, "cannot record while a sequence is playing"
+                return resp
+            if self._recording is not None:
+                resp.success, resp.message = False, "already recording"
+                return resp
+            mode = (req.mode or "teleop").strip().lower()
+            if mode not in ("kinesthetic", "teleop"):
+                resp.success, resp.message = False, f'unknown mode "{req.mode}"'
+                return resp
+            self._recording = RecordingBuffer(mode=mode, include_gripper=req.include_gripper)
+            self._rec_mode = mode
+            self._rec_start_clock = self.get_clock().now()
+            if mode == "kinesthetic":
+                self._set_torque(False)  # consumer shows the "support the arm" countdown first
+            resp.success = True
+            resp.message = f"recording started ({mode})"
+            return resp
+
+        if action in ("save", "cancel"):
+            if self._recording is None:
+                resp.success, resp.message = False, "not recording"
+                return resp
+            buf = self._recording
+            mode = self._rec_mode
+            self._recording = None
+            self._rec_mode = ""
+            self._rec_start_clock = None
+            if mode == "kinesthetic":
+                self._set_torque(True)  # restore + re-pin
+            if action == "cancel":
+                resp.success, resp.message = True, "recording cancelled"
+                return resp
+            end_t = self._stamp(self._latest) if self._latest is not None else 0.0
+            seq = buf.finalize(end_t=end_t, created=_now_iso())
+            if not seq.waypoints:
+                resp.success, resp.message = False, "nothing recorded"
+                return resp
+            try:
+                self.store.save_sequence(req.name, seq, overwrite=req.overwrite)
+            except ArmLibraryError as e:
+                resp.success, resp.message = False, str(e)
+                return resp
+            if buf.truncated:
+                self.get_logger().warn(
+                    f'sequence "{req.name}" hit the waypoint cap and was truncated')
+            resp.success = True
+            resp.message = (f'sequence "{req.name}" saved'
+                            + (" (TRUNCATED at cap)" if buf.truncated else ""))
+            resp.duration_s = seq.duration_s
+            resp.n_waypoints = len(seq.waypoints)
+            return resp
+
+        resp.success, resp.message = False, f'unknown action "{req.action}"'
         return resp
 
     def _on_play(self, req, resp):
