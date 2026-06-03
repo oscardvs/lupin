@@ -130,6 +130,8 @@ def generate_launch_description() -> LaunchDescription:
             # Compact travel pose between pots ('home' is arm-horizontal-forward,
             # ~0.28 m reach → it clips the pots while driving).
             ('arm_travel_preset', 'tuck'),
+            # Let the arm finish folding before driving (preset takes ~3 s).
+            ('arm_travel_settle_s', '3.2'),
             # Sim runs on /clock — keep the orchestrator's observation stamps on
             # sim time so the twin doesn't treat the map pins as stale.
             ('use_sim_time', 'true'),

@@ -58,6 +58,7 @@ def generate_launch_description():
         DeclareLaunchArgument('arm_preset_service', default_value='/lupin/arm/preset'),
         DeclareLaunchArgument('arm_inspect_preset', default_value='inspect'),
         DeclareLaunchArgument('arm_travel_preset', default_value='home'),
+        DeclareLaunchArgument('arm_travel_settle_s', default_value='0.0'),
         # Returning
         DeclareLaunchArgument('dock_timeout_s', default_value='60.0'),
         # Publishing
@@ -118,6 +119,7 @@ def generate_launch_description():
             'arm_preset_service': LaunchConfiguration('arm_preset_service'),
             'arm_inspect_preset': LaunchConfiguration('arm_inspect_preset'),
             'arm_travel_preset': LaunchConfiguration('arm_travel_preset'),
+            'arm_travel_settle_s': LaunchConfiguration('arm_travel_settle_s'),
             'dock_timeout_s': LaunchConfiguration('dock_timeout_s'),
             'state_publish_rate_hz': LaunchConfiguration('state_publish_rate_hz'),
             'mission_id_prefix': LaunchConfiguration('mission_id_prefix'),

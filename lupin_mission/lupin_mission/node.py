@@ -405,6 +405,10 @@ class MissionOrchestratorNode(Node):
         self.declare_parameter('arm_preset_service', '/lupin/arm/preset')
         self.declare_parameter('arm_inspect_preset', 'inspect')
         self.declare_parameter('arm_travel_preset', 'home')
+        # Seconds to let the travel preset fold the arm in before driving off
+        # (0 = drive immediately, the hardware default). Sim patrol sets ~3.2 so
+        # the arm doesn't sweep through the pots mid-trajectory.
+        self.declare_parameter('arm_travel_settle_s', 0.0)
 
         self.declare_parameter("state_publish_rate_hz", 5.0)
         self.declare_parameter("mission_id_prefix", "lupin")
@@ -659,6 +663,10 @@ class MissionOrchestratorNode(Node):
         self._arm_patrol_enabled = bool(self.get_parameter('arm_patrol_enabled').value)
         self._arm_inspect_preset = str(self.get_parameter('arm_inspect_preset').value)
         self._arm_travel_preset = str(self.get_parameter('arm_travel_preset').value)
+        self._arm_travel_settle_s = float(
+            self.get_parameter('arm_travel_settle_s').value
+        )
+        self._arm_settle_timer: Optional[Any] = None
         self._arm_preset_client: Optional[Any] = None
         if self._arm_patrol_enabled:
             self._arm_preset_client = self.create_client(
@@ -1603,7 +1611,39 @@ class MissionOrchestratorNode(Node):
         # Between pots: stow the arm in the travel pose so it isn't waving
         # around mid-drive (and the gripper cam isn't pointed at the floor).
         self._dispatch_arm_preset(self._arm_travel_preset)
-        self._send_scan_nav_goal()
+        # The preset move takes ~PRESET_TRAVEL_SECONDS to fold the arm in; if we
+        # drive immediately the arm sweeps through the pots mid-trajectory. When
+        # a settle time is configured (sim patrol) wait for the fold before the
+        # nav goal; the callback re-validates state in case we aborted meanwhile.
+        if self._arm_patrol_enabled and self._arm_travel_settle_s > 0.0:
+            self._schedule_nav_after_arm_settle()
+        else:
+            self._send_scan_nav_goal()
+
+    def _schedule_nav_after_arm_settle(self) -> None:
+        """One-shot: send the scan nav goal after the travel-preset fold has had
+        time to finish, so the arm isn't extended while we drive between pots."""
+        if self._arm_settle_timer is not None:
+            self._arm_settle_timer.cancel()
+            self._arm_settle_timer = None
+
+        def _fire() -> None:
+            if self._arm_settle_timer is not None:
+                self._arm_settle_timer.cancel()
+                self._arm_settle_timer = None
+            # Re-validate: the mission may have aborted/blocked or advanced
+            # during the settle wait.
+            if self._mission is None or self._mission.is_complete():
+                return
+            if self._is_blocked():
+                return
+            if not str(self.state).endswith('NAVIGATING'):
+                return
+            self._send_scan_nav_goal()
+
+        self._arm_settle_timer = self.create_timer(
+            self._arm_travel_settle_s, _fire,
+        )
 
     def on_enter_INSPECTING_SCANNING(self, event_data) -> None:
         self._enter_scanning()

@@ -41,6 +41,7 @@ from rclpy.qos import (
 from std_msgs.msg import Header
 
 from lupin_msgs.msg import (
+    DiscoveredTags,
     Observation,
     SensorReading,
     TwinState,
@@ -108,6 +109,9 @@ class TwinNode(Node):
         self.declare_parameter('state_publish_rate_hz', 1.0)
         self.declare_parameter('frame_id', 'map')
         self.declare_parameter('buffer_len', DEFAULT_BUFFER_LEN)
+        # Discovery feed (ExplorationMission): pin tags as perception finds them,
+        # before any bridge scan, so the operator map fills in during exploration.
+        self.declare_parameter('discovered_tags_topic', '/perception/discovered_tags')
 
         # IDW tuning — defaults from the brief; operator-tunable per launch.
         self.declare_parameter('idw_power', DEFAULT_POWER)
@@ -126,6 +130,9 @@ class TwinNode(Node):
         )
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._buffer_len = int(self.get_parameter('buffer_len').value)
+        self._discovered_tags_topic = str(
+            self.get_parameter('discovered_tags_topic').value
+        )
         self._idw_power = float(self.get_parameter('idw_power').value)
         self._idw_falloff_radius = float(
             self.get_parameter('idw_falloff_radius_m').value
@@ -156,6 +163,15 @@ class TwinNode(Node):
             Observation,
             self._observations_topic,
             self._on_observation,
+            obs_qos,
+            callback_group=self._cb_group,
+        )
+        # Pin tags the instant perception discovers them (latched snapshot,
+        # same RELIABLE+TRANSIENT_LOCAL profile as the aggregator's publisher).
+        self._discovered_sub = self.create_subscription(
+            DiscoveredTags,
+            self._discovered_tags_topic,
+            self._on_discovered_tags,
             obs_qos,
             callback_group=self._cb_group,
         )
@@ -290,6 +306,39 @@ class TwinNode(Node):
             pose_qz=pose.orientation.z if has_pose else None,
             pose_qw=pose.orientation.w if has_pose else None,
         ))
+
+    def _on_discovered_tags(self, msg: DiscoveredTags) -> None:
+        """Pin tags as perception discovers them during exploration — before any
+        bridge scan — so the operator watches the map fill in as the robot
+        explores. The discovery feed carries each tag's TF-resolved map pose; we
+        record a pose-only entry. The later KIND_TAG_READING scan fills the
+        sensor readings (record() keeps the pose from whichever arrives first)."""
+        expected = self._frame_id
+        msg_frame = msg.header.frame_id or expected
+        if msg_frame != expected:
+            self.get_logger().warn(
+                f'Dropping discovered-tags snapshot in frame {msg_frame!r}; '
+                f'twin expects {expected!r}.',
+                throttle_duration_sec=10.0,
+            )
+            return
+        now = self._monotonic_now()
+        for t in msg.tags:
+            if not t.tag_id:
+                continue
+            existing = self._store.tag(t.tag_id)
+            if existing is not None and existing.has_pose():
+                continue  # already pinned; the scan path owns readings/species
+            p = t.pose_in_map
+            self._store.record(TwinObservation(
+                tag_id=t.tag_id,
+                monotonic_at=now,
+                pose_x=p.position.x,
+                pose_y=p.position.y,
+                pose_qz=p.orientation.z,
+                pose_qw=p.orientation.w if p.orientation.w != 0.0 else 1.0,
+                readings=[],
+            ))
 
     # ─── periodic state publish ────────────────────────────────────────
 
