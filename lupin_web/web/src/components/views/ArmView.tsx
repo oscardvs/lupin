@@ -3,6 +3,8 @@ import { useCallback, useRef, useState } from 'react'
 
 import { RobotTwin } from '@/components/system/RobotTwin'
 import { ArmCalibrateDialog } from '@/components/widgets/ArmCalibrateDialog'
+import { PoseLibraryCard } from '@/components/widgets/PoseLibraryCard'
+import { SequenceRecorderCard } from '@/components/widgets/SequenceRecorderCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -123,12 +125,29 @@ export function ArmView() {
   // write localStorage on every drag tick.
   const [rateLocal, setRateLocal] = useState(armRateDegPerSec)
 
+  // Freeze the per-joint sliders + the torque toggle while a sequence recording
+  // or replay is in flight (spec §11) so manual input can't fight a running
+  // record/play. Driven by arm_library_server's /lupin/arm/library/state topic.
+  const [libraryBusy, setLibraryBusy] = useState(false)
+  useTopic<{ data: string }>('/lupin/arm/library/state', ROS_TYPE.String, {
+    onMessage: (msg) => {
+      try {
+        const s = JSON.parse(msg.data)
+        setLibraryBusy(!!s.recording || !!s.playing)
+      } catch { /* ignore */ }
+    },
+  })
+
   const connBlocked = estopActive || rosStatus !== 'connected'
   // Strict arming gate: open ONLY on an explicit Enable. 'unknown' (fresh mount
   // / tab-return) and 'false' (explicit Disable) both keep the sliders + Home
   // locked, so commands never reach the arm without a deliberate arming press.
   const armDisabled = torque !== true
-  const controlsBlocked = connBlocked || armDisabled
+  // libraryBusy folds in so the per-joint sliders + Home freeze during a
+  // record/replay (spec §11). The torque Enable/Disable toggle gates on
+  // `connBlocked || libraryBusy` directly (it must stay live when armDisabled,
+  // since Enable is how you arm, but must NOT fight a running record/play).
+  const controlsBlocked = connBlocked || armDisabled || libraryBusy
   const blockReason = estopActive
     ? 'E-stop engaged — arm commands disabled'
     : rosStatus !== 'connected'
@@ -249,7 +268,7 @@ export function ArmView() {
               size="sm"
               className="rounded-none border-0"
               onClick={() => setTorqueCmd(true)}
-              disabled={connBlocked || enableStatus === 'sending'}
+              disabled={connBlocked || libraryBusy || enableStatus === 'sending'}
               aria-pressed={torque === true}
             >
               <Power className={cn('mr-2 h-4 w-4', torque === true ? '' : 'text-primary')} />
@@ -260,7 +279,7 @@ export function ArmView() {
               size="sm"
               className="rounded-none border-0 border-l border-hairline"
               onClick={() => setTorqueCmd(false)}
-              disabled={connBlocked || enableStatus === 'sending'}
+              disabled={connBlocked || libraryBusy || enableStatus === 'sending'}
               aria-pressed={torque === false}
             >
               <Power className={cn('mr-2 h-4 w-4', torque === false ? '' : 'text-muted-foreground')} />
@@ -347,6 +366,15 @@ export function ArmView() {
             disabled={controlsBlocked}
           />
         ))}
+      </div>
+
+      {/* Pose library + sequence recorder. Gated by connection/e-stop only —
+          NOT armDisabled — because kinesthetic recording deliberately drops
+          torque; a running record/replay freezes the sliders above via
+          libraryBusy instead. */}
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
+        <PoseLibraryCard disabled={connBlocked} />
+        <SequenceRecorderCard disabled={connBlocked} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
