@@ -53,3 +53,30 @@ def build_arm_trajectory(
     point.time_from_start = duration_from_seconds(max(MIN_TRAJECTORY_TIME_S, time_s))
     traj.points = [point]
     return traj
+
+
+def build_arm_trajectory_multi(
+    joint_names: Sequence[str],
+    waypoints: Sequence[tuple],
+    *,
+    speed: float = 1.0,
+    velocity: float = TRAJECTORY_VELOCITY_RAD_S,
+) -> JointTrajectory:
+    """Build a multi-point JointTrajectory from (t_seconds, positions[4]).
+
+    `t` is the recorded relative time; replay time = max(MIN, t / speed). All
+    points carry the same non-zero velocity hint (the HW interface rejects 0.0;
+    see module docstring). Every point includes all `joint_names`.
+    """
+    spd = max(0.25, min(2.0, speed))
+    traj = JointTrajectory()
+    traj.joint_names = list(joint_names)
+    points = []
+    for t, positions in waypoints:
+        pt = JointTrajectoryPoint()
+        pt.positions = [float(p) for p in positions]
+        pt.velocities = [float(velocity)] * len(joint_names)
+        pt.time_from_start = duration_from_seconds(max(MIN_TRAJECTORY_TIME_S, float(t) / spd))
+        points.append(pt)
+    traj.points = points
+    return traj

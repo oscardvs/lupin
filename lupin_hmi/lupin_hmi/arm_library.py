@@ -270,3 +270,24 @@ class RecordingBuffer:
         return Sequence(mode=self.mode, include_gripper=self.include_gripper,
                         duration_s=rel_end, waypoints=list(self.waypoints),
                         created=created, note=note)
+
+
+# Min gripper change (rad) that counts as a new open/close event on replay.
+GRIPPER_EVENT_DELTA_RAD = 0.05
+
+
+def extract_gripper_events(waypoints: List[Waypoint]) -> List[tuple]:
+    """Reduce a per-waypoint gripper track to (t, gripper_rad) transition events.
+
+    The gripper action is slow, so we fire it only when the jaw target changes
+    by more than GRIPPER_EVENT_DELTA_RAD (always emitting the first sample).
+    """
+    events: List[tuple] = []
+    last: Optional[float] = None
+    for w in waypoints:
+        if w.gripper is None:
+            continue
+        if last is None or abs(w.gripper - last) > GRIPPER_EVENT_DELTA_RAD:
+            events.append((w.t, w.gripper))
+            last = w.gripper
+    return events

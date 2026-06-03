@@ -103,6 +103,15 @@ def gripper_deg_to_rad(angle_deg: float) -> float:
     return GRIPPER_URDF_MIN_RAD + ratio * span_out
 
 
+def gripper_rad_to_deg(value_rad: float) -> float:
+    """Inverse of gripper_deg_to_rad: URDF gripper_joint rad -> HMI deg.
+    Mirrors arm.ts gripperRadToHmiDeg."""
+    span_in = GRIPPER_URDF_MAX_RAD - GRIPPER_URDF_MIN_RAD
+    span_out = GRIPPER_HMI_MAX_DEG - GRIPPER_HMI_MIN_DEG
+    ratio = (clamp(value_rad, GRIPPER_URDF_MIN_RAD, GRIPPER_URDF_MAX_RAD) - GRIPPER_URDF_MIN_RAD) / span_in
+    return GRIPPER_HMI_MIN_DEG + ratio * span_out
+
+
 def limits_summary() -> str:
     """One-line human-readable summary for node startup logs."""
     parts = [
