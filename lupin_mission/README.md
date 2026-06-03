@@ -38,8 +38,9 @@ MONITORING: NAVIGATING → SCANNING → PUBLISHING (discovered tags, loops forev
     planner (`frontier.py`) reads the live SLAM `/map`'s unknown space and
     drives there via the same NavigateToPose client until
     `/perception/discovered_tags` reports `discovery_goal` distinct tags;
-    then `MONITORING` continuously re-scans those tags (wrap-around cursor,
-    never completes) until the operator pauses/aborts.
+    then `MONITORING` re-scans those tags (wrap-around cursor) for
+    `monitoring_sweeps` full sweeps (default 1) and returns; the operator can
+    also pause/abort.
 - `INSPECTING`/`MONITORING` are the per-tag flow. NAVIGATING issues
   NavigateToPose (table-geometry approach for inspection, the discovered
   tag's own pose normal for monitoring), SCANNING calls the greenhouse

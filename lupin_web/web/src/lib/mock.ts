@@ -394,6 +394,8 @@ export function mockMissionState(): MissionState {
     tags_discovered: 0,   // mock cycle is an InspectionMission (a-priori tags)
     discovery_goal: 0,
     last_error: '',
+    last_event: '',
+    last_event_severity: 0,
     estop_engaged: false,
     paused: false,
     started_at: ph.lifecycle === 'READY'

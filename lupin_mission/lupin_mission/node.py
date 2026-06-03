@@ -161,8 +161,9 @@ def build_hsm_spec() -> dict:
             "source": ["INSPECTING_PUBLISHING", "MONITORING_PUBLISHING"],
             "dest": "RETURNING",
         },
-        # MONITORING sub-machine — same triggers, different source states, and
-        # next_tag always loops (no inspection_complete).
+        # MONITORING sub-machine — same triggers, different source states.
+        # next_tag loops to the next leg; inspection_complete (declared with
+        # MONITORING_PUBLISHING as a source above) fires when the sweep ends.
         {
             'trigger': 'nav_succeeded',
             'source': 'MONITORING_NAVIGATING',
@@ -283,7 +284,8 @@ def _resume_origin_for(state: str) -> str:
     Captured at the instant we divert to RETURNING so /mission/resume re-enters
     the matching sub-machine. Without this every resume fell into INSPECTING,
     which terminates a MONITORING loop early (INSPECTING_PUBLISHING exits to
-    RETURNING when the tag list ends, whereas MONITORING_PUBLISHING loops).
+    RETURNING when the tag list ends, whereas MONITORING keeps sweeping
+    until its target_cycles complete).
     """
     if _is_state_monitoring(state):
         return 'MONITORING'
@@ -1771,8 +1773,8 @@ class MissionOrchestratorNode(Node):
             start_xy=self._robot_xy(),
         )
         self.get_logger().info(
-            f'MONITORING: continuous re-scan loop over '
-            f'{len(discovered_poses)} discovered tag(s).'
+            f'MONITORING: sweeping {len(discovered_poses)} discovered tag(s) '
+            f'x{self._monitoring_sweeps}.'
         )
 
     def on_enter_RETURNING(self, event_data) -> None:
