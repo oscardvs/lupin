@@ -22,7 +22,6 @@ persistence, no anomaly detection. Each is a clean follow-up.
 
 from __future__ import annotations
 
-import math
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
@@ -38,10 +37,12 @@ from rclpy.qos import (
     QoSProfile,
     QoSReliabilityPolicy,
 )
+from geometry_msgs.msg import Point, Point32, Polygon
 from std_msgs.msg import Header
 
 from lupin_msgs.msg import (
     DiscoveredTags,
+    FlowerPoint,
     Observation,
     SensorReading,
     TwinState,
@@ -60,6 +61,7 @@ from .state import (
     DEFAULT_BUFFER_LEN,
     FlowerUpdate,
     TagSensorEntry,
+    TwinFlower,
     TwinObservation,
     TwinStateStore,
 )
@@ -295,12 +297,23 @@ class TwinNode(Node):
             return
         pose = flower.pose.pose
         has_pose = pose.orientation.w != 0.0
+        flowers = [
+            TwinFlower(
+                x=float(fp.position.x), y=float(fp.position.y),
+                species=fp.species, confidence=float(fp.confidence),
+                anomaly=bool(fp.anomaly),
+            )
+            for fp in flower.flowers
+        ]
+        footprint = [(float(p.x), float(p.y)) for p in flower.box_footprint.points]
         self._store.record_flower(FlowerUpdate(
             tag_id=tag_id,
             monotonic_at=self._monotonic_now(),
             species=flower.species,
             species_confidence=float(flower.confidence),
             anomaly=bool(flower.anomaly),
+            flowers=flowers,
+            box_footprint=footprint,
             pose_x=pose.position.x if has_pose else None,
             pose_y=pose.position.y if has_pose else None,
             pose_qz=pose.orientation.z if has_pose else None,
@@ -377,6 +390,20 @@ class TwinNode(Node):
             entry.species = buf.species
             entry.species_confidence = float(buf.species_confidence)
             entry.anomaly = bool(buf.anomaly)
+
+            # Localized blooms + box footprint (v2 redesign).
+            for fl in buf.flowers:
+                fp = FlowerPoint()
+                fp.position = Point(x=float(fl.x), y=float(fl.y), z=0.0)
+                fp.species = fl.species
+                fp.confidence = float(fl.confidence)
+                fp.anomaly = bool(fl.anomaly)
+                entry.flowers.append(fp)
+            if buf.box_footprint:
+                poly = Polygon()
+                for (x, y) in buf.box_footprint:
+                    poly.points.append(Point32(x=float(x), y=float(y), z=0.0))
+                entry.box_footprint = poly
 
             # Absolute observation timestamp — durable, survives serialisation
             # to disk, and is what off-line consumers (FloraNova export,

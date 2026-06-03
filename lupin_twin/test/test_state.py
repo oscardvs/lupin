@@ -6,7 +6,9 @@ from __future__ import annotations
 import pytest
 
 from lupin_twin.state import (
+    FlowerUpdate,
     TagSensorEntry,
+    TwinFlower,
     TwinObservation,
     TwinStateStore,
 )
@@ -170,3 +172,70 @@ def test_record_flower_latest_wins_and_clears_anomaly():
 def test_record_flower_empty_tag_rejected():
     store = TwinStateStore()
     assert store.record_flower(_flower('', 0.0, species='tulip_red')) is False
+
+
+def test_record_flower_stores_flowers_and_footprint():
+    store = TwinStateStore()
+    upd = FlowerUpdate(
+        tag_id='1', monotonic_at=0.0, species='tulip_red',
+        species_confidence=0.9, anomaly=False,
+        flowers=[TwinFlower(x=1.8, y=0.1, species='tulip_red',
+                            confidence=0.9, anomaly=False)],
+        box_footprint=[(2.0, 0.4), (2.0, -0.4), (1.6, -0.4), (1.6, 0.4)],
+    )
+    assert store.record_flower(upd) is True
+    buf = store.tag('1')
+    assert len(buf.flowers) == 1
+    assert buf.flowers[0].species == 'tulip_red'
+    assert buf.box_footprint == [(2.0, 0.4), (2.0, -0.4), (1.6, -0.4), (1.6, 0.4)]
+
+
+def test_record_flower_latest_wins_for_flowers():
+    store = TwinStateStore()
+    store.record_flower(FlowerUpdate(
+        tag_id='1', monotonic_at=0.0, species='tulip_red',
+        species_confidence=0.9, anomaly=False,
+        flowers=[TwinFlower(1.8, 0.1, 'tulip_red', 0.9, False),
+                 TwinFlower(1.8, -0.1, 'tulip_red', 0.8, False)],
+        box_footprint=[(2.0, 0.4)],
+    ))
+    store.record_flower(FlowerUpdate(
+        tag_id='1', monotonic_at=1.0, species='tulip_white',
+        species_confidence=0.7, anomaly=False,
+        flowers=[TwinFlower(1.7, 0.0, 'tulip_white', 0.7, False)],
+        box_footprint=[(2.1, 0.4)],
+    ))
+    buf = store.tag('1')
+    assert len(buf.flowers) == 1
+    assert buf.flowers[0].species == 'tulip_white'
+    assert buf.box_footprint == [(2.1, 0.4)]
+
+
+def test_record_flower_without_flowers_keeps_defaults():
+    # Old-style flower update (no flowers/footprint) still works: summary
+    # fields set, flowers/footprint default to empty.
+    store = TwinStateStore()
+    store.record_flower(FlowerUpdate(
+        tag_id='1', monotonic_at=0.0, species='tulip_pink',
+        species_confidence=0.5, anomaly=True,
+    ))
+    buf = store.tag('1')
+    assert buf.species == 'tulip_pink'
+    assert buf.flowers == []
+    assert buf.box_footprint == []
+
+
+def test_record_flower_blooms_without_footprint():
+    # Degenerate-tag fallback: the aggregator can emit blooms with no box
+    # polygon. The store keeps the two decoupled — blooms stored, footprint
+    # stays empty (the HMI still renders the dots without a box rectangle).
+    store = TwinStateStore()
+    store.record_flower(FlowerUpdate(
+        tag_id='1', monotonic_at=0.0, species='tulip_red',
+        species_confidence=0.9, anomaly=False,
+        flowers=[TwinFlower(1.0, 2.0, 'tulip_red', 0.9, False)],
+        box_footprint=[],
+    ))
+    buf = store.tag('1')
+    assert len(buf.flowers) == 1
+    assert buf.box_footprint == []

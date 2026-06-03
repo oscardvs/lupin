@@ -26,6 +26,17 @@ class TagSensorEntry:
     value: float
 
 
+@dataclass(frozen=True)
+class TwinFlower:
+    """One localized bloom inside a tag's planter box (map frame). Pure data
+    so the store stays ROS-free; the node wraps it in a lupin_msgs/FlowerPoint."""
+    x: float
+    y: float
+    species: str
+    confidence: float
+    anomaly: bool
+
+
 @dataclass
 class TagBuffer:
     """Per-tag ring buffer of recent observations.
@@ -58,6 +69,11 @@ class TagBuffer:
     species: str = ''
     species_confidence: float = 0.0
     anomaly: bool = False
+    # Localized blooms inside this tag's box + the box footprint as map (x, y)
+    # corners. Latest-wins per monitoring sweep. Empty until a flower scan
+    # localizes blooms (box_geometry in perception_aggregator).
+    flowers: list[TwinFlower] = field(default_factory=list)
+    box_footprint: list[tuple[float, float]] = field(default_factory=list)
 
     def has_pose(self) -> bool:
         return self.pose_x is not None and self.pose_y is not None
@@ -92,6 +108,8 @@ class FlowerUpdate:
     species: str
     species_confidence: float
     anomaly: bool
+    flowers: list[TwinFlower] = field(default_factory=list)
+    box_footprint: list[tuple[float, float]] = field(default_factory=list)
     pose_x: Optional[float] = None
     pose_y: Optional[float] = None
     pose_qz: Optional[float] = None
@@ -167,6 +185,8 @@ class TwinStateStore:
         buf.species = upd.species
         buf.species_confidence = upd.species_confidence
         buf.anomaly = upd.anomaly
+        buf.flowers = list(upd.flowers)
+        buf.box_footprint = list(upd.box_footprint)
         if not buf.has_pose() and upd.pose_x is not None and upd.pose_y is not None:
             buf.pose_x = upd.pose_x
             buf.pose_y = upd.pose_y
