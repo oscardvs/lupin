@@ -545,63 +545,100 @@ export function MapCanvas() {
       for (const t of tagsRef.current) {
         if (!tagHasPose(t)) continue  // never been seen with a pose
         const reading = t.readings.find((r) => r.name === sensor)?.value
-        const span = field ? Math.max(1e-9, field.value_max - field.value_min) : 1
-        const tNorm = field && reading != null
-          ? Math.min(1, Math.max(0, (reading - field.value_min) / span))
-          : 0.5
+        const hasReading = reading != null
         const sat = 1 - Math.min(0.7, t.stale_seconds / 600)
-        // Inner fill at the active-sensor ramp value; ring stays neutral
-        // so colour-blind operators still see the marker.
         const c = proj.worldToCanvas(t.pose.position.x, t.pose.position.y)
+        const r = 6
         ctx.save()
+        // Diamond marker (distinct from round flower dots), sitting on the
+        // box's front edge (the tag is mounted mid-front-face).
         ctx.beginPath()
-        ctx.arc(c.x, c.y, 5, 0, Math.PI * 2)
-        ctx.fillStyle = rampCssColor(ramp, tNorm, sat)
-        ctx.fill()
-        ctx.beginPath()
-        ctx.arc(c.x, c.y, 5, 0, Math.PI * 2)
-        ctx.lineWidth = 1
-        ctx.strokeStyle = 'hsl(120 25% 8%)'
-        ctx.stroke()
-        // Tag id label, dark backdrop pill — same style we used for
-        // sightings, so the visual language is consistent.
+        ctx.moveTo(c.x, c.y - r)
+        ctx.lineTo(c.x + r, c.y)
+        ctx.lineTo(c.x, c.y + r)
+        ctx.lineTo(c.x - r, c.y)
+        ctx.closePath()
+        if (hasReading && field) {
+          const span = Math.max(1e-9, field.value_max - field.value_min)
+          const tNorm = Math.min(1, Math.max(0, (reading - field.value_min) / span))
+          ctx.fillStyle = rampCssColor(ramp, tNorm, sat)
+          ctx.fill()
+          ctx.lineWidth = 1
+          ctx.strokeStyle = 'hsl(120 25% 8%)'
+          ctx.stroke()
+        } else {
+          // Honest "no sensor here" marker — hollow + hatched, never a
+          // mid-ramp colour that fakes a reading.
+          ctx.fillStyle = 'hsla(120, 6%, 28%, 0.22)'
+          ctx.fill()
+          ctx.setLineDash([2, 2])
+          ctx.lineWidth = 1
+          ctx.strokeStyle = 'hsl(120 8% 45%)'
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+        // Tag id label, dark backdrop pill (unchanged style).
         ctx.font = "10px 'JetBrains Mono', ui-monospace, monospace"
         const m = ctx.measureText(t.tag_id)
         const lx = c.x + 8
         const ly = c.y - 12
         ctx.fillStyle = 'hsla(120, 25%, 6%, 0.78)'
         ctx.fillRect(lx - 3, ly - 9.5, m.width + 6, 13)
-        ctx.fillStyle = `hsla(${ramp.hue}, 70%, 80%, ${sat.toFixed(2)})`
+        ctx.fillStyle = hasReading
+          ? `hsla(${ramp.hue}, 70%, 80%, ${sat.toFixed(2)})`
+          : 'hsla(120, 8%, 70%, 0.85)'
         ctx.textBaseline = 'alphabetic'
         ctx.fillText(t.tag_id, lx, ly)
         ctx.restore()
       }
     }
 
-    // Flower markers — a species-coloured ring around each classified tag,
-    // with a red dashed alert ring when the YOLO "bug" anomaly is present.
-    // Drawn over the sensor pin so the species reads at a glance without
-    // hiding the abiotic-sensor fill underneath.
+    // Flower markers — the localized box footprint (faint rectangle) plus a
+    // species-coloured filled dot at each localized bloom, with a red dashed
+    // alert ring on anomalous blooms. Drawn over the sensor pins so the
+    // species reads at a glance.
     if (layers.flowers) {
       for (const t of tagsRef.current) {
-        if (!tagHasPose(t) || !t.species) continue
-        const c = proj.worldToCanvas(t.pose.position.x, t.pose.position.y)
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(c.x, c.y, 8, 0, Math.PI * 2)
-        ctx.lineWidth = 2
-        ctx.strokeStyle = speciesColor(t.species)
-        ctx.stroke()
-        if (t.anomaly) {
+        // Box footprint rectangle (faint), from the localized corners.
+        const corners = t.box_footprint?.points ?? []
+        if (corners.length >= 3) {
+          ctx.save()
           ctx.beginPath()
-          ctx.arc(c.x, c.y, 11, 0, Math.PI * 2)
-          ctx.setLineDash([3, 3])
-          ctx.lineWidth = 1.5
-          ctx.strokeStyle = '#e23a3a'
+          corners.forEach((p, i) => {
+            const c = proj.worldToCanvas(p.x, p.y)
+            if (i === 0) ctx.moveTo(c.x, c.y)
+            else ctx.lineTo(c.x, c.y)
+          })
+          ctx.closePath()
+          ctx.fillStyle = 'hsla(140, 35%, 50%, 0.06)'
+          ctx.lineWidth = 1
+          ctx.strokeStyle = 'hsla(140, 35%, 62%, 0.35)'
+          ctx.fill()
           ctx.stroke()
-          ctx.setLineDash([])
+          ctx.restore()
         }
-        ctx.restore()
+        // Species-coloured filled dots at each localized bloom (NOT t.pose).
+        for (const fp of t.flowers ?? []) {
+          const c = proj.worldToCanvas(fp.position.x, fp.position.y)
+          ctx.save()
+          ctx.beginPath()
+          ctx.arc(c.x, c.y, 4, 0, Math.PI * 2)
+          ctx.fillStyle = speciesColor(fp.species)
+          ctx.fill()
+          ctx.lineWidth = 1
+          ctx.strokeStyle = 'hsla(0, 0%, 0%, 0.45)'
+          ctx.stroke()
+          if (fp.anomaly) {
+            ctx.beginPath()
+            ctx.arc(c.x, c.y, 7, 0, Math.PI * 2)
+            ctx.setLineDash([3, 3])
+            ctx.lineWidth = 1.5
+            ctx.strokeStyle = '#e23a3a'
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
+          ctx.restore()
+        }
       }
     }
 

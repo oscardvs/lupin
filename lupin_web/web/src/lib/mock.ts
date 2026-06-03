@@ -6,11 +6,13 @@ import {
   type JointState,
   type LaserScan,
   type Log,
+  type FlowerPoint,
   type MissionState,
   type Observation,
   type OccupancyGrid,
   type Odometry,
   type Path,
+  type Polygon,
   type PoseStamped,
   type RosoutLevel,
   type SensorReading,
@@ -456,6 +458,8 @@ export function mockObservation(): Observation | null {
       species: '',
       confidence: 0,
       anomaly: false,
+      flowers: [],
+      box_footprint: { points: [] },
     },
     anomaly: null,
   }
@@ -560,6 +564,34 @@ function mockVisibleTagCount(t: number): number {
   return Math.min(MOCK_TWIN_TAGS.length, Math.floor(t / interval) + 1)
 }
 
+// Synthesize a small box footprint + a few scattered blooms around a tag so
+// the mock map exercises the Stream-B render without a live robot. The box is
+// a 0.8 x 0.4 m rectangle in front of the tag (−y into the "bed").
+function mockBox(seed: { x: number; y: number; species: string; anomaly: boolean }):
+  { flowers: FlowerPoint[]; box_footprint: Polygon } {
+  const w = 0.4   // half-width
+  const d = 0.4   // depth
+  const fp = (fx: number, dy: number): FlowerPoint => ({
+    position: { x: seed.x + fx, y: seed.y - dy, z: 0 },
+    species: seed.species,
+    confidence: 0.85,
+    anomaly: seed.anomaly,
+  })
+  return {
+    box_footprint: {
+      points: [
+        { x: seed.x - w, y: seed.y, z: 0 },
+        { x: seed.x + w, y: seed.y, z: 0 },
+        { x: seed.x + w, y: seed.y - d, z: 0 },
+        { x: seed.x - w, y: seed.y - d, z: 0 },
+      ],
+    },
+    flowers: seed.species
+      ? [fp(-0.22, 0.18), fp(0.05, 0.26), fp(0.24, 0.12)]
+      : [],
+  }
+}
+
 export function mockTwinState(): TwinState {
   const t = elapsed()
   const visible = mockVisibleTagCount(t)
@@ -586,6 +618,7 @@ export function mockTwinState(): TwinState {
       species: seed.species,
       species_confidence: seed.species ? 0.82 + 0.1 * Math.sin(t * 0.1 + seed.phase) : 0,
       anomaly: seed.anomaly,
+      ...mockBox(seed),
     })
   }
   return {

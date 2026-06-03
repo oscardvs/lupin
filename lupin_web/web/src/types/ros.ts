@@ -33,6 +33,18 @@ export interface Point {
   z: number
 }
 
+/** geometry_msgs/Point32 — float32 point used by Polygon. */
+export interface Point32 {
+  x: number
+  y: number
+  z: number
+}
+
+/** geometry_msgs/Polygon — a closed footprint as ordered Point32 corners. */
+export interface Polygon {
+  points: Point32[]
+}
+
 export interface Pose {
   position: Point
   orientation: Quaternion
@@ -314,6 +326,11 @@ export interface TwinTagState {
   species_confidence: number
   /** True when the YOLO "bug" anomaly was seen at this tag. */
   anomaly: boolean
+  /** Localized blooms inside this tag's box (map frame); [] until a scan
+   * has localized them. Render these as the flower dots — NOT `pose`. */
+  flowers: FlowerPoint[]
+  /** Box interior as 4 map-frame corners; empty when no box was derived. */
+  box_footprint: Polygon
 }
 
 /** Mirror of `lupin_msgs/msg/TwinState`. */
@@ -414,6 +431,14 @@ export const OBSERVATION_KIND = {
 } as const
 export type ObservationKind = (typeof OBSERVATION_KIND)[keyof typeof OBSERVATION_KIND]
 
+/** lupin_msgs/FlowerPoint — one localized bloom inside a planter box. */
+export interface FlowerPoint {
+  position: Point
+  species: string
+  confidence: number
+  anomaly: boolean
+}
+
 /** Mirror of `lupin_msgs/msg/FlowerObservation`. Produced by the perception
  * aggregator and carried inside an Observation with `kind === FLOWER`. */
 export interface FlowerObservation {
@@ -422,6 +447,8 @@ export interface FlowerObservation {
   species: string
   confidence: number
   anomaly: boolean
+  flowers: FlowerPoint[]
+  box_footprint: Polygon
 }
 
 /**
