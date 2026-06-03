@@ -30,16 +30,34 @@ def test_tags_sorted_and_cursor_starts_at_first():
     assert not m.is_complete()
 
 
-def test_cursor_wraps_and_never_completes():
-    m = _mission(('1', '2', '3'))
-    seen = [m.current_tag_id()]
-    for _ in range(5):
-        m.advance()
-        seen.append(m.current_tag_id())
-        assert not m.is_complete()
-    # 1,2,3,1,2,3 — wrapped twice, cycle counter bumped.
-    assert seen == ['1', '2', '3', '1', '2', '3']
+def test_one_sweep_then_complete():
+    m = _mission(('1', '2', '3'))  # target_cycles defaults to 1
+    assert m.current_tag_id() == '1'
+    assert not m.is_complete()
+    m.advance()                      # closed tag 1 -> cursor 2
+    assert m.current_tag_id() == '2'
+    assert not m.is_complete()
+    m.advance()                      # closed tag 2 -> cursor 3
+    assert m.current_tag_id() == '3'
+    assert not m.is_complete()
+    m.advance()                      # closed tag 3 -> wrap, cycle 1
     assert m.cycles == 1
+    assert m.is_complete()
+
+
+def test_target_cycles_allows_multiple_sweeps():
+    discovered = {'1': _pose(0.0, 0.0), '2': _pose(1.0, 0.0)}
+    m = MonitoringMission(
+        mission_id='m', discovered=discovered,
+        nav_max_attempts=1, approach_yaw=0.0, standoff_m=0.5,
+        target_cycles=2,
+    )
+    m.advance(); m.advance()         # one full sweep -> cycle 1
+    assert m.cycles == 1
+    assert not m.is_complete()
+    m.advance(); m.advance()         # second sweep -> cycle 2
+    assert m.cycles == 2
+    assert m.is_complete()
 
 
 def test_empty_discovered_is_complete():

@@ -5,8 +5,8 @@ Like InspectionMission these are pure-Python models the orchestrator's HSM
 drives; no ROS imports. ExplorationMission tracks the discovered-tag set and
 the goal N (the EXPLORING lifecycle state). When N is reached the orchestrator
 swaps in a MonitoringMission built from the discovered set — a wrap-around
-cursor over those tags that never completes (the MONITORING loop), so the
-robot re-scans them until the operator stops.
+cursor over those tags that completes after ``target_cycles`` full sweeps
+(default 1: visit each tag once), or early on pause/abort.
 """
 
 from __future__ import annotations
@@ -63,12 +63,13 @@ class ExplorationMission(Mission):
 
 
 class MonitoringMission(Mission):
-    """Continuous re-scan loop over the discovered tags.
+    """Re-scan loop over the discovered tags.
 
     Mirrors InspectionMission's per-tag surface so the orchestrator's
-    NAVIGATING/SCANNING callbacks drive it unchanged — except the cursor
-    *wraps* (``advance()`` modulo len, bumping ``cycles``) so it never
-    completes. The orchestrator stops it only via pause/abort.
+    NAVIGATING/SCANNING callbacks drive it unchanged. The cursor *wraps*
+    (``advance()`` modulo len, bumping ``cycles``) and the loop completes
+    after ``target_cycles`` full sweeps (default 1). The orchestrator can
+    also stop it early via pause/abort.
     """
 
     name = 'MonitoringMission'
@@ -81,11 +82,16 @@ class MonitoringMission(Mission):
         nav_max_attempts: int,
         approach_yaw: float,
         standoff_m: float,
+        target_cycles: int = 1,
     ):
         self.mission_id = mission_id
         self.nav_max_attempts = max(1, int(nav_max_attempts))
         self.approach_yaw = float(approach_yaw)
         self.standoff_m = float(standoff_m)
+        # Number of full sweeps over the discovered set before the loop
+        # completes (→ RETURNING). 1 = visit every tag once. Operator can
+        # raise it for repeated monitoring.
+        self._target_cycles = max(1, int(target_cycles))
         # Deterministic order so the loop is predictable run-to-run.
         self._tags: list[str] = sorted(discovered.keys())
         self._poses: dict[str, object] = dict(discovered)
@@ -99,8 +105,9 @@ class MonitoringMission(Mission):
 
     # ── current-leg accessors ──────────────────────────────────────────
     def is_complete(self) -> bool:
-        # Empty set is the only terminal condition; otherwise loop forever.
-        return not self._tags
+        # Complete once the cursor has wrapped target_cycles times (one full
+        # sweep per cycle), or immediately if there are no tags to visit.
+        return (not self._tags) or (self.cycles >= self._target_cycles)
 
     def current_tag_id(self) -> str:
         if not self._tags:
