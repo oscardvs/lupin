@@ -230,14 +230,17 @@ source ~/.config/lupin/ros-env.sh            # DDS env — skip this → §6 MUL
 source ~/ros2_ws/install/setup.bash
 ros2 launch lupin_web lupin_web.launch.py \
   mode:=preview tls:=true rosbridge:=true \
-  video:=false video_target:=http://192.168.42.1:8091
+  video:=false video_target:=http://192.168.42.1:8091 leds:=false
 ```
 
 `video:=false` skips the laptop-side `web_video_server` because
 `lupin-cameras.service` on the robot already exposes one on `0.0.0.0:8091`.
 `video_target` retargets Vite's `/_video` proxy at the robot directly — raw
 camera frames stay on the Pi and only MJPEG crosses WiFi (matches vendor
-`mirte.local/ros-video/` behaviour).
+`mirte.local/ros-video/` behaviour). `leds:=false` because the robot's
+`lupin-onboard.service` already runs `light_strip_bridge` — a second one here
+would collide on the node name and the `/lupin/leds/{set,auto}` services. The
+LightControl card still works; it reaches the robot's bridge over DDS.
 
 **Check the startup banner** the launch prints: it must say `rosbridge DDS
 mode: DISCOVERY-SERVER 192.168.42.1:11811`. If it instead says `MULTICAST —
@@ -411,8 +414,12 @@ ros2 launch lupin_bringup mission_stack.launch.py        # discovery_goal:=N to 
 
 **Expect:** a `greenhouse_bridge` ready line, `[lupin_bringup] mission_stack: …`,
 and the orchestrator idling in `READY` (`/mission/state` lifecycle_state=READY).
-Start a run from the HMI **Mission** controls (or `ros2 service call
-/mission/start std_srvs/srv/Trigger`). The HMI MissionStrip should walk
+Start a run from the HMI **Mission** controls, or:
+```bash
+ros2 service call /mission/start lupin_msgs/srv/StartMission \
+  "{mission_type: 'ExplorationMission', discovery_goal: 4}"
+```
+The HMI MissionStrip should walk
 PREPARE → EXPLORING → MONITORING; flower/pest markers land on the Map view as
 tags are scanned.
 
