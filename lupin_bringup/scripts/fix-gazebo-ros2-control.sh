@@ -38,11 +38,20 @@ if [ ! -d "$SRC" ]; then
 fi
 
 echo "[fix-gz] applying patch…"
-# -N: skip if already applied; --reject-file=- so a re-run is a no-op, not an error.
-patch -p1 -N -d "$SRC" < "$PATCH" || echo "[fix-gz] (patch already applied — ok)"
+# Patch paths are a/gazebo_ros2_control/src/… but $SRC is already the package dir
+# (file lives at src/…), so strip TWO leading components (-p2), not one. With -p1
+# patch can't find the file and drops to an interactive "File to patch:" prompt.
+# -N: skip cleanly if already applied, so a re-run is a no-op, not an error.
+# --reject-file=/dev/null: don't litter a .rej file when the patch is already in.
+patch -p2 -N --reject-file=/dev/null -d "$SRC" < "$PATCH" \
+  || echo "[fix-gz] (patch already applied — ok)"
 
 echo "[fix-gz] building overlay…"
+# ROS setup.bash references unbound vars (AMENT_TRACE_SETUP_FILES); disable
+# nounset just for the source, then restore it.
+set +u
 source /opt/ros/humble/setup.bash
+set -u
 cd "$WS"
 colcon build --packages-select gazebo_ros2_control --cmake-args -DCMAKE_BUILD_TYPE=Release
 
