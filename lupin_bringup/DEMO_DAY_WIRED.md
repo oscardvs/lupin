@@ -337,8 +337,8 @@ Points the laptop's DDS at the robot's discovery server over the cable and
 verifies topics flow. Every subsequent terminal only needs the two `source` lines.
 
 ```bash
-source ~/.config/lupin/ros-env.sh            # ROS_DISCOVERY_SERVER=10.42.0.1:11811 + super-client XML
-source ~/ros2_ws/install/setup.bash          # lupin_* packages + RViz meshes
+source ~/ros2_ws/install/setup.bash          # lupin_* packages + RViz meshes — source FIRST
+source ~/.config/lupin/ros-env.sh            # DDS env LAST — setup.bash blanks ROS_DISCOVERY_SERVER (mirte_fastdds_discovery_setup colcon hook)
 ros2 daemon start                            # one-time per session
 sleep 5                                       # let discovery fill
 ros2 topic list | wc -l                      # expect ~52 (systemd services only)
@@ -374,11 +374,13 @@ you want when debugging on the cable. **One-command** is simplest.
 minus `daemon start`):
 
 ```bash
-source ~/.config/lupin/ros-env.sh
-source ~/ros2_ws/install/setup.bash
+source ~/ros2_ws/install/setup.bash          # FIRST
+source ~/.config/lupin/ros-env.sh            # LAST — setup.bash blanks the DDS env (see §3)
 ```
 
-Skip either → 2 topics (DDS) or missing `lupin_*` packages/meshes (overlay).
+Skip either → 2 topics (DDS) or missing `lupin_*` packages/meshes (overlay). Source
+them in the wrong order (`ros-env.sh` before `setup.bash`) and `ROS_DISCOVERY_SERVER`
+ends up empty → §6 "LIVE but dead".
 
 The per-terminal **expectations and failure modes are identical to
 `DEMO_DAY.md §4`** — only the IP changes. Below: the command, the **verified**
@@ -391,8 +393,8 @@ you skip them (HMI comes up `LIVE` but with no battery/telemetry and can't drive
 see §6). The launch's `rosbridge DDS mode:` banner is the tell.
 
 ```bash
-source ~/.config/lupin/ros-env.sh            # skip → §6 MULTICAST bug (HMI LIVE but dead)
-source ~/ros2_ws/install/setup.bash
+source ~/ros2_ws/install/setup.bash          # FIRST
+source ~/.config/lupin/ros-env.sh            # LAST — skip OR wrong order → §6 MULTICAST bug (HMI LIVE but dead)
 ros2 launch lupin_web lupin_web.launch.py \
   mode:=preview tls:=true rosbridge:=true \
   video:=false video_target:=http://10.42.0.1:8091 leds:=false
@@ -429,34 +431,37 @@ Empty model/frames → you forgot a `source` line (both are needed).
 ### T3 — SLAM
 
 ```bash
-ros2 run slam_toolbox async_slam_toolbox_node --ros-args \
-  --params-file ~/ros2_ws/src/lupin/lupin_navigation/config/slam_toolbox_sim.yaml \
-  -p use_sim_time:=false
+ros2 launch lupin_navigation slam_hardware.launch.py
 ```
 
-**Brings up:** `slam_toolbox` owning `/map` + the `map→odom` TF. The
-`slam_toolbox_sim.yaml` params are shared sim/hardware; the only sim-specific bit
-(`use_sim_time`) is overridden to `false` here. **Expect** `Registering sensor:
+**Brings up:** `slam_toolbox` owning `/map` + the `map→odom` TF, **and**
+`slam_reset_node` (the old T4 — now bundled in this launch). The wrapper presets
+`use_sim_time:=false` over the shared `_slam_core.launch.py`; `slam_sim.launch.py`
+is the `:=true` twin for Gazebo. **Expect** `Registering sensor:
 [Custom Described Lidar]` then `/map` within 5–10 s. One `Message Filter
 dropping…` at startup is normal; repeated = clock drift (redo §1, cleanly).
 
-### T4 — slam_reset service (HMI "Erase map" button)
+### T4 — slam_reset service → now folded into T3
+
+`slam_reset_node` (the `/lupin/nav/clear_map` Trigger the HMI "Erase map" button
+hits — it SIGTERMs `slam_toolbox`, which `respawn=True` brings back blank) is now
+**part of `slam_hardware.launch.py`**, so there's no separate terminal — it comes
+up with T3.
+
+### T5 — Nav2 (only after T3's `/map` is alive AND TF is warm)
+
+**Gate it** (this is what the monolith's sentinels did for you): confirm `/map`
+(RViz Map display, or the echo one-liner in §1), then warm the TF —
+`ros2 run lupin_bringup wait_for_tf odom base_link 30.0` exits the instant
+`odom→base_link` resolves. Skipping this wedges the Nav2 lifecycle on
+"Invalid frame ID base_link". Then:
 
 ```bash
-ros2 run lupin_navigation slam_reset_node
+ros2 launch lupin_navigation nav2_hardware.launch.py
 ```
 
-**Brings up:** the `/lupin/nav/clear_map` Trigger service. The HMI's Erase-map
-SIGTERMs `slam_toolbox` (which respawns blank). One line of output then idle.
-
-### T5 — Nav2 (only after T3's `/map` is alive)
-
-```bash
-ros2 launch lupin_navigation nav2.launch.py \
-  slam:=true use_sim_time:=false \
-  params_file:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/config/nav2_params.yaml \
-  map:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/maps/krr_house.yaml
-```
+(The long `nav2.launch.py slam:=true use_sim_time:=false params_file:=… map:=…`
+is now preset inside `nav2_hardware.launch.py`; `nav2_sim.launch.py` is the sim twin.)
 
 **Brings up:** the Nav2 lifecycle stack (controller/planner/behavior/bt_navigator/
 waypoint_follower/velocity_smoother + lifecycle_manager). `velocity_smoother`

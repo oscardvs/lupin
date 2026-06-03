@@ -105,6 +105,18 @@ then `[mission_orchestrator]: Dependencies up. Orchestrator READY.` SLAM publish
 **If spawners loop on `Could not contact /controller_manager`:** T1 isn't fully up (or
 SHM-wedged — see §1). Wait for T1's 3 controllers, or clean + relaunch T1.
 
+> **Granular sim (run SLAM / Nav2 in their own terminals, e.g. to debug one in
+> isolation):** instead of the `sim_autonomy` bundle, use the per-subsystem sim
+> wrappers — the sim twins of the hardware ones in `DEMO_DAY_WIRED.md` §4:
+> ```bash
+> ros2 launch lupin_navigation slam_sim.launch.py   # → /map + map→odom TF (+ erase-map service)
+> # confirm /map (RViz), then:
+> ros2 launch lupin_navigation nav2_sim.launch.py   # Nav2 slam mode, use_sim_time:=true preset
+> ```
+> Same `/map`-then-Nav2 ordering as hardware (both wrap the shared `nav2.launch.py`
+> / `_slam_core.launch.py`; only `use_sim_time` differs). `sim_autonomy.launch.py`
+> just bundles these with the bridge + orchestrator + twin.
+
 ---
 
 ## 4. T3 — HMI

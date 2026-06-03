@@ -184,8 +184,8 @@ verifies topics are flowing. Every subsequent terminal only needs the two
 `source` lines (see §4).
 
 ```bash
-source ~/.config/lupin/ros-env.sh            # ROS_DISCOVERY_SERVER + super-client XML
-source ~/ros2_ws/install/setup.bash          # lupin_* packages + RViz mesh paths
+source ~/ros2_ws/install/setup.bash          # lupin_* packages + RViz mesh paths — source FIRST
+source ~/.config/lupin/ros-env.sh            # DDS env LAST — setup.bash blanks ROS_DISCOVERY_SERVER (mirte_fastdds_discovery_setup hook)
 ros2 daemon start                            # one-time per session
 sleep 5                                       # let discovery fill (~52 topics)
 ros2 topic list | wc -l                      # expect ~52 (systemd services only)
@@ -221,8 +221,8 @@ and try again.
 lines (same as §3 but without daemon-start, which is already done):
 
 ```bash
-source ~/.config/lupin/ros-env.sh            # DDS env: discovery server + super-client
-source ~/ros2_ws/install/setup.bash          # workspace overlays: lupin_*, RViz meshes
+source ~/ros2_ws/install/setup.bash          # workspace overlays: lupin_*, RViz meshes — FIRST
+source ~/.config/lupin/ros-env.sh            # DDS env LAST — setup.bash blanks ROS_DISCOVERY_SERVER (see step 3)
 ```
 
 Skip either and the terminal will see 2 topics (DDS) or fail to find
@@ -236,8 +236,8 @@ but with no battery / no telemetry and can't drive (the §6 MULTICAST bug),
 unlike T2+ which fail loudly. The launch's `rosbridge DDS mode:` banner is the tell.
 
 ```bash
-source ~/.config/lupin/ros-env.sh            # DDS env — skip this → §6 MULTICAST bug (HMI LIVE but dead)
-source ~/ros2_ws/install/setup.bash
+source ~/ros2_ws/install/setup.bash          # FIRST
+source ~/.config/lupin/ros-env.sh            # DDS env LAST — skip OR wrong order → §6 MULTICAST bug (HMI LIVE but dead)
 ros2 launch lupin_web lupin_web.launch.py \
   mode:=preview tls:=true rosbridge:=true \
   video:=false video_target:=http://192.168.42.1:8091 leds:=false
@@ -278,10 +278,7 @@ resolution) and/or `ros-env.sh` (needed for DDS). Both.
 ### T3 — SLAM
 
 ```bash
-ros2 run slam_toolbox async_slam_toolbox_node \
-  --ros-args \
-  --params-file ~/ros2_ws/src/lupin/lupin_navigation/config/slam_toolbox_sim.yaml \
-  -p use_sim_time:=false
+ros2 launch lupin_navigation slam_hardware.launch.py
 ```
 
 **Expect:** `Registering sensor: [Custom Described Lidar]` then /map publishes
@@ -291,22 +288,21 @@ within 5–10 s. RViz Map display (toggle the checkbox) populates.
 TF buffer warms up). If it keeps firing: clock drift — re-run step 1's clock
 sync (cleanly, not while ROS is running on the robot).
 
-### T4 — slam_reset service (HMI's "erase map" button)
+### T4 — slam_reset service → now folded into T3
+
+`slam_reset_node` (the `/lupin/nav/clear_map` Trigger behind the HMI "erase map"
+button) is now **bundled in `slam_hardware.launch.py`** — it comes up with T3, so
+there's no separate terminal.
+
+### T5 — Nav2 (only after T3's /map is alive AND TF is warm)
+
+**Gate it:** confirm `/map` (RViz Map display), then warm the TF —
+`ros2 run lupin_bringup wait_for_tf odom base_link 30.0` exits the instant
+`odom→base_link` resolves. Skipping it wedges the Nav2 lifecycle on "Invalid
+frame ID base_link". Then:
 
 ```bash
-ros2 run lupin_navigation slam_reset_node
-```
-
-One line of output then quiet. Idle service.
-
-### T5 — Nav2 (only after T3's /map is alive)
-
-```bash
-ros2 launch lupin_navigation nav2.launch.py \
-  slam:=true \
-  use_sim_time:=false \
-  params_file:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/config/nav2_params.yaml \
-  map:=$(ros2 pkg prefix lupin_navigation)/share/lupin_navigation/maps/krr_house.yaml
+ros2 launch lupin_navigation nav2_hardware.launch.py
 ```
 
 The `map:=krr_house.yaml` arg is a *placeholder* — in `slam:=true` mode the
