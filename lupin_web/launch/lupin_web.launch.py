@@ -89,6 +89,7 @@ def generate_launch_description():
     rosbridge = LaunchConfiguration('rosbridge')
     tls = LaunchConfiguration('tls')
     leds = LaunchConfiguration('leds')
+    arm_library = LaunchConfiguration('arm_library')
 
     # Resolve the npm script at launch time based on `mode`.
     npm_script = PythonExpression([
@@ -205,6 +206,13 @@ def generate_launch_description():
                         'runs the bridge — two instances collide on the node '
                         'name and the manual-override services.',
         ),
+        DeclareLaunchArgument(
+            'arm_library',
+            default_value='true',
+            description='Spawn arm_library_server (laptop-side owner of '
+                        '~/.config/lupin/arm_library.json for saved arm '
+                        'poses/sequences).',
+        ),
 
         LogInfo(msg=['Lupin Web HMI · serving from ', _REPO_WEB_DIR, ' on :', port]),
 
@@ -294,5 +302,20 @@ def generate_launch_description():
             }],
             output='screen',
             condition=IfCondition(spawn_leds),
+        ),
+
+        # 5. arm_library_server — laptop-side owner of the arm pose/sequence
+        # library (~/.config/lupin/arm_library.json). The HMI Arm tab's Pose
+        # Library + Sequence Recorder cards and the voice agent's arm-library
+        # tools call its /lupin/arm/library/* services. It lives here (not
+        # onboard) because the JSON file it owns is operator-laptop state; the
+        # built-in presets stay in the onboard arm_preset_server. Disable with
+        # arm_library:=false where another instance already runs.
+        Node(
+            package='lupin_hmi',
+            executable='arm_library_server',
+            name='arm_library_server',
+            output='screen',
+            condition=IfCondition(arm_library),
         ),
     ])

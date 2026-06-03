@@ -9,6 +9,7 @@
 
   <exec_depend>rosbridge_server</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>lupin_hmi</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

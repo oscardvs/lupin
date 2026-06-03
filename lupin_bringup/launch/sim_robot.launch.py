@@ -81,6 +81,10 @@ def generate_launch_description() -> LaunchDescription:
         package='lupin_hmi', executable='arm_preset_server', name='arm_preset_server',
         parameters=[{'use_sim_time': True}], output='log',
     )
+    arm_library_server = Node(
+        package='lupin_hmi', executable='arm_library_server', name='arm_library_server',
+        parameters=[{'use_sim_time': True}], output='log',
+    )
     gripper_action_bridge = Node(
         package='lupin_hmi', executable='gripper_action_bridge', name='gripper_action_bridge',
         parameters=[{'use_sim_time': True}], output='log',
@@ -116,6 +120,7 @@ def generate_launch_description() -> LaunchDescription:
         twist_mux,
         arm_sim_shim,
         arm_preset_server,
+        arm_library_server,
         gripper_action_bridge,
         xbox_teleop,
         seed,

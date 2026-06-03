@@ -469,6 +469,20 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── 8c2b. arm_library_server — saved arm poses/sequences ───────────
+    # Laptop-side owner of ~/.config/lupin/arm_library.json. Backs the HMI
+    # Arm tab's Pose Library + Sequence Recorder cards and the voice agent's
+    # arm-library tools via /lupin/arm/library/*. Records off /joint_states
+    # and replays onto /mirte_master_arm_controller/joint_trajectory — the
+    # same topic arm_preset_server uses — so it ships unchanged across sim
+    # and hardware. The built-in presets stay in arm_preset_server.
+    arm_library_server = Node(
+        package='lupin_hmi', executable='arm_library_server',
+        name='arm_library_server',
+        parameters=[{'use_sim_time': True}],
+        output='log',
+    )
+
     # ── 8c3. gripper_action_bridge — HMI gripper service → controller ──
     # Owns /lupin/gripper/set_angle_with_speed on both sim and hardware.
     # Translates HMI degree commands into a GripperCommand action goal so
@@ -576,6 +590,7 @@ def generate_launch_description() -> LaunchDescription:
         xbox_teleop,
         arm_sim_shim,
         arm_preset_server,
+        arm_library_server,
         gripper_action_bridge,
         rviz,
         # Sentinels: tiny "wait for topic" processes that exit on first
