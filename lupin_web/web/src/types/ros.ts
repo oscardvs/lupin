@@ -374,6 +374,10 @@ export interface MissionState {
   tags_discovered: number
   discovery_goal: number
   last_error: string
+  /** Friendly event label classified by the orchestrator; "" when none. */
+  last_event: string
+  /** 0 = info, 1 = warn, 2 = error. */
+  last_event_severity: number
   estop_engaged: boolean
   paused: boolean
   started_at: Time                       // zero when no mission has run

@@ -142,7 +142,7 @@ export function useTagObservations(): Map<string, Observation> {
 export interface MissionEvent {
   /** Wall-clock ms (Date.now()) — used for relative-age formatting. */
   at: number
-  kind: 'lifecycle' | 'phase' | 'target' | 'pause' | 'estop' | 'fault' | 'observation'
+  kind: 'lifecycle' | 'phase' | 'target' | 'pause' | 'estop' | 'fault' | 'observation' | 'notice'
   /** Short headline shown in the log row. */
   label: string
   /** Optional secondary text (sensor readings, error detail, transitions). */
@@ -256,12 +256,14 @@ export function useMissionEventLog(): MissionEvent[] {
         })
       }
       if (state.last_error && state.last_error !== prev.last_error) {
+        const sev = state.last_event_severity ?? 1
+        const isFault = state.lifecycle_state === 'FAULT' || sev >= 2
         append({
           at,
-          kind: 'fault',
-          label: 'orchestrator error',
+          kind: isFault ? 'fault' : 'notice',
+          label: state.last_event || state.last_error,
           detail: state.last_error,
-          tone: 'err',
+          tone: isFault ? 'err' : sev === 0 ? 'info' : 'warn',
         })
       }
     },

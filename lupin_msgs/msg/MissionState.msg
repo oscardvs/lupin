@@ -26,7 +26,15 @@ uint16 targets_failed            # status=SCAN_FAILED
 uint16 targets_unreachable       # status=UNREACHABLE
 uint16 targets_skipped           # status=SKIPPED (abort + skip_current)
 
-string last_error                # last non-fatal error surfaced by the orchestrator
+string last_error                # raw last-event code (battery_low, nav_status_6, ...)
+
+# Human-facing event surfaced alongside last_error, classified by severity so
+# the HMI shows the right tone instead of labelling everything a red fault.
+string last_event                # friendly label, "" when no event
+uint8  SEVERITY_INFO=0
+uint8  SEVERITY_WARN=1
+uint8  SEVERITY_ERROR=2
+uint8  last_event_severity
 
 # ─── Exploration progress (ExplorationMission only) ──────────────────────
 # Distinct AprilTags discovered so far during EXPLORING, and the target N

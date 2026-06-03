@@ -71,6 +71,7 @@ from .approach import (
     load_approach_overrides,
 )
 from .return_policy import decide_failed_dock
+from .events import classify_event
 from .tag_locations import (
     load_default_tables,
     load_default_tag_locations,
@@ -1538,6 +1539,9 @@ class MissionOrchestratorNode(Node):
             msg.tags_discovered = min(len(self._discovered), 65535)
             msg.discovery_goal = min(self._active_discovery_goal, 65535)
         msg.last_error = self._last_error
+        severity, label = classify_event(self._last_error)
+        msg.last_event = label
+        msg.last_event_severity = severity
         msg.estop_engaged = self._estop_engaged
         msg.paused = self._paused
         msg.started_at = self._mission_started_at
