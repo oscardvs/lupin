@@ -35,6 +35,7 @@ setup(
             'arm_preset_server = lupin_hmi.arm_preset_server:main',
             'arm_calibrate_server = lupin_hmi.arm_calibrate_server:main',
             'gripper_action_bridge = lupin_hmi.gripper_action_bridge:main',
+            'arm_library_server = lupin_hmi.arm_library_server:main',
             # One-shot called by lupin-auto-home.service at boot. Waits for
             # the arm controllers + preset service to come up, then moves
             # the arm to the 'home' preset (low-gravity-load rest pose).

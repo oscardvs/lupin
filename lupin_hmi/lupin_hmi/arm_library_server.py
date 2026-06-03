@@ -1,0 +1,257 @@
+"""arm_library_server — laptop-side owner of the arm pose/sequence library.
+
+Owns ${XDG_CONFIG_HOME:-~/.config}/lupin/arm_library.json and exposes CRUD +
+record + replay under /lupin/arm/library/*. Thin wiring over lupin_hmi.arm_library.
+Records by subscribing /joint_states; replays by publishing a multi-point
+JointTrajectory to /mirte_master_arm_controller/joint_trajectory and firing
+/lupin/gripper/set_angle_with_speed; toggles torque via /lupin/arm/set_torque.
+
+Built-in presets stay in arm_preset_server (onboard) — this node only owns
+USER poses/sequences. Consumers (HMI, voice) route built-in names to /lupin/arm/preset.
+"""
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional
+
+import rclpy
+from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import QoSProfile, DurabilityPolicy
+
+from sensor_msgs.msg import JointState
+from std_msgs.msg import String
+from std_srvs.srv import SetBool, Trigger
+from trajectory_msgs.msg import JointTrajectory
+
+from mirte_msgs.srv import SetServoAngleWithSpeed
+from lupin_msgs.srv import (
+    GetArmLibrary, SaveArmPose, ArmRecord, PlayArmSequence, ArmLibraryEdit, SetArmPreset,
+)
+
+from lupin_hmi.arm_library import (
+    ArmLibraryError, ArmLibraryStore, RecordingBuffer, Sequence,
+    extract_gripper_events,
+)
+from lupin_hmi.arm_limits import (
+    ARM_JOINTS, ARM_JOINT_FULL, clamp_arm_joint, gripper_rad_to_deg, limits_summary,
+)
+from lupin_hmi.arm_traj import build_arm_trajectory, build_arm_trajectory_multi
+
+ARM_JOINT_NAMES = [ARM_JOINT_FULL[j] for j in ARM_JOINTS]
+GRIPPER_JOINT_NAME = "gripper_joint"
+TRAJ_TOPIC = "/mirte_master_arm_controller/joint_trajectory"
+GRIPPER_SRV = "/lupin/gripper/set_angle_with_speed"
+TORQUE_SRV = "/lupin/arm/set_torque"
+GOTO_TRAVEL_S = 3.0
+
+
+def _default_library_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    return Path(base) / "lupin" / "arm_library.json"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+class ArmLibraryServer(Node):
+    def __init__(self) -> None:
+        super().__init__("arm_library_server")
+        path = Path(self.declare_parameter("library_path", str(_default_library_path()))
+                    .get_parameter_value().string_value)
+        self.store = ArmLibraryStore(path)
+        self.store.load()
+
+        self._cb = ReentrantCallbackGroup()
+        self._latest: Optional[JointState] = None
+        self._recording: Optional[RecordingBuffer] = None
+        self._rec_mode = ""
+        self._rec_start_clock = None       # rclpy Time when recording started
+        self._playing_name = ""
+        self._play_start_clock = None      # rclpy Time when replay started
+        self._play_total_s = 0.0           # expected replay duration (scaled)
+        self._torque_on = True
+        self._idx_names: tuple = ()        # cache: last /joint_states name order
+        self._idx_map: dict = {}           # cache: name -> index for that order
+
+        self._traj_pub = self.create_publisher(JointTrajectory, TRAJ_TOPIC, 10)
+        self._state_pub = self.create_publisher(
+            String, "/lupin/arm/library/state",
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.create_subscription(JointState, "/joint_states", self._on_joint_states, 50)
+
+        self._gripper_cli = self.create_client(SetServoAngleWithSpeed, GRIPPER_SRV, callback_group=self._cb)
+        self._torque_cli = self.create_client(SetBool, TORQUE_SRV, callback_group=self._cb)
+
+        srv = lambda t, n, h: self.create_service(t, n, h, callback_group=self._cb)
+        srv(GetArmLibrary, "/lupin/arm/library/list", self._on_list)
+        srv(SaveArmPose, "/lupin/arm/library/save_pose", self._on_save_pose)
+        srv(SetArmPreset, "/lupin/arm/library/goto_pose", self._on_goto_pose)
+        srv(ArmRecord, "/lupin/arm/library/record", self._on_record)
+        srv(PlayArmSequence, "/lupin/arm/library/play", self._on_play)
+        srv(Trigger, "/lupin/arm/library/stop", self._on_stop)
+        srv(ArmLibraryEdit, "/lupin/arm/library/delete", self._on_edit)
+
+        self._play_timer = None
+        self._gripper_timers: List = []
+        self.create_timer(0.2, self._publish_state)
+        self.get_logger().info(
+            f"arm_library_server ready — {path} — limits: {limits_summary()}")
+
+    # ── feedback + state ────────────────────────────────────────────────
+    def _on_joint_states(self, msg: JointState) -> None:
+        self._latest = msg
+        if self._recording is not None:
+            arm = self._extract_arm(msg)
+            grip = self._extract_gripper(msg)
+            if arm is not None:
+                self._recording.add(self._stamp(msg), arm, grip)
+
+    def _stamp(self, msg: JointState) -> float:
+        return msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+
+    def _index_for(self, msg: JointState) -> dict:
+        # /joint_states names are static; rebuild the map only when they change.
+        names = tuple(msg.name)
+        if names != self._idx_names:
+            self._idx_names = names
+            self._idx_map = {n: i for i, n in enumerate(names)}
+        return self._idx_map
+
+    def _extract_arm(self, msg: JointState) -> Optional[List[float]]:
+        idx = self._index_for(msg)
+        try:
+            return [float(msg.position[idx[n]]) for n in ARM_JOINT_NAMES]
+        except (KeyError, IndexError):
+            return None
+
+    def _extract_gripper(self, msg: JointState) -> Optional[float]:
+        idx = self._index_for(msg)
+        i = idx.get(GRIPPER_JOINT_NAME)
+        return float(msg.position[i]) if i is not None and i < len(msg.position) else None
+
+    def _publish_state(self) -> None:
+        now = self.get_clock().now()
+        elapsed = 0.0
+        n = 0
+        if self._recording is not None:
+            n = len(self._recording.waypoints)
+            if self._rec_start_clock is not None:
+                elapsed = (now - self._rec_start_clock).nanoseconds * 1e-9
+        progress = 0.0
+        if self._playing_name and self._play_start_clock is not None and self._play_total_s > 0:
+            progress = min(1.0, (now - self._play_start_clock).nanoseconds * 1e-9 / self._play_total_s)
+        payload = {
+            "recording": self._recording is not None, "playing": bool(self._playing_name),
+            "name": self._playing_name, "mode": self._rec_mode,
+            "progress": progress, "elapsed_s": elapsed, "n_waypoints": n,
+            "torque": self._torque_on,
+        }
+        self._state_pub.publish(String(data=json.dumps(payload)))
+
+    # ── list / save_pose / goto_pose / delete ───────────────────────────
+    def _on_list(self, req, resp):
+        resp.success = True
+        resp.json = json.dumps(self.store.list_metadata())
+        return resp
+
+    def _on_save_pose(self, req, resp):
+        try:
+            if req.from_current:
+                if self._latest is None:
+                    raise ArmLibraryError("no /joint_states yet — cannot snapshot current pose")
+                arm = self._extract_arm(self._latest)
+                grip = self._extract_gripper(self._latest)
+                if arm is None:
+                    raise ArmLibraryError("/joint_states missing arm joints")
+            else:
+                arm = list(req.arm_rad)
+                grip = req.gripper_rad if req.has_gripper else None
+            arm = [clamp_arm_joint(j, v) for j, v in zip(ARM_JOINTS, arm)]
+            self.store.save_pose(req.name, arm, grip, overwrite=req.overwrite, created=_now_iso())
+            resp.success, resp.message = True, f'pose "{req.name}" saved'
+        except ArmLibraryError as e:
+            resp.success, resp.message = False, str(e)
+        return resp
+
+    def _on_goto_pose(self, req, resp):
+        try:
+            pose = self.store.get_pose(req.name)
+        except ArmLibraryError as e:
+            resp.success, resp.message = False, str(e)
+            return resp
+        positions = [clamp_arm_joint(j, v) for j, v in zip(ARM_JOINTS, pose.arm)]
+        self._traj_pub.publish(build_arm_trajectory(ARM_JOINT_NAMES, positions, GOTO_TRAVEL_S))
+        if pose.gripper is not None:
+            self._send_gripper(pose.gripper)
+        resp.success, resp.message = True, f'moving to pose "{req.name}"'
+        return resp
+
+    def _on_edit(self, req, resp):
+        try:
+            if req.new_name:
+                self.store.rename(req.kind, req.name, req.new_name)
+                resp.message = f'{req.kind} "{req.name}" renamed to "{req.new_name}"'
+            else:
+                self.store.delete(req.kind, req.name)
+                resp.message = f'{req.kind} "{req.name}" deleted'
+            resp.success = True
+        except ArmLibraryError as e:
+            resp.success, resp.message = False, str(e)
+        return resp
+
+    # ── record / play / stop are filled in by Tasks 7 & 8 ──────────────
+    def _on_record(self, req, resp):
+        resp.success, resp.message = False, "record not implemented yet"
+        return resp
+
+    def _on_play(self, req, resp):
+        resp.success, resp.message = False, "play not implemented yet"
+        return resp
+
+    def _on_stop(self, req, resp):
+        resp.success, resp.message = True, "idle"
+        return resp
+
+    # ── helpers used by later tasks ─────────────────────────────────────
+    def _send_gripper(self, gripper_rad: float) -> None:
+        if not self._gripper_cli.service_is_ready():
+            self.get_logger().warn("gripper service not ready — skipping gripper command")
+            return
+        req = SetServoAngleWithSpeed.Request()
+        req.angle = float(gripper_rad_to_deg(gripper_rad))
+        req.rate = 45.0
+        req.degrees = True
+        self._gripper_cli.call_async(req)
+
+    def _set_torque(self, enable: bool) -> None:
+        self._torque_on = enable
+        if not self._torque_cli.service_is_ready():
+            self.get_logger().warn("set_torque service not ready")
+            return
+        r = SetBool.Request()
+        r.data = enable
+        self._torque_cli.call_async(r)
+
+
+def main() -> None:
+    rclpy.init()
+    node = ArmLibraryServer()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
