@@ -61,3 +61,32 @@ def test_corrupt_file_is_quarantined(tmp_path):
     assert store.list_metadata() == {"poses": [], "sequences": []}
     quarantined = list(tmp_path.glob("lib.corrupt-*.json"))
     assert len(quarantined) == 1
+
+
+def test_overwrite_guard(tmp_path):
+    store = ArmLibraryStore(tmp_path / "lib.json")
+    store.load()
+    store.save_pose("home", [0, 0, 0, 0], gripper=None, overwrite=False)
+    with pytest.raises(ArmLibraryError):
+        store.save_pose("home", [1, 1, 1, 1], gripper=None, overwrite=False)
+    store.save_pose("home", [1, 1, 1, 1], gripper=None, overwrite=True)
+    assert store.get_pose("home").arm == [1, 1, 1, 1]
+
+
+def test_invalid_name_rejected(tmp_path):
+    store = ArmLibraryStore(tmp_path / "lib.json")
+    store.load()
+    with pytest.raises(ArmLibraryError):
+        store.save_pose("bad name", [0, 0, 0, 0], gripper=None, overwrite=False)
+
+
+def test_delete_and_rename(tmp_path):
+    store = ArmLibraryStore(tmp_path / "lib.json")
+    store.load()
+    store.save_pose("a", [0, 0, 0, 0], gripper=None, overwrite=False)
+    store.rename("pose", "a", "b")
+    assert "b" in store.poses and "a" not in store.poses
+    store.delete("pose", "b")
+    assert store.list_metadata()["poses"] == []
+    with pytest.raises(ArmLibraryError):
+        store.delete("pose", "missing")
