@@ -105,9 +105,14 @@ export function ArmView() {
   } = useEStop()
   const { callService, status: rosStatus } = useRos()
 
-  // Torque is the arm power state. 'unknown' on mount/reconnect — the arm boots
-  // with torque ON (HW-interface `enable` defaults true), so 'unknown' does NOT
-  // block commands; only an explicit Disable does.
+  // Torque is the arm power state AND the slider arming gate. It is 'unknown' on
+  // every mount — including the in-app tab-switch remount (Radix unmounts the
+  // inactive tab). We deliberately do NOT assume the arm is ready: 'unknown'
+  // BLOCKS the sliders + Home until the operator presses Enable (set_torque
+  // {true}). That makes Enable a real arming switch and stops a remount from
+  // silently re-arming a freshly-seeded slider. (Earlier this treated 'unknown'
+  // as live for boot convenience; that let a tab-return command the arm with no
+  // Enable press — the bug this gate closes.)
   const [torque, setTorque] = useState<TorqueState>('unknown')
   const [enableStatus, setEnableStatus] = useState<CallStatus>('idle')
   const [enableError, setEnableError] = useState<string | null>(null)
@@ -119,17 +124,20 @@ export function ArmView() {
   const [rateLocal, setRateLocal] = useState(armRateDegPerSec)
 
   const connBlocked = estopActive || rosStatus !== 'connected'
-  const armDisabled = torque === false
-  // Sliders + Home are gated by connectivity/e-stop AND by an explicitly
-  // disabled arm — commanding a limp arm just queues a no-op that looks live.
+  // Strict arming gate: open ONLY on an explicit Enable. 'unknown' (fresh mount
+  // / tab-return) and 'false' (explicit Disable) both keep the sliders + Home
+  // locked, so commands never reach the arm without a deliberate arming press.
+  const armDisabled = torque !== true
   const controlsBlocked = connBlocked || armDisabled
   const blockReason = estopActive
     ? 'E-stop engaged — arm commands disabled'
     : rosStatus !== 'connected'
       ? 'rosbridge disconnected — arm commands disabled'
-      : armDisabled
-        ? 'arm torque disabled — press Enable to energise'
-        : null
+      : torque === false
+        ? 'arm disabled (limp) — press Enable to energise'
+        : torque !== true
+          ? 'arm controls locked — press Enable to arm'
+          : null
 
   const setTorqueCmd = useCallback(
     async (enable: boolean) => {
@@ -227,8 +235,8 @@ export function ArmView() {
           ) : torque === true ? (
             <span className="tag text-primary">torque on</span>
           ) : (
-            <span className="tag text-muted-foreground" title="The arm boots energised; press Enable/Disable to set a known state.">
-              torque ?
+            <span className="tag text-warning" title="Arm controls are locked until you press Enable to arm.">
+              not armed
             </span>
           )}
         </div>
@@ -378,24 +386,7 @@ function ServoSlider({ spec, jointStatesTopic, rateDegPerSec, disabled }: ServoS
       ? '/lupin/gripper/set_angle_with_speed'
       : `/lupin/arm/${spec.id}/set_angle_with_speed`
 
-  // Readback comes from /joint_states — the SAME source the controllers and the
-  // backend command path use. (Previously this subscribed to the raw vendor
-  // /io/servo/hiwonder/<id>/position topic, a different frame that could read
-  // "—" when the lazy publisher slept even though commands still worked.)
   const jsName = jointStateName(spec.id)
-  const lastMsgRef = useRef(0)
-  const angleRef = useRef<number | null>(null)
-  const jsRef = useTopic<JointState>(jointStatesTopic, ROS_TYPE.JointState, {
-    onMessage: (msg) => {
-      const i = msg.name.indexOf(jsName)
-      if (i >= 0 && i < msg.position.length) {
-        angleRef.current = msg.position[i]
-        lastMsgRef.current = performance.now()
-      }
-    },
-  })
-  void jsRef
-  useThrottledRender(8)
 
   const { callService } = useRos()
 
@@ -403,6 +394,40 @@ function ServoSlider({ spec, jointStatesTopic, rateDegPerSec, disabled }: ServoS
   const [lastSend, setLastSend] = useState<LastSend | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const inFlightRef = useRef(0)
+  // Until the operator grabs the slider, the thumb mirrors the live pose (see
+  // the joint_states handler below). Flipped true on first interaction so a
+  // commanded setpoint is never yanked back to raw feedback.
+  const touchedRef = useRef(false)
+
+  // Readback comes from /joint_states — the SAME source the controllers and the
+  // backend command path use. (Previously this subscribed to the raw vendor
+  // /io/servo/hiwonder/<id>/position topic, a different frame that could read
+  // "—" when the lazy publisher slept even though commands still worked.)
+  const lastMsgRef = useRef(0)
+  const angleRef = useRef<number | null>(null)
+  const jsRef = useTopic<JointState>(jointStatesTopic, ROS_TYPE.JointState, {
+    onMessage: (msg) => {
+      const i = msg.name.indexOf(jsName)
+      if (i >= 0 && i < msg.position.length) {
+        const rad = msg.position[i]
+        angleRef.current = rad
+        lastMsgRef.current = performance.now()
+        // Seed + track the target from live feedback until the operator takes
+        // control. Without this, target is useState(0): on first mount AND
+        // after a tab-switch remount the thumb snaps to 0° while the arm is
+        // elsewhere, so the next touch lurches the arm from a phantom zero.
+        // Clamp into the command window + round to the slider step so feedback
+        // jitter can't fight the operator.
+        if (!touchedRef.current) {
+          const deg = Math.round(jointStateRadToHmiDeg(spec.id, rad))
+          const clamped = Math.max(spec.minDeg, Math.min(spec.maxDeg, deg))
+          setTarget((prev) => (prev === clamped ? prev : clamped))
+        }
+      }
+    },
+  })
+  void jsRef
+  useThrottledRender(8)
 
   const currentRad = angleRef.current
   const currentDeg = currentRad === null ? null : jointStateRadToHmiDeg(spec.id, currentRad)
@@ -451,6 +476,7 @@ function ServoSlider({ spec, jointStatesTopic, rateDegPerSec, disabled }: ServoS
 
   const commit = useCallback(
     (deg: number) => {
+      touchedRef.current = true
       const clamped = Math.max(spec.minDeg, Math.min(spec.maxDeg, deg))
       setTarget(clamped)
       void send(clamped)
@@ -539,7 +565,10 @@ function ServoSlider({ spec, jointStatesTopic, rateDegPerSec, disabled }: ServoS
             max={spec.maxDeg}
             step={1}
             value={[target]}
-            onValueChange={(v) => setTarget(v[0])}
+            onValueChange={(v) => {
+              touchedRef.current = true
+              setTarget(v[0])
+            }}
             onValueCommit={(v) => commit(v[0])}
             disabled={disabled}
             aria-label={`${spec.label} target angle, degrees`}
@@ -570,7 +599,10 @@ function ServoSlider({ spec, jointStatesTopic, rateDegPerSec, disabled }: ServoS
             disabled={disabled}
             onChange={(e) => {
               const v = Number(e.target.value)
-              if (!Number.isNaN(v)) setTarget(v)
+              if (!Number.isNaN(v)) {
+                touchedRef.current = true
+                setTarget(v)
+              }
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commit(target)
