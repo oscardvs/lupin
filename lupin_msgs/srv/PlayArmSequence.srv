@@ -1,0 +1,6 @@
+# Replay a saved sequence. speed scales playback time (clamped [0.25, 2.0]).
+string name
+float64 speed
+---
+bool success
+string message

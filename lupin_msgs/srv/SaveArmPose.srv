@@ -1,0 +1,12 @@
+# Save a named arm pose. from_current=true snapshots the latest /joint_states
+# (the UI/voice default). Otherwise arm_rad (length 4, ARM_JOINTS order) and,
+# if has_gripper, gripper_rad are used. Radians throughout.
+string name
+bool from_current
+float64[] arm_rad
+float64 gripper_rad
+bool has_gripper
+bool overwrite
+---
+bool success
+string message

@@ -1,0 +1,7 @@
+# List saved poses + sequences (names + light metadata only, NOT waypoints).
+# Response `json` is a JSON object:
+#   {"poses":[{"name","note","has_gripper"}],
+#    "sequences":[{"name","mode","duration_s","n_waypoints","include_gripper"}]}
+---
+bool success
+string json

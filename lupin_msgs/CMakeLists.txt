@@ -31,6 +31,11 @@ set(srv_files
   "srv/GetField.srv"
   "srv/ConfirmTag.srv"
   "srv/CalibrateArm.srv"
+  "srv/GetArmLibrary.srv"
+  "srv/SaveArmPose.srv"
+  "srv/ArmRecord.srv"
+  "srv/PlayArmSequence.srv"
+  "srv/ArmLibraryEdit.srv"
 )
 set(action_files
 )

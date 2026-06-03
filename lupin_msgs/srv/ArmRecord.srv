@@ -1,0 +1,12 @@
+# Control a sequence recording. action: "start" | "save" | "cancel".
+# mode (start only): "kinesthetic" (torque OFF) | "teleop" (torque ON).
+string action
+string name
+string mode
+bool include_gripper
+bool overwrite
+---
+bool success
+string message
+float64 duration_s
+int32 n_waypoints

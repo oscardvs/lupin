@@ -1,0 +1,8 @@
+# Delete or rename a library entry. kind: "pose" | "sequence".
+# new_name empty => delete; non-empty => rename.
+string kind
+string name
+string new_name
+---
+bool success
+string message
