@@ -25,3 +25,15 @@ float32 confidence
 # on the flower path (not AnomalyReport) because it's keyed by the same
 # tag_id the twin merges on; standalone anomalies still use KIND_ANOMALY.
 bool anomaly
+
+# ─── Localized blooms + box footprint (v2 redesign) ──────────────────────
+# The aggregator places each detected bloom inside the planter box via
+# tag-anchored geometry (box_geometry.py) + a lateral cue (arm pan +
+# detection image-x). `pose` above stays the TAG anchor; these carry the
+# actual per-bloom map positions so the HMI stops stacking dots on the tag.
+FlowerPoint[] flowers
+
+# The planter box interior as a 4-corner polygon in the map frame
+# (front-left, front-right, back-right, back-left). Empty when the tag
+# orientation was too degenerate to derive a box.
+geometry_msgs/Polygon box_footprint

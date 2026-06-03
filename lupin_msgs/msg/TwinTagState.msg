@@ -52,3 +52,10 @@ float32 species_confidence
 # True when the YOLO "bug" anomaly class was seen at this tag. Latest-wins,
 # so it clears on the next clean monitoring pass.
 bool anomaly
+
+# ─── Localized blooms + box footprint (v2 redesign) ──────────────────────
+# Mirrors FlowerObservation: per-bloom map positions inside the box, plus the
+# box interior polygon. Latest-wins per monitoring sweep. Empty until a flower
+# scan has localized blooms for this tag.
+FlowerPoint[] flowers
+geometry_msgs/Polygon box_footprint

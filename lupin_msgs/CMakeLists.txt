@@ -15,6 +15,7 @@ find_package(builtin_interfaces REQUIRED)
 set(msg_files
   "msg/SensorReading.msg"
   "msg/TagReading.msg"
+  "msg/FlowerPoint.msg"
   "msg/FlowerObservation.msg"
   "msg/AnomalyReport.msg"
   "msg/Observation.msg"
