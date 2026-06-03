@@ -19,9 +19,29 @@ set -e
 ROBOT="${ROBOT:-mirte@192.168.42.1}"
 
 echo "=== sync clock laptop → robot ==="
-LAPTOP_UTC=$(date -u +%s)
-ssh "$ROBOT" "sudo date -s @$LAPTOP_UTC" >/dev/null
-echo "  set to $(date -u -d @$LAPTOP_UTC)"
+# CRITICAL: `date -s` on a LIVE ros2_control stack wedges the controllers. The
+# step leaves stale FastDDS SHM (/dev/shm/fastrtps_*) that survives a plain
+# `systemctl restart` and jams the new controller_manager (load/list service
+# timeouts -> activation spawner SIGSEGV `exit code -11` -> controller_state
+# silent -> wheels dead). See project_robot_clock_skew + lupin-fastdds-shm-
+# contention. So only step the clock with the stack STOPPED, and only when the
+# drift is real; for small drift leave the stack running (no gratuitous restart
+# when this script is re-run mid-session as a health check).
+ROBOT_UTC=$(ssh "$ROBOT" 'date -u +%s')
+DRIFT=$(( $(date -u +%s) - ROBOT_UTC )); DRIFT=${DRIFT#-}
+echo "  drift before sync: ${DRIFT}s"
+if [ "$DRIFT" -le 3 ]; then
+  echo "  within 3s -> no clock step needed (ros2_control left running)"
+else
+  echo "  stepping ${DRIFT}s with ros2_control STOPPED (avoids the live-stack wedge)..."
+  ssh "$ROBOT" "sudo systemctl stop lupin-onboard lupin-cameras mirte-ros \
+    && sudo date -s @$(date -u +%s) \
+    && sudo rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* \
+    && sudo systemctl start mirte-ros"
+  echo "  set to $(date -u)  -- waiting 25s for controllers to re-activate..."
+  sleep 25
+  ssh "$ROBOT" "sudo systemctl start lupin-onboard lupin-cameras"
+fi
 
 sleep 1
 LAPTOP=$(date +%s) ; ROBOT_T=$(ssh "$ROBOT" 'date +%s')

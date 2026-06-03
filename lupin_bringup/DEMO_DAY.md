@@ -143,7 +143,17 @@ ssh mirte@192.168.42.1 sudo systemctl restart mirte-ros.service
 ~/.config/lupin/post-boot-sync.sh   # re-verifies + re-triggers auto-home
 ```
 
-If the restart still leaves controllers stuck, power-cycle the robot (off → 15 s → on) — that clears any ros2_control wedge cleanly.
+If the restart still leaves controllers stuck/`inactive` (or the wheels are dead), the wedge is almost always stale FastDDS SHM from a `date -s` clock step on a live stack. Clear it **reboot-free** (a plain restart does NOT clear it):
+
+```bash
+ssh lupin 'sudo systemctl stop lupin-onboard lupin-cameras mirte-ros && sleep 3 \
+  && sudo rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* && sudo systemctl start mirte-ros'
+sleep 25
+ssh lupin 'sudo systemctl start lupin-onboard lupin-cameras'
+~/.config/lupin/post-boot-sync.sh
+```
+
+A power-cycle is **not** the fix here — it *recurs* (dead RTC → cold boot on the wrong clock → `date -s` re-wedges after `mirte-ros` is live). See `project_robot_clock_skew`.
 
 The "controllers (should show 5 active)" line at the end of `post-boot-sync.sh` sometimes fails with `rcl node's context is invalid` — that's a `ros2 control` CLI bug, not a real failure. The state to trust is what `ros2 control list_controllers` reports directly.
 
@@ -474,15 +484,22 @@ The rows below need T7's **full** perception stack (`perception_stack.launch.py`
 # Ctrl-C every laptop terminal.
 pkill -9 -f 'ros2|rviz2|rosbridge|slam_toolbox|twin_node|tag_annotator|web_video_server' 2>/dev/null
 ros2 daemon stop; pkill -9 -f ros2cli; rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_*
-ssh lupin 'sudo systemctl restart mirte-ros lupin-onboard lupin-cameras'
-sleep 30
+# Robot: stop -> wipe stale SHM -> start. A plain `restart` does NOT clear a
+# clock-step / SHM wedge — wipe /dev/shm/fastrtps_* with the stack down.
+ssh lupin 'sudo systemctl stop lupin-onboard lupin-cameras mirte-ros && sleep 3 \
+  && sudo rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* && sudo systemctl start mirte-ros'
+sleep 25
+ssh lupin 'sudo systemctl start lupin-onboard lupin-cameras'
 ~/.config/lupin/post-boot-sync.sh
 # Then redo step 3 onwards.
 ```
 
-If `mirte-ros.service` *restart* leaves controllers fragile (per
-[`feedback_mirte_apt_then_powercycle`] / [`project_robot_clock_skew`]): power-cycle the robot
-(off → 15 s → on) and restart from step 0.
+If the SHM-wipe restart above still leaves controllers fragile (per
+[`feedback_mirte_apt_then_powercycle`] / [`project_robot_clock_skew`]): a power-cycle is the
+last resort — but on this robot it *recurs* (dead RTC → cold boot on the wrong
+clock → `date -s` re-wedges after `mirte-ros` is live). If you must, let
+`post-boot-sync.sh` (which now steps the clock with the stack stopped) bring it
+back. The durable fix is clock-before-`mirte-ros` ordering.
 
 ---
 

@@ -91,6 +91,10 @@ session, which is fine on a cable. **Better fix that keeps the AP as a fallback,
 but NOT yet implemented:** pin the robot's FastDDS to `eth0` via an
 `interfaceWhiteList` so the AP can stay up without poisoning DDS — see §6.
 
+> **Going back to the AP later?** This whole §A.3 is reversible — see
+> `DEMO_DAY_WIRED_REVERT.md` (re-enable `mirte-ap` + reboot, pull the cable,
+> repoint the laptop DDS at `192.168.42.1`).
+
 That's the entire robot-side delta. `MIRTE_FASTDDS=true` is already set on
 Mirte-247264. The discovery server is *supposed* to come up at boot, but the
 vendor's start is a fire-and-forget one-shot that can lose a cold-boot race and
@@ -272,26 +276,41 @@ fast-discovery-server` (process-name match) or kill by PID. This manual server
 fix: a `lupin-discovery-server.service` (designed, not yet installed).
 
 The clock sync matters: the Orange Pi has no RTC and over a direct cable there's
-no NTP, so it boots with whatever clock it had at shutdown. `post-boot-sync.sh`
-does a one-shot `date -s` laptop→robot over SSH, then re-triggers
+no NTP, so it boots with whatever clock it had at shutdown. **`post-boot-sync.sh`
+now sets the clock with `mirte-ros` STOPPED** (only when drift > 3 s), wipes stale
+SHM, then restarts the stack — because `date -s` on a *live* ros2_control stack
+wedges the controllers (see the warning below). It then re-triggers
 `lupin-auto-home` (heals any stuck controllers + parks the arm at `home`).
 
 **If `lupin-auto-home` shows `failed`/`activating` > 90 s**, or controllers are
-stuck `unconfigured`:
+stuck `unconfigured`/`inactive`, or the wheels are dead (confirm with the drive
+smoke-test in §5):
 
 ```bash
-ssh lupin-wired sudo systemctl restart mirte-ros.service
+# Reboot-free recovery: stop the robot stack, wipe stale FastDDS SHM, restart
+# with the clock already stable. A plain `systemctl restart` does NOT clear it.
+ssh lupin-wired 'sudo systemctl stop lupin-onboard lupin-cameras mirte-ros && sleep 3 \
+  && sudo rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* \
+  && sudo systemctl start mirte-ros'
 sleep 25
+ssh lupin-wired 'sudo systemctl start lupin-onboard lupin-cameras'
 ROBOT=mirte@10.42.0.1 ~/.config/lupin/post-boot-sync.sh   # re-verify + re-trigger auto-home
 ```
 
-If still stuck, power-cycle the robot (off → 15 s → on) — clears any ros2_control
-wedge cleanly. (The `controllers (should show 5 active)` line sometimes ends with
-`rcl node's context is invalid` — that's a `ros2 control` CLI bug, not a real
-failure; trust `ros2 control list_controllers`.)
+(The `controllers (should show 5 active)` line sometimes ends with `rcl node's
+context is invalid` — that's a `ros2 control` CLI bug, not a real failure; trust
+`ros2 control list_controllers`.)
 
-> **Never `date -s` on a live stack** and never `systemctl restart` right after a
-> robot `apt upgrade` — both wedge ros2_control and only a power-cycle clears it.
+> **Never `date -s` on a live stack.** It wedges ros2_control by leaving stale
+> FastDDS SHM (`/dev/shm/fastrtps_*`) that a plain `systemctl restart` can't clear
+> — symptom: controllers go `configured` but the activation spawner dies with
+> `exit code -11`, `controller_state` goes silent, wheels dead (but `ros2 node
+> info` still shows the publisher, so it looks alive). **The cure is the reboot-
+> free SHM wipe above, NOT a power-cycle.** A power-cycle is *worse* here: the dead
+> RTC means a cold boot comes up on the wrong clock, something `date -s`-corrects
+> it after `mirte-ros` is already live, and it re-wedges. (Burned hours on
+> 2026-06-03; root cause confirmed — see `project_robot_clock_skew`.) Same with
+> `systemctl restart` right after a robot `apt upgrade` — wipe SHM + restart first.
 
 ---
 
@@ -552,6 +571,24 @@ essentials:
 Mission rows (need T7 full stack + T9): **Flower→map**, **Pest→map**,
 **explore→monitor**, **Voice drive** — see `DEMO_DAY.md §5`.
 
+**Isolate the base controller (Xbox/HMI won't drive and you don't know why).**
+Publish a slow Twist *straight to the controller* — bypasses twist_mux, the HMI,
+and the e-stop, so wheels-move means the controller + PID + telemetrix + wheels
+are all healthy and the fault is upstream. Run it **robot-local** (`ros2 topic
+echo`/`pub` from the laptop over the discovery server is flaky). Robot on blocks
+or floor clear; `Ctrl-C` to stop:
+
+```bash
+ssh lupin-wired
+ros2 topic pub -r 20 /mirte_base_controller/cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.10}, angular: {z: 0.0}}"
+# mecanum: linear.y strafes, angular.z rotates. Rate must be >=4 Hz — the
+# controller's command_timeout is 0.25 s, so a one-shot/slow pub just stops.
+```
+
+Wheels spin → base stack healthy (chase the HMI/Xbox/twist_mux/e-stop path).
+Wheels dead → controller wedged → §1 reboot-free recovery (stop → wipe SHM → start).
+
 ---
 
 ## 6. Known quirks (so you don't panic mid-demo)
@@ -603,20 +640,25 @@ Mission rows (need T7 full stack + T9): **Flower→map**, **Pest→map**,
 ## 7. Emergency reset (when in doubt)
 
 ```bash
-# Ctrl-C every laptop terminal, then:
+# Ctrl-C every laptop terminal, then wipe laptop SHM:
 pkill -9 -f 'ros2|rviz2|rosbridge|slam_toolbox|twin_node|tag_annotator|web_video_server' 2>/dev/null
 ros2 daemon stop; pkill -9 -f ros2cli; rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_*
-ssh lupin-wired 'sudo systemctl restart mirte-ros lupin-onboard lupin-cameras'
-sleep 30
+# Robot: stop -> wipe stale SHM -> start. A plain `restart` does NOT clear a
+# clock-step wedge; you must wipe /dev/shm/fastrtps_* with the stack down.
+ssh lupin-wired 'sudo systemctl stop lupin-onboard lupin-cameras mirte-ros && sleep 3 \
+  && sudo rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* && sudo systemctl start mirte-ros'
+sleep 25
+ssh lupin-wired 'sudo systemctl start lupin-onboard lupin-cameras'
 ROBOT=mirte@10.42.0.1 ~/.config/lupin/post-boot-sync.sh
 # Then redo §3 onward.
 ```
 
 Link itself looks dead? `ping 10.42.0.1` — if it fails, it's the cable/adapter or
 the §A static IP, not ROS. Reseat the cable, `nmcli con up lupin-wired` on the
-laptop, confirm the robot's `eth0` still shows `10.42.0.1/24`. If a service
-restart leaves controllers fragile, power-cycle the robot (off → 15 s → on) and
-restart from §0.
+laptop, confirm the robot's `eth0` still shows `10.42.0.1/24`. The SHM-wipe restart
+above is the cure for a wedged controller_manager — a power-cycle is a last resort
+and *recurs* on this robot (dead RTC re-creates the clock-step wedge), so prefer
+the wipe + restart and keep the clock stable after.
 
 ---
 
@@ -632,3 +674,4 @@ restart from §0.
 - **DDS env (laptop):** `~/.config/lupin/ros-env.sh` (`setup-laptop-dds-env.sh 10.42.0.1`)
 - **Clock + health:** `ROBOT=mirte@10.42.0.1 ~/.config/lupin/post-boot-sync.sh`
 - **Cableless (AP) guide:** `DEMO_DAY.md` · **Sim guide:** `DEMO_DAY_SIM.md`
+- **Revert wired → AP:** `DEMO_DAY_WIRED_REVERT.md`
