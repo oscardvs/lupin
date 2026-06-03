@@ -90,3 +90,39 @@ def test_delete_and_rename(tmp_path):
     assert store.list_metadata()["poses"] == []
     with pytest.raises(ArmLibraryError):
         store.delete("pose", "missing")
+
+
+from lupin_hmi.arm_library import RecordingBuffer, should_capture, CAPTURE_MIN_DELTA_RAD
+
+
+def test_should_capture_time_and_motion_gate():
+    base = [0.0, 0.0, 0.0, 0.0]
+    moved = [0.0, 0.0, 0.0, CAPTURE_MIN_DELTA_RAD * 2]
+    # too soon, even if moved
+    assert should_capture(base, moved, dt=0.01) is False
+    # enough time but no motion
+    assert should_capture(base, base, dt=1.0) is False
+    # enough time and motion
+    assert should_capture(base, moved, dt=1.0) is True
+
+
+def test_recording_buffer_gates_and_finalizes():
+    buf = RecordingBuffer(mode="teleop", include_gripper=True)
+    buf.add(0.0, [0, 0, 0, 0], gripper=-0.2)            # first always kept
+    buf.add(0.01, [0, 0, 0, 0], gripper=-0.2)           # too soon -> dropped
+    buf.add(1.0, [0, 0, 0, 0.5], gripper=-0.2)          # kept (moved)
+    seq = buf.finalize(end_t=1.2)                        # final sample appended
+    assert seq.mode == "teleop"
+    assert len(seq.waypoints) == 3
+    assert seq.waypoints[0].t == 0.0
+    assert seq.duration_s == pytest.approx(1.2)
+
+
+def test_recording_buffer_caps_waypoints():
+    buf = RecordingBuffer(mode="teleop", include_gripper=False)
+    t = 0.0
+    for i in range(2000):
+        t += 0.06
+        buf.add(t, [0, 0, 0, i * 0.05], gripper=None)
+    assert buf.truncated is True
+    assert len(buf.waypoints) <= 800

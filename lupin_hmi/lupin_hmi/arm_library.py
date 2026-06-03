@@ -224,3 +224,49 @@ class ArmLibraryStore:
                 for n, s in sorted(self._sequences.items())
             ],
         }
+
+
+def should_capture(prev_arm: List[float], cur_arm: List[float], dt: float) -> bool:
+    """True when enough time has passed AND a joint moved past the gate."""
+    if dt < CAPTURE_MIN_DT_S:
+        return False
+    return any(abs(c - p) >= CAPTURE_MIN_DELTA_RAD for c, p in zip(cur_arm, prev_arm))
+
+
+class RecordingBuffer:
+    """Accumulates time-gated waypoints during a recording. Pure / no ROS."""
+
+    def __init__(self, mode: str, include_gripper: bool) -> None:
+        self.mode = mode
+        self.include_gripper = include_gripper
+        self.waypoints: List[Waypoint] = []
+        self.truncated = False
+        self._t0: Optional[float] = None
+        self._last_arm: Optional[List[float]] = None
+        self._last_t: float = 0.0
+
+    def add(self, t: float, arm: List[float], gripper: Optional[float]) -> bool:
+        if self._t0 is None:
+            self._t0 = t
+        rel = t - self._t0
+        keep = not self.waypoints or should_capture(self._last_arm or arm, arm, rel - self._last_t)
+        if not keep:
+            return False
+        if len(self.waypoints) >= MAX_WAYPOINTS:
+            self.truncated = True
+            return False
+        self.waypoints.append(Waypoint(t=rel, arm=[float(x) for x in arm],
+                                       gripper=(gripper if self.include_gripper else None)))
+        self._last_arm = list(arm)
+        self._last_t = rel
+        return True
+
+    def finalize(self, end_t: float, created: str = "", note: str = "") -> Sequence:
+        rel_end = (end_t - self._t0) if self._t0 is not None else 0.0
+        rel_end = min(rel_end, MAX_SEQUENCE_S)
+        if self.waypoints and self.waypoints[-1].t < rel_end and self._last_arm is not None:
+            self.waypoints.append(Waypoint(t=rel_end, arm=list(self._last_arm),
+                                           gripper=self.waypoints[-1].gripper))
+        return Sequence(mode=self.mode, include_gripper=self.include_gripper,
+                        duration_s=rel_end, waypoints=list(self.waypoints),
+                        created=created, note=note)
