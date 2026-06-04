@@ -14,6 +14,9 @@ string tag_id
 geometry_msgs/Pose pose_in_map
 
 # YOLO dominant flower class co-located with this tag, or "" if none yet.
+# CONTRACTS: species + anomaly (below) are producer-set but consumer-unread for
+# logic — only mirrored into TwinTagState for HMI display, never used for
+# routing/filtering. See docs/CONTRACTS.md (#2).
 string species
 
 # Confidence [0, 1] for `species`. 0.0 when species is empty.

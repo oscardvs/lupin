@@ -650,16 +650,21 @@ class MissionOrchestratorNode(Node):
             initial=spec["initial"],
             send_event=True,
             queued=True,
-            # A stale trigger from an async ROS callback must NO-OP, not raise.
-            # The node is driven by concurrent Nav2/bridge/scan callbacks; the
-            # per-callback entry guards (e.g. _on_scan_response, line ~2069)
-            # catch most stale fires, but under queued=True a trigger that was
-            # valid when enqueued (scan_done from SCANNING) can be drained AFTER
-            # a concurrently-enqueued abort_to_return/battery divert has moved us
-            # to RETURNING. With ignore=False that raised MachineError inside the
-            # executor thread and wedged the spin loop (mission stuck in
-            # RETURNING, never docking). True makes the stale trigger a graceful
-            # no-op — the entry guards remain as defence-in-depth.
+            # A stale trigger must NO-OP, not raise. The executor is
+            # single-threaded (MutuallyExclusiveCallbackGroup) so triggers never
+            # fire concurrently; the staleness comes from queued=True. Under
+            # queued=True a trigger fired from inside a transition callback is
+            # not run re-entrantly — it is appended to a queue and drained after
+            # the current transition finishes. So a trigger that was valid when
+            # enqueued (e.g. scan_done from SCANNING) can be drained AFTER an
+            # earlier-queued abort_to_return / battery divert has already moved
+            # us to RETURNING. The invariant we rely on: the divert trigger must
+            # be enqueued before the loop trigger (next_tag / scan_done), so the
+            # loop trigger drains against the post-divert state and is the one
+            # that no-ops. With ignore=False that stale drain raised MachineError
+            # in the spin loop and wedged the mission (stuck in RETURNING, never
+            # docking); True makes it a graceful no-op. The per-callback entry
+            # guards (e.g. _on_scan_response) remain as defence-in-depth.
             ignore_invalid_triggers=True,
             after_state_change="_log_transition",
         )

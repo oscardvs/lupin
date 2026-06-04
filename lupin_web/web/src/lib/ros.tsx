@@ -223,6 +223,12 @@ export function RosProvider({ children }: { children: ReactNode }) {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let pingTimer: ReturnType<typeof setInterval> | null = null
 
+    // CONTRACTS: roslib.js exposes no QoS API, so every subscription here is
+    // effectively VOLATILE while several Lupin publishers are TRANSIENT_LOCAL
+    // (latched): /twin/state, /mission/state, /perception/discovered_tags,
+    // /tf_static. Benign — the state topics also republish at ~1 Hz so the HMI
+    // fills within a cycle; just don't rely on the single latched backlog
+    // sample at connect. See docs/CONTRACTS.md (#3).
     const setupSubscriptionsFor = (ros: ROSLIB.Ros) => {
       subsRef.current.forEach((sub) => {
         sub.topic = new ROSLIB.Topic({
