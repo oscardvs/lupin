@@ -14,6 +14,7 @@ recovery — operator must call /mission/resume, same as E-stop.
 
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional
 
 from rclpy.callback_groups import CallbackGroup
@@ -21,6 +22,26 @@ from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 
 from sensor_msgs.msg import BatteryState
+
+
+def normalize_battery_percentage(raw) -> Optional[float]:
+    """Coerce a BatteryState.percentage into a 0..1 fraction, or None if unusable.
+
+    sensor_msgs/BatteryState.percentage is spec'd 0..1, but some MIRTE power
+    watchers publish 0..100, and others emit NaN when only voltage is known.
+    A raw ``< threshold`` compare would then either never fire (0..100 / NaN
+    always >= 0.20) and silently disable the battery-low → dock safety net.
+    Reject NaN/inf/negative (keep the last known state) and rescale 0..100.
+    """
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(v) or v < 0.0:
+        return None
+    if v > 1.0:
+        v = v / 100.0
+    return min(v, 1.0)
 
 
 class BatteryMonitor:
@@ -85,5 +106,10 @@ class BatteryMonitor:
                 self._on_recovered()
 
     def _on_battery_msg(self, msg: BatteryState) -> None:
-        self._percentage = float(msg.percentage)
+        pct = normalize_battery_percentage(msg.percentage)
+        if pct is None:
+            # Unusable reading (NaN/inf/negative) — keep the last known state
+            # rather than letting junk flip the low/recovered edge.
+            return
+        self._percentage = pct
         self._evaluate()

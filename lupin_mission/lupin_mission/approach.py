@@ -166,6 +166,33 @@ def compute_approach(
     # the outward normal.
     geom_x = tag_x + nx * standoff_used
     geom_y = tag_y + ny * standoff_used
+
+    # Footprint guard: the centre→tag heuristic can overshoot across an aisle so
+    # the goal lands inside the *next* table (a lethal/occupied cell Nav2 will
+    # reject, or worse). Pull the standoff back along the same outward normal
+    # until the goal is clear of every table; if nothing along the normal is
+    # clear, fall back loudly so the operator adds an override.
+    if _point_in_any_table(geom_x, geom_y, tables):
+        s = standoff_used
+        clear = None
+        while s >= MIN_STANDOFF_M:
+            cx2, cy2 = tag_x + nx * s, tag_y + ny * s
+            if not _point_in_any_table(cx2, cy2, tables):
+                clear = (cx2, cy2, s)
+                break
+            s -= 0.1
+        if clear is not None:
+            geom_x, geom_y, standoff_used = clear
+        else:
+            return TagApproach(
+                tag_id=tag_id,
+                goal_x=tag_x,
+                goal_y=tag_y,
+                goal_yaw=float(override.get('yaw', fallback_yaw)),
+                standoff_m=0.0,
+                derived_from='fallback',
+                table_id=table_id,
+            )
     geom_yaw = math.atan2(tag_y - geom_y, tag_x - geom_x)
 
     # Partial overrides merge field-by-field.
@@ -315,6 +342,20 @@ def _clamp_standoff(s: float) -> float:
     if not math.isfinite(s):
         return MIN_STANDOFF_M
     return max(MIN_STANDOFF_M, min(MAX_STANDOFF_M, s))
+
+
+def _point_in_any_table(x: float, y: float, tables: Mapping[str, Mapping]) -> bool:
+    """True if (x, y) lies inside any table's bbox. Used to keep a computed
+    approach goal off the plant beds."""
+    for t in tables.values():
+        try:
+            x0, x1 = float(t['x0']), float(t['x1'])
+            y0, y1 = float(t['y0']), float(t['y1'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if min(x0, x1) <= x <= max(x0, x1) and min(y0, y1) <= y <= max(y0, y1):
+            return True
+    return False
 
 
 def _nearest_table(

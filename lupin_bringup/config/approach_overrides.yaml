@@ -1,9 +1,11 @@
 # Per-tag approach-pose overrides for the mission orchestrator.
 #
 # By default the orchestrator computes each NavigateToPose goal from table
-# geometry — the robot parks `approach_standoff_m` outside the tag's nearest
-# table edge, facing the tag. That works for the simulator's regular layout
-# and is the sane default for hardware too.
+# geometry — the robot parks `approach_standoff_m` outward along the vector from
+# the nearest table's CENTRE to the tag (not a true nearest-edge normal), facing
+# the tag; a footprint guard pulls the standoff back if the goal would land in a
+# table. That works for the simulator's regular layout and is the sane default
+# for hardware too.
 #
 # Use this file to override the result for any tag where geometry doesn't
 # capture reality — a leaf-blocked tag that needs a tighter standoff, a tag

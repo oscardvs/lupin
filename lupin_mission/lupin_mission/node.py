@@ -500,8 +500,10 @@ class MissionOrchestratorNode(Node):
         # Loaded once on startup; the bridge uses string IDs.
         tag_file = str(self.get_parameter("tag_locations_file").value or "")
         self._tag_locations: dict = load_default_tag_locations(tag_file or None)
-        # Tables drive per-tag approach-pose geometry (the robot parks on the
-        # outside of the nearest table edge). Loaded from the same JSON.
+        # Tables drive per-tag approach-pose geometry: the robot parks standoff
+        # metres outward along the vector from the nearest table's CENTRE to the
+        # tag (not a true nearest-edge normal), facing the tag, with a footprint
+        # guard so the goal can't land inside a table. Loaded from the same JSON.
         self._table_locations: dict = load_default_tables(tag_file or None)
         if tag_file:
             self.get_logger().info(

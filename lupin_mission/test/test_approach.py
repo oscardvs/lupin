@@ -288,3 +288,22 @@ def test_returned_object_is_immutable():
     assert isinstance(out, TagApproach)
     with pytest.raises(Exception):
         out.goal_x = 0.0  # type: ignore[misc]
+
+
+# ── footprint guard ─────────────────────────────────────────────────────────
+
+
+def test_geometry_goal_never_lands_inside_a_table():
+    # Tag near table A's top edge; the naive centre-outward goal at 0.8 m would
+    # overshoot to (1.0, 2.6) — inside table B across the aisle. The result must
+    # not sit inside any table footprint (standoff pulled back, else fallback).
+    tags = {'6': {'x': 1.0, 'y': 1.8}}
+    tables = {
+        'A': {'x0': 0.0, 'y0': 0.0, 'x1': 2.0, 'y1': 2.0},
+        'B': {'x0': 0.0, 'y0': 2.5, 'x1': 2.0, 'y1': 4.5},
+    }
+    out = compute_approach('6', tags, tables, standoff_m=0.8, fallback_yaw=0.0)
+    for tid, t in tables.items():
+        inside = (t['x0'] <= out.goal_x <= t['x1']
+                  and t['y0'] <= out.goal_y <= t['y1'])
+        assert not inside, f'goal ({out.goal_x:.2f},{out.goal_y:.2f}) inside {tid}'
