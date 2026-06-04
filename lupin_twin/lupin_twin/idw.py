@@ -167,7 +167,7 @@ def compute_idw_field(
     else:
         explored = None
 
-    inv_p = float(power)
+    power_exp = float(power)  # IDW exponent p in w = 1 / d**p (the 1/ is below)
     falloff_sq = falloff_radius_m * falloff_radius_m
     max_dist_sq = max_distance_m * max_distance_m
 
@@ -216,7 +216,7 @@ def compute_idw_field(
                 if d_sq > falloff_sq:
                     continue
                 d = math.sqrt(d_sq)
-                w = 1.0 / (d ** inv_p)
+                w = 1.0 / (d ** power_exp)
                 num += w * s.value
                 den += w
             if den <= 0:

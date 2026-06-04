@@ -297,6 +297,7 @@ class PerceptionAggregator(Node):
 
         now_mono = self._monotonic()
         frame: list[tuple[str, float]] = []
+        localized = 0
         for det in detections:
             try:
                 tag_id = str(int(det['id']))
@@ -313,6 +314,18 @@ class PerceptionAggregator(Node):
             if pose is None:
                 continue
             self._record_tag(tag_id, pose, dist, now_mono)
+            localized += 1
+        # Silent demo-killer guard: tags are being seen but none can be put on
+        # the map (missing camera intrinsics / map->camera TF), so
+        # /perception/discovered_tags stays empty and exploration never reaches
+        # its goal — surface the cause instead of an opaque exploration_timeout.
+        if frame and localized == 0:
+            self.get_logger().warn(
+                'AprilTag(s) detected but none map-localisable (no TF) — check '
+                'camera_info/intrinsics and the map->camera TF; discovered_tags '
+                'will stay empty.',
+                throttle_duration_sec=5.0,
+            )
         self._last_frame = frame
 
     def _on_joint_states(self, msg: JointState) -> None:
@@ -448,11 +461,13 @@ class PerceptionAggregator(Node):
             self._scan_dets.clear()
         self._scan_dets.extend(frame_dets)
 
-        # Dominant tulip species (best confidence over the window) + bug flag,
-        # for the summary fields (unchanged contract).
+        # Dominant tulip species (best confidence) + bug flag for the summary.
+        # Derive from the per-scan, tag-scoped accumulator (reset on tag change)
+        # rather than the shared time window, so a 'bug' or species seen at the
+        # previous pot can't bleed into this pot's summary within yolo_window_s.
         best_species, best_conf = '', 0.0
         anomaly = False
-        for _, name, conf in self._yolo_window:
+        for _, name, conf in self._scan_dets:
             if name == self._anomaly_name:
                 anomaly = True
                 continue
@@ -507,9 +522,10 @@ class PerceptionAggregator(Node):
         flower.anomaly = rec.anomaly
 
         # Located blooms. Degenerate tag normal (geom is None) -> fall back to
-        # a single bloom at the tag so a classified tag still shows a dot.
+        # a single point at the tag so a classified OR pest-flagged tag still
+        # shows a dot (previously a bug-only degenerate tag emitted no point).
         placed = list(flowers)
-        if not placed and rec.species:
+        if not placed and (rec.species or rec.anomaly):
             placed = [FlowerPointData(
                 x=rec.pose.position.x, y=rec.pose.position.y,
                 species=rec.species, confidence=rec.species_confidence,

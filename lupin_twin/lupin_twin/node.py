@@ -222,7 +222,15 @@ class TwinNode(Node):
             return
         if msg.kind != Observation.KIND_TAG_READING:
             # KIND_ANOMALY (standalone anomalies) isn't modelled in the twin
-            # yet — the bug flag rides the flower path. Silently drop.
+            # yet — the bug flag rides the flower path. Drop it, but loudly the
+            # first time so a future producer that wires KIND_ANOMALY upstream
+            # sees why its observations vanish instead of debugging a silent
+            # dead end (mirrors the frame-mismatch handling below).
+            self.get_logger().warn(
+                f'Dropping Observation of unmodelled kind {msg.kind} '
+                '(twin ingests only KIND_TAG_READING / KIND_FLOWER).',
+                throttle_duration_sec=30.0,
+            )
             return
 
         # Frame check — a silently-mismatched frame_id on hardware (the

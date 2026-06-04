@@ -167,6 +167,12 @@ class LightStripBridge(Node):
         safety = self._safety_rgb(msg)
         if safety is not None:
             return safety
+        # A plain operator pause is shown even under a manual hold — a frozen
+        # robot must be legible across the room; only e-stop/FAULT (safety)
+        # outrank it. (Was only surfaced inside _state_to_rgb, unreachable in
+        # manual mode.)
+        if msg.paused:
+            return AMBER
         if self._mode == 'manual' and self._manual_rgb is not None:
             return self._manual_rgb
         return self._state_to_rgb(msg)
@@ -294,6 +300,10 @@ class LightStripBridge(Node):
                 f'auto: {self._describe_state(self._last_msg)}'
             )
         else:
+            # No state yet to derive a colour from — clear the held manual
+            # colour to OFF (mirrors startup) so the strip doesn't keep showing
+            # the manual colour while the HMI claims it's following mission state.
+            self._send_color(OFF, reason='auto: awaiting /mission/state')
             response.message = 'auto: awaiting /mission/state'
         response.success = True
         return response
