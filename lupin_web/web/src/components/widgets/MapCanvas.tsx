@@ -15,7 +15,7 @@ import { tagHealthState } from '@/lib/tulip-health'
 import { useMapPose, useTopic, usePublisher, useService } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useAnimationLoop, useThrottledRender } from '@/lib/throttle'
-import { tagHasPose, useTwinField, useTwinState } from '@/lib/twin'
+import { tagAgeSeconds, tagHasPose, useTwinField, useTwinState } from '@/lib/twin'
 import { onPulseTag } from '@/lib/twin-events'
 import { cn } from '@/lib/utils'
 import {
@@ -52,9 +52,13 @@ export function MapCanvas() {
   })
 
   // Twin live snapshot — pin positions + readings + staleness.
-  const twin = useTwinState()
+  const { state: twin, stale: twinStale } = useTwinState()
   const tagsRef = useRef<TwinTagState[]>([])
   tagsRef.current = twin?.tags ?? []
+  // Read inside the rAF draw loop: when the twin wedges, pins desaturate so a
+  // frozen frame never reads as live.
+  const twinStaleRef = useRef(false)
+  twinStaleRef.current = twinStale
 
   // Heat-map field, derived lazily from /twin/get_field. We pass the
   // current map's bbox so the field paints the same area the SLAM map
@@ -546,7 +550,11 @@ export function MapCanvas() {
         if (!tagHasPose(t)) continue  // never been seen with a pose
         const reading = t.readings.find((r) => r.name === sensor)?.value
         const hasReading = reading != null
-        const sat = 1 - Math.min(0.7, t.stale_seconds / 600)
+        // Live age from last_observed (keeps advancing even when the twin
+        // wedged), with an extra desaturation when the whole twin is offline.
+        const age = tagAgeSeconds(t)
+        const sat =
+          (1 - Math.min(0.7, age / 600)) * (twinStaleRef.current ? 0.45 : 1)
         const c = proj.worldToCanvas(t.pose.position.x, t.pose.position.y)
         const r = 6
         ctx.save()
@@ -1020,7 +1028,7 @@ function TagTooltip({
         <span className="tag tag-accent">tag</span>
         <span className="font-mono text-foreground">{tag.tag_id}</span>
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-          {formatStaleness(tag.stale_seconds)}
+          {formatStaleness(tagAgeSeconds(tag))}
         </span>
       </div>
       {tag.species && (

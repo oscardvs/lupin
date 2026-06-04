@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { HEALTH_COLORS, healthLabel, speciesColor, speciesLabel } from '@/lib/flowers'
-import { tagHasPose, useTwinState } from '@/lib/twin'
+import { tagAgeSeconds, tagHasPose, useNowSeconds, useTwinState } from '@/lib/twin'
 import { tagHealthState } from '@/lib/tulip-health'
 import { cn } from '@/lib/utils'
 import { TWIN_SENSORS, type TwinSensor, type TwinTagState } from '@/types/ros'
@@ -55,8 +55,9 @@ interface SortState {
 export function GreenhouseStateCard({
   className, onSelectTag,
 }: GreenhouseStateCardProps) {
-  const twin = useTwinState()
+  const { state: twin, stale: twinStale } = useTwinState()
   const tags = twin?.tags ?? []
+  const nowSec = useNowSeconds()
   const [sort, setSort] = useState<SortState>({ key: 'tag', dir: 'asc' })
 
   const visible = useMemo(() => {
@@ -85,12 +86,21 @@ export function GreenhouseStateCard({
         <CardDescription className="font-mono text-xs">
           {visible.length === 0
             ? 'awaiting first observation…'
-            : `${visible.length} tag${visible.length === 1 ? '' : 's'} · live from /twin/state`}
+            : twinStale
+              ? `${visible.length} tag${visible.length === 1 ? '' : 's'} · twin offline — readings frozen`
+              : `${visible.length} tag${visible.length === 1 ? '' : 's'} · live from /twin/state`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1">
         {visible.length === 0 ? <Empty /> : (
-          <Table sort={sort} onSort={toggleSort} tags={visible} onSelectTag={onSelectTag} />
+          <Table
+            sort={sort}
+            onSort={toggleSort}
+            tags={visible}
+            onSelectTag={onSelectTag}
+            twinStale={twinStale}
+            nowSec={nowSec}
+          />
         )}
       </CardContent>
     </Card>
@@ -110,12 +120,14 @@ function Empty() {
 }
 
 function Table({
-  sort, onSort, tags, onSelectTag,
+  sort, onSort, tags, onSelectTag, twinStale, nowSec,
 }: {
   sort: SortState
   onSort: (k: SortKey) => void
   tags: TwinTagState[]
   onSelectTag?: (tagId: string) => void
+  twinStale: boolean
+  nowSec: number
 }) {
   return (
     <div className="overflow-x-auto">
@@ -145,7 +157,13 @@ function Table({
         </thead>
         <tbody className="divide-hairline divide-y">
           {tags.map((t) => (
-            <Row key={t.tag_id} tag={t} onSelect={onSelectTag} />
+            <Row
+              key={t.tag_id}
+              tag={t}
+              onSelect={onSelectTag}
+              twinStale={twinStale}
+              nowSec={nowSec}
+            />
           ))}
         </tbody>
       </table>
@@ -154,13 +172,21 @@ function Table({
 }
 
 function Row({
-  tag, onSelect,
-}: { tag: TwinTagState; onSelect?: (tagId: string) => void }) {
+  tag, onSelect, twinStale, nowSec,
+}: {
+  tag: TwinTagState
+  onSelect?: (tagId: string) => void
+  twinStale: boolean
+  nowSec: number
+}) {
   const readingByName = new Map(tag.readings.map((r) => [r.name, r.value]))
-  const stale = tag.stale_seconds
-  const staleClass =
-    stale < 60 ? 'text-primary'
-    : stale < 300 ? 'text-warning'
+  // Live age from last_observed, not the publish-frozen stale_seconds, so the
+  // column keeps advancing — and reads honestly — when the twin wedges.
+  const age = tagAgeSeconds(tag, nowSec)
+  const staleClass = twinStale
+    ? 'text-muted-foreground'   // twin offline: never show a "fresh" colour
+    : age < 60 ? 'text-primary'
+    : age < 300 ? 'text-warning'
     : 'text-destructive'
   const health = tagHealthState(tag)
   return (
@@ -210,7 +236,7 @@ function Row({
         )
       })}
       <td className={cn('px-2 py-1.5 align-middle text-right font-mono', staleClass)}>
-        {formatStaleness(stale)}
+        {formatStaleness(age)}
       </td>
     </tr>
   )

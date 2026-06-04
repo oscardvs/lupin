@@ -4,6 +4,7 @@ import { useService, useTopic } from '@/lib/ros'
 import {
   LUPIN_SRV,
   ROS_TYPE,
+  timeToSec,
   type GetFieldRequest,
   type GetFieldResponse,
   type TwinSensor,
@@ -11,21 +12,79 @@ import {
   type TwinTagState,
 } from '@/types/ros'
 
+/** A latched /twin/state frame stops being trustworthy this long after the
+ * last message: the twin node crashed or rosbridge wedged (a documented
+ * failure mode) and the frozen frame's stale_seconds no longer advances. */
+export const TWIN_STALE_AFTER_MS = 3000
+
+export interface TwinSnapshot {
+  /** Latest /twin/state, or null until the first message arrives. */
+  state: TwinState | null
+  /** True once no /twin/state message has arrived for TWIN_STALE_AFTER_MS.
+   * Consumers MUST drop any "fresh/green" styling when this is set — the
+   * latched frame is frozen and would otherwise read as live. False before
+   * the first message (render the empty state, not a stale one). */
+  stale: boolean
+}
+
 /**
  * Live snapshot of every tag the digital-twin node has seen. Updates at
  * 1 Hz (matching the twin's TwinState publish rate). The wire format
  * survives an HMI page reload because the twin publishes with
  * RELIABLE+TRANSIENT_LOCAL depth 1.
  *
- * Returns null until the first message arrives — the HMI should render an
- * empty-state placeholder ("Awaiting first observation") in that case.
+ * `state` is null until the first message arrives — the HMI should render an
+ * empty-state placeholder ("Awaiting first observation") in that case. A
+ * watchdog flips `stale` true when /twin/state stops flowing so consumers can
+ * grey out instead of presenting the frozen frame as current.
  */
-export function useTwinState(): TwinState | null {
+export function useTwinState(): TwinSnapshot {
   const [state, setState] = useState<TwinState | null>(null)
+  const [stale, setStale] = useState(false)
+  const receivedAtRef = useRef<number | null>(null)
   useTopic<TwinState>('/twin/state', ROS_TYPE.TwinState, {
-    onMessage: setState,
+    onMessage: (msg) => {
+      receivedAtRef.current = performance.now()
+      setStale(false)
+      setState(msg)
+    },
   })
-  return state
+  // Watchdog: flip `stale` when messages stop. 1 Hz tick lands the flip within
+  // ~1 s of the threshold; setState bails on an unchanged value, so this is a
+  // no-op render while the twin is healthy.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const at = receivedAtRef.current
+      setStale(at != null && performance.now() - at > TWIN_STALE_AFTER_MS)
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [])
+  return { state, stale }
+}
+
+/**
+ * Live age of a tag's most recent reading, in seconds. Prefers the absolute
+ * `last_observed` stamp — which keeps advancing even after the twin stops
+ * publishing — over the publish-frozen `stale_seconds`, and falls back to
+ * `stale_seconds` only when `last_observed` was never set (sec+nanosec == 0).
+ * This is what keeps the "LAST SEEN" honest when the twin wedges.
+ */
+export function tagAgeSeconds(t: TwinTagState, nowSec: number = Date.now() / 1000): number {
+  const observed = timeToSec(t.last_observed)
+  if (observed > 0) return Math.max(0, nowSec - observed)
+  return t.stale_seconds
+}
+
+/** Re-renders the caller ~every `periodMs` with the current wall-clock time in
+ * seconds, so "X seconds ago" displays keep advancing even when no new twin
+ * message arrives (e.g. while the twin is wedged). */
+export function useNowSeconds(periodMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now() / 1000)
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now() / 1000), periodMs)
+    return () => window.clearInterval(id)
+  }, [periodMs])
+  return now
 }
 
 /**
@@ -35,7 +94,7 @@ export function useTwinState(): TwinState | null {
  * tooltips and the per-tag selector flow.
  */
 export function useTwinTag(tagId: string | null | undefined): TwinTagState | null {
-  const state = useTwinState()
+  const { state } = useTwinState()
   if (!state || !tagId) return null
   return state.tags.find((t) => t.tag_id === tagId) ?? null
 }

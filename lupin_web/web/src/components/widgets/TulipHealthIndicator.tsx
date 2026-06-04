@@ -39,7 +39,7 @@ import { cn } from '@/lib/utils'
  * SVG with the same state machine.
  */
 export function TulipHealthIndicator({ className }: { className?: string }) {
-  const twin = useTwinState()
+  const { state: twin } = useTwinState()
   const rawHealth = useMemo(
     () => computeTulipHealth(twin?.tags ?? []),
     [twin],
