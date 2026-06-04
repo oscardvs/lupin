@@ -435,6 +435,18 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('mission')),
     )
 
+    # require_visual_confirmation is left at its default (False): the mission
+    # reads climate straight from the greenhouse bridge oracle and does NOT
+    # require the camera to actually see the AprilTag first. The aggregator does
+    # serve /perception/confirm_tag, so make the gap loud rather than implied by
+    # the service merely existing.
+    mission_confirm_banner = LogInfo(
+        msg='[lupin_bringup] mission: camera tag-confirm is OFF '
+            '(require_visual_confirmation=false) — readings come from the bridge '
+            'oracle, not a visual AprilTag check.',
+        condition=IfCondition(LaunchConfiguration('mission')),
+    )
+
     # The orchestrator subscribes to /amcl_pose at t=0 and caches whatever
     # the seed publishes — no race with the slam/Nav2 cascade.
     # PREPARE.LOCALIZING clears immediately when a mission is started.
@@ -591,6 +603,7 @@ def generate_launch_description() -> LaunchDescription:
         slam_reset_node,
         bridge,
         mission,
+        mission_confirm_banner,
         twin,
         seed,
         xbox_teleop,

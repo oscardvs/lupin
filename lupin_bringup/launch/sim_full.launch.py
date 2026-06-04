@@ -353,13 +353,23 @@ def generate_launch_description() -> LaunchDescription:
             os.path.join(pkg_mission, 'launch', 'mission.launch.py'),
         ),
         launch_arguments=[
+            # The whole sim stack runs on /clock; the orchestrator MUST too, or
+            # its observation/nav-goal/MissionState stamps are wall-clock and the
+            # twin treats every map pin as maximally stale (and Nav2/TF may reject
+            # the goal stamps). mission.launch.py defaults this to 'false'.
+            ('use_sim_time', 'true'),
             ('dependency_timeout_s', LaunchConfiguration('dependency_timeout_s')),
             ('tag_locations_file', widened_tag_locations),
             ('approach_overrides_file', approach_overrides),
             # Per-pot arm patrol: at each pot the orchestrator strikes the
             # `inspect` pose (gripper cam down on the bloom) for the flower
-            # detector, then `home` between pots. Sim demo of the flower scan.
+            # detector, then the travel pose between pots. Sim demo of the scan.
             ('arm_patrol_enabled', 'true'),
+            # 'home' is arm-horizontal-forward (~0.28 m reach) and clips the pots
+            # while driving; 'tuck' folds the arm over the base. settle 3.2 s lets
+            # the fold finish before the base drives off. (Matches sim_autonomy.)
+            ('arm_travel_preset', 'tuck'),
+            ('arm_travel_settle_s', '3.2'),
             # Dwell ~4 s in SCANNING so the arm (3 s travel) reaches the inspect
             # pose and the flower detector reads the bloom before advancing.
             ('flower_scan_dwell_s', '4.0'),
@@ -373,6 +383,9 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             os.path.join(pkg_twin, 'launch', 'twin.launch.py'),
         ),
+        # On /clock like the rest of the sim, so the twin's staleness
+        # (now - last_seen) matches the orchestrator's sim-time observation stamps.
+        launch_arguments=[('use_sim_time', 'true')],
     )
 
     # ── 6. rosbridge_websocket :9090 ────────────────────────────────────
@@ -527,7 +540,9 @@ def generate_launch_description() -> LaunchDescription:
     # uses it whenever PREPARE.LOCALIZING is entered, including for
     # multi-mission re-runs.
     seed = ExecuteProcess(
-        cmd=['ros2', 'run', 'lupin_bringup', 'seed_amcl_pose'],
+        # On /clock too, so the seeded /amcl_pose stamps match the sim-time stack.
+        cmd=['ros2', 'run', 'lupin_bringup', 'seed_amcl_pose',
+             '--ros-args', '-p', 'use_sim_time:=true'],
         output='log',
         condition=_when('seed_amcl'),
     )
