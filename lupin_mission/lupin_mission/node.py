@@ -397,7 +397,17 @@ class MissionOrchestratorNode(Node):
         self.declare_parameter('frontier_free_thresh', 20)
         self.declare_parameter('frontier_occupied_thresh', 65)
         self.declare_parameter('frontier_min_cluster_cells', 6)
-        self.declare_parameter('frontier_robot_radius_cells', 4)
+        # Clearance keeps frontier goals out of Nav2's inflation halo. Given in
+        # metres (converted to cells via the live map resolution) so it stays
+        # correct as resolution changes — keep it >= nav2 inflation_radius
+        # (0.25 m). frontier_robot_radius_cells >= 0 overrides with a raw cell
+        # count (mostly for tests); -1 means "use the metric clearance".
+        self.declare_parameter('frontier_robot_clearance_m', 0.35)
+        self.declare_parameter('frontier_robot_radius_cells', -1)
+        # Occupancy that counts as solid *for the clearance pass only*. Lower it
+        # (e.g. 50) to also push frontiers off soft/partially-observed cells;
+        # the 65 default matches frontier_occupied_thresh (soft cells ignored).
+        self.declare_parameter('frontier_clearance_occupied_thresh', 65)
         # Give up exploring after this long (whatever was found switches to
         # monitoring, or RETURNING if nothing). Also paces the no-frontier
         # bootstrap wait while SLAM fills the first scans.
@@ -486,6 +496,12 @@ class MissionOrchestratorNode(Node):
         )
         self._frontier_robot_radius = int(
             self.get_parameter('frontier_robot_radius_cells').value
+        )
+        self._frontier_robot_clearance_m = float(
+            self.get_parameter('frontier_robot_clearance_m').value
+        )
+        self._frontier_clearance_occupied_thresh = int(
+            self.get_parameter('frontier_clearance_occupied_thresh').value
         )
         self._exploration_timeout = float(
             self.get_parameter('exploration_timeout_s').value
@@ -2270,7 +2286,12 @@ class MissionOrchestratorNode(Node):
             free_thresh=self._frontier_free_thresh,
             occupied_thresh=self._frontier_occupied_thresh,
             min_cluster_cells=self._frontier_min_cluster,
-            robot_radius_cells=self._frontier_robot_radius,
+            robot_radius_cells=(
+                self._frontier_robot_radius
+                if self._frontier_robot_radius >= 0 else None
+            ),
+            robot_clearance_m=self._frontier_robot_clearance_m,
+            clearance_occupied_thresh=self._frontier_clearance_occupied_thresh,
         )
         if goal is None:
             if self._no_frontier_since is None:

@@ -46,13 +46,22 @@ def select_frontier_goal(
     free_thresh: int = 20,
     occupied_thresh: int = 65,
     min_cluster_cells: int = 6,
-    robot_radius_cells: int = 4,
+    robot_radius_cells: Optional[int] = None,
+    robot_clearance_m: float = 0.35,
+    clearance_occupied_thresh: Optional[int] = None,
 ) -> Optional[FrontierGoal]:
     """Pick the best frontier to explore next, or None if there are none.
 
     A *frontier cell* is FREE (``0 <= v <= free_thresh``) and 4-adjacent to at
-    least one UNKNOWN cell. Frontier cells within ``robot_radius_cells`` of an
-    OCCUPIED cell are dropped (the robot wouldn't fit). Remaining cells are
+    least one UNKNOWN cell. Frontier cells too close to an OCCUPIED cell are
+    dropped (the robot wouldn't fit). The clearance is ``robot_clearance_m``
+    metres, converted to cells via ``ceil(m / resolution)`` so it stays correct
+    regardless of map resolution — keep it >= Nav2's ``inflation_radius`` or
+    goals land in the inflation halo and the planner rejects them. Pass
+    ``robot_radius_cells`` to override with a raw cell count (e.g. in tests).
+    ``clearance_occupied_thresh`` optionally lowers the occupancy treated as
+    solid *for the clearance pass only*, so soft inflated cells (below
+    ``occupied_thresh``) also push frontiers away. Remaining cells are
     flood-filled into clusters (8-connectivity); clusters smaller than
     ``min_cluster_cells`` are discarded as SLAM noise. Each surviving cluster
     is scored ``size / (1 + distance_to_robot_m)`` (size only when
@@ -69,9 +78,6 @@ def select_frontier_goal(
 
     def is_free(v: int) -> bool:
         return 0 <= v <= free_thresh
-
-    def is_occupied(v: int) -> bool:
-        return v >= occupied_thresh
 
     # Pass 1: frontier mask (free + 4-neighbour unknown).
     frontier = bytearray(width * height)
@@ -92,8 +98,18 @@ def select_frontier_goal(
     if not any(frontier):
         return None
 
-    # Pass 2: clearance — drop frontier cells too close to an obstacle.
-    rad = max(0, int(robot_radius_cells))
+    # Pass 2: clearance — drop frontier cells too close to an obstacle. Work in
+    # metres (converted to cells via the resolution) so the clearance tracks
+    # Nav2's inflation_radius regardless of map resolution; an explicit
+    # robot_radius_cells overrides with a raw cell count.
+    if robot_radius_cells is not None:
+        rad = max(0, int(robot_radius_cells))
+    else:
+        rad = max(0, math.ceil(robot_clearance_m / resolution))
+    clear_occ = (
+        occupied_thresh if clearance_occupied_thresh is None
+        else clearance_occupied_thresh
+    )
     if rad > 0:
         safe = bytearray(frontier)
         for r in range(height):
@@ -109,7 +125,7 @@ def select_frontier_goal(
                         cc = c + dc
                         if cc < 0 or cc >= width:
                             continue
-                        if is_occupied(data[idx(cc, rr)]):
+                        if data[idx(cc, rr)] >= clear_occ:
                             blocked = True
                             break
                     if blocked:
