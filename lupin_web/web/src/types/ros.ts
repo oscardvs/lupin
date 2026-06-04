@@ -472,6 +472,10 @@ export interface Observation {
   tag_reading: TagReading
   flower: FlowerObservation
   anomaly: unknown
+  /** Map-frame pose of the tag (preferred, from the discovered-tags feed) or
+   * the robot's AMCL pose (fallback) at scan time. orientation.w === 0 means it
+   * was never populated — treat as missing. See Observation.msg. */
+  tag_pose_in_map: Pose
 }
 
 /** Flower species → display palette. Keep in sync with best.pt classes. */

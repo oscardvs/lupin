@@ -34,13 +34,13 @@ def make_tag_observation(
     (bridge error), and SKIPPED (abort / skip_current). The TagReading
     sub-message is populated only when status==STATUS_OK.
 
-    ``amcl_pose`` is the orchestrator's latest AMCL snapshot at publish
-    time. When supplied, its inner ``pose.pose`` is copied into the
-    Observation's ``tag_pose_in_map`` so downstream consumers (the digital
-    twin in particular) know where the robot was when it scanned the tag.
-    Leave None on UNREACHABLE/SKIPPED — the robot's actual pose at that
-    point isn't a useful proxy for the tag's position. The default zero
-    Pose has ``orientation.w == 0``, which the twin treats as "missing".
+    ``tag_map_pose`` is the tag's OWN map-frame pose (from the discovered-tags
+    feed); it is preferred for ``tag_pose_in_map`` so consumers pin the tag
+    where it physically is. ``amcl_pose`` is the orchestrator's latest AMCL
+    snapshot — the robot's standoff pose — copied in only as a fallback when the
+    tag's own pose is unknown. Leave both None on UNREACHABLE/SKIPPED — neither
+    is a useful proxy for the tag's position there. The default zero Pose has
+    ``orientation.w == 0``, which the twin treats as "missing".
     """
     msg = Observation()
     header = Header()

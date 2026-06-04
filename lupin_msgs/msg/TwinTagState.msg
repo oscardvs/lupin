@@ -6,12 +6,13 @@
 
 string tag_id
 
-# Map-frame pose snapshotted when the tag was first scanned. v1: the
-# orchestrator's AMCL pose at scan time (i.e. *the robot's standoff pose*,
-# not the AprilTag's actual location — they're offset by the standoff
-# distance). v2 hardware: the AprilTag's pose from `apriltag_ros`. The
-# twin caches it from the first OK observation and doesn't re-stamp it,
-# so the HMI marker doesn't jitter on AMCL drift.
+# Map-frame pose snapshotted when the tag was first scanned. v1: the tag's own
+# map pose from the discovered-tags feed (perception_aggregator resolves it via
+# TF), falling back to the orchestrator's AMCL pose — the robot's standoff pose,
+# offset from the tag — only when the tag's own pose is unknown. v2 hardware:
+# the AprilTag's pose from `apriltag_ros`. The twin caches it from the first OK
+# observation and doesn't re-stamp it, so the HMI marker doesn't jitter on AMCL
+# drift.
 #
 # Orientation.w == 0 means "never observed" and the rest of the pose is
 # meaningless — the HMI should not place a pin.

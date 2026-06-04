@@ -316,20 +316,19 @@ export interface TagSighting {
 }
 
 /**
- * Map-frame positions of tags the robot has just scanned, captured by snapshotting
- * the current robot pose at the moment the corresponding Observation arrives.
- *
- * Why not the canonical pre-recorded poses from `tag_locations.json`? Those live
- * in the orchestrator's package and aren't exposed over rosbridge — and adding a
- * service for them is out of scope. The robot's pose at PUBLISHING is a robust
- * proxy for "we just saw tag-N here", which is what the operator wants the map
- * to reflect.
+ * Map-frame positions of tags the robot has scanned. Prefers each Observation's
+ * `tag_pose_in_map` — the tag's OWN map pose, which the orchestrator fills from
+ * the discovered-tags feed — so the marker sits where the tag physically is and
+ * matches the twin map. Falls back to a snapshot of the live robot pose only
+ * when the tag pose is unset (orientation.w === 0, e.g. an older orchestrator or
+ * a tag not yet localized) — that's offset from the tag by the standoff
+ * distance, but better than no marker.
  *
  * The orchestrator publishes Observations with `RELIABLE + TRANSIENT_LOCAL`
  * depth=50, so a late subscriber gets the backlog. We filter that out by stamp
- * age — if the Observation is older than 5 s when we receive it, we don't know
- * where the robot was at scan time, so we skip rather than place a misleading
- * marker. Only fresh, live observations land on the map.
+ * age — if the Observation is older than 5 s when we receive it, the robot-pose
+ * fallback would be misleading, so we skip rather than place a stale marker.
+ * Only fresh, live observations land on the map.
  */
 export function useTagSightings(
   getPose: () => { x: number; y: number; yaw: number } | null,
@@ -346,12 +345,25 @@ export function useTagSightings(
       const stamp = msg.tag_reading.stamp
       const stampSec = stamp.sec + stamp.nanosec * 1e-9
       if (Math.abs(Date.now() - stampSec * 1000) > STALE_OBSERVATION_AGE_MS) return
-      const p = getPose()
-      if (!p) return
+      // Prefer the tag's own map pose (orchestrator fills it from the
+      // discovered-tags feed) so the marker matches the twin map; fall back to
+      // the live robot pose only when it's unset (orientation.w === 0).
+      const tagPose = msg.tag_pose_in_map
+      let x: number
+      let y: number
+      if (tagPose && tagPose.orientation.w !== 0) {
+        x = tagPose.position.x
+        y = tagPose.position.y
+      } else {
+        const p = getPose()
+        if (!p) return
+        x = p.x
+        y = p.y
+      }
       setSightings((prev) => {
         const idx = prev.findIndex((s) => s.tagId === tagId)
         const entry: TagSighting = {
-          tagId, x: p.x, y: p.y, stampSec, status: msg.status,
+          tagId, x, y, stampSec, status: msg.status,
         }
         if (idx >= 0) {
           const next = prev.slice()

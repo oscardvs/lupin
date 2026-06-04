@@ -20,8 +20,8 @@ and anomaly detection later):
                                     +-----------+------------+
                                                 |
        /floranova/observations  --------------> | (subscribe)
-       (Observation incl.                       |
-        tag_pose_in_map from AMCL)              |
+       (Observation incl. tag_pose_in_map:     |
+        tag's own pose, AMCL fallback)          |
                                                 +--> /twin/state (1 Hz, latched)
                                                 +--> /twin/get_field (srv)
                                                 |
@@ -62,9 +62,10 @@ expose the QoS wrinkle, so this only bites CLI debugging.
 ## Per-tag observation pipeline
 
 1. Orchestrator scans tag *N*, calls bridge, builds an `Observation`
-   with `STATUS_OK` plus `tag_pose_in_map` populated from the latest
-   AMCL snapshot. v1 = robot's standoff pose; v2 hardware =
-   AprilTag's pose from the perception pipeline.
+   with `STATUS_OK` plus `tag_pose_in_map` populated from the tag's own
+   map pose (from the discovered-tags feed), falling back to the latest
+   AMCL snapshot (robot's standoff pose) only when the tag's own pose is
+   unknown. v2 hardware = the AprilTag's pose from the perception pipeline.
 2. Twin's subscriber thread records the observation in
    `TwinStateStore` — pose cached from the *first* OK observation per
    tag (tags don't move; re-stamping would jitter the HMI marker).

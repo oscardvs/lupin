@@ -1654,12 +1654,12 @@ class MissionOrchestratorNode(Node):
     def _emit_observation_for(self, result) -> None:
         """Build + publish the Observation for a closed TagResult.
 
-        For OK results we attach the latest AMCL pose so the digital twin
-        knows where the robot was standing when it scanned the tag — that's
-        the seed for placing tag pins on the operator's map. For non-OK
-        results (UNREACHABLE / SCAN_FAILED / SKIPPED) we leave the pose
-        unset (orientation.w==0): the robot's pose at that moment isn't a
-        meaningful "where is this tag" answer.
+        For OK results we attach the tag's own map pose (from the discovered-
+        tags feed) so the twin pins the tag where it physically is — falling
+        back to the latest AMCL pose (the robot's standoff pose) only when the
+        tag's own pose is unknown. For non-OK results (UNREACHABLE /
+        SCAN_FAILED / SKIPPED) we leave the pose unset (orientation.w==0):
+        neither pose is a meaningful "where is this tag" answer there.
         """
         if self._mission is None:
             return

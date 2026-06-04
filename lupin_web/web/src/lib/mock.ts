@@ -464,7 +464,20 @@ export function mockObservation(): Observation | null {
       box_footprint: { points: [] },
     },
     anomaly: null,
+    tag_pose_in_map: mockSightingPose(tagId),
   }
+}
+
+/** Map pose for a scanned tag, mirroring its twin pin so the sighting marker
+ * lands on the tag itself — exercising the tag_pose_in_map-preferred path in
+ * useTagSightings. Returns an unset pose (orientation.w === 0) for tags with no
+ * twin seed, so the HMI falls back to the live robot pose. */
+function mockSightingPose(tagId: string) {
+  const seed = MOCK_TWIN_TAGS.find((s) => `tag-${s.tag_id}` === tagId)
+  if (!seed) {
+    return { position: { x: 0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 0 } }
+  }
+  return mockTagPose(seed)
 }
 
 /** A synthetic Nav2 plan that moves with the robot — leading by ~2 s along the path. */
