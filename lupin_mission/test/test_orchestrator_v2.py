@@ -47,6 +47,7 @@ from std_msgs.msg import Bool  # noqa: E402
 from std_srvs.srv import Trigger  # noqa: E402
 
 from geometry_msgs.msg import Pose  # noqa: E402
+from sensor_msgs.msg import BatteryState  # noqa: E402
 
 from lupin_msgs.msg import (  # noqa: E402
     DiscoveredTag, DiscoveredTags, MissionState, Observation, SensorReading,
@@ -217,6 +218,29 @@ class EStopPub(Node):
     def publish(self, engaged: bool) -> None:
         msg = Bool()
         msg.data = bool(engaged)
+        self._pub.publish(msg)
+
+
+class BatteryPub(Node):
+    """Publishes sensor_msgs/BatteryState on /io/power/power_watcher.
+
+    Matches BatteryMonitor's subscriber QoS (RELIABLE + VOLATILE depth 10).
+    """
+
+    def __init__(self):
+        super().__init__('battery_pub')
+        qos = QoSProfile(
+            depth=10,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
+        self._pub = self.create_publisher(
+            BatteryState, '/io/power/power_watcher', qos
+        )
+
+    def publish_pct(self, pct: float) -> None:
+        msg = BatteryState()
+        msg.percentage = float(pct)
         self._pub.publish(msg)
 
 
@@ -400,9 +424,11 @@ class TestOrchestratorV2(unittest.TestCase):
         self.collector = StateCollector()
         self.amcl = AmclSeed()
         self.estop = EStopPub()
+        self.battery = BatteryPub()
         self.harness.add(self.collector)
         self.harness.add(self.amcl)
         self.harness.add(self.estop)
+        self.harness.add(self.battery)
 
     def tearDown(self):
         self.harness.shutdown()
@@ -414,6 +440,7 @@ class TestOrchestratorV2(unittest.TestCase):
         nav_delay_s=0.0,
         bridge_behaviour=None,
         tag_sequence=None,
+        seed_amcl=True,
         **orch_overrides,
     ):
         self.nav = FakeNavServer(outcomes=nav_outcomes, delay_s=nav_delay_s)
@@ -425,8 +452,11 @@ class TestOrchestratorV2(unittest.TestCase):
         self.harness.start()
         # Seed AMCL once the executor is spinning so the latched message
         # has subscribers ready (the orchestrator's pose subscription).
+        # seed_amcl=False leaves localization unconverged (PREPARE_LOCALIZING
+        # stalls until localization_timeout) for the FAULT/abort-in-prepare cases.
         time.sleep(0.1)
-        self.amcl.publish_low_cov()
+        if seed_amcl:
+            self.amcl.publish_low_cov()
         # Wait for orchestrator to reach READY (deps_up).
         self.assertTrue(
             _wait_until(lambda: self.orch.state == 'READY', 5.0),
@@ -733,6 +763,140 @@ class TestOrchestratorV2(unittest.TestCase):
         seen = {s.lifecycle_state for s in self.collector.states}
         self.assertIn('EXPLORING', seen)
         self.assertNotIn('MONITORING', seen)
+
+    # ── 10. manual dock during MONITORING actually diverts to RETURNING ─
+    def test_dock_during_monitoring_diverts_to_returning(self):
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50, nav_delay_s=1.0)
+        resp = _call_start(
+            self.collector, mission_type='ExplorationMission', discovery_goal=2,
+        )
+        self.assertTrue(resp.accepted, resp.error_message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0))
+        self.discovered.publish(['1', '2'])
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state.startswith('MONITORING'), 10.0,
+        ), f'state={self.orch.state}')
+        # Operator recalls the robot mid-sweep.
+        dock_resp = _call_trigger(self.collector, '/mission/dock')
+        self.assertTrue(dock_resp.success, dock_resp.message)
+        # Must actually divert (pre-fix: stayed in MONITORING forever).
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'RETURNING', 10.0),
+                        f'dock did not divert; state={self.orch.state}')
+
+    # ── 11. abort during PREPARE no longer dead-ends in FAULT ───────────
+    def test_abort_in_prepare_does_not_fault(self):
+        self._bringup(
+            nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 4,
+            seed_amcl=False, localization_timeout_s=30.0,
+            tag_sequence=TEST_TAG_IDS,
+        )
+        _call_start(self.collector, tag_sequence=TEST_TAG_IDS)
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state == 'PREPARE_LOCALIZING', 5.0,
+        ), f'state={self.orch.state}')
+        abort_resp = _call_trigger(self.collector, '/mission/abort')
+        self.assertTrue(abort_resp.success, abort_resp.message)
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state in ('DONE', 'READY'), 10.0,
+        ), f'abort-in-PREPARE ended in {self.orch.state}')
+        self.assertNotEqual(self.orch.state, 'FAULT')
+
+    # ── 12. /mission/reset recovers a FAULTed orchestrator ──────────────
+    def test_reset_clears_fault(self):
+        self._bringup(
+            nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 4,
+            seed_amcl=False, localization_timeout_s=1.0,
+            tag_sequence=TEST_TAG_IDS,
+        )
+        _call_start(self.collector, tag_sequence=TEST_TAG_IDS)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'FAULT', 8.0),
+                        f'state={self.orch.state}')
+        reset_resp = _call_trigger(self.collector, '/mission/reset')
+        self.assertTrue(reset_resp.success, reset_resp.message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'READY', 5.0),
+                        f'state={self.orch.state}')
+        # And a real mission can run afterwards.
+        self.amcl.publish_low_cov()
+        r2 = _call_start(self.collector, tag_sequence=['1'])
+        self.assertTrue(r2.accepted, r2.error_message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'DONE', 15.0),
+                        f'state={self.orch.state}')
+
+    # ── 13. pause is refused during a battery-driven return ─────────────
+    def test_pause_rejected_during_battery_return(self):
+        self._bringup(
+            nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 10,
+            nav_delay_s=2.0, tag_sequence=TEST_TAG_IDS,
+        )
+        _call_start(self.collector, tag_sequence=TEST_TAG_IDS)
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state == 'INSPECTING_NAVIGATING', 5.0,
+        ))
+        self.battery.publish_pct(0.10)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'RETURNING', 8.0),
+                        f'state={self.orch.state}')
+        pause_resp = _call_trigger(self.collector, '/mission/pause')
+        self.assertFalse(pause_resp.success)
+        self.assertIn('battery', pause_resp.message.lower())
+
+    # ── 14. scan dwell does not advance the cursor while paused ─────────
+    def test_scan_dwell_holds_when_paused(self):
+        self._bringup(
+            nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 6,
+            flower_scan_dwell_s=3.0, tag_sequence=TEST_TAG_IDS,
+        )
+        _call_start(self.collector, tag_sequence=TEST_TAG_IDS)
+        self.assertTrue(_wait_until(
+            lambda: any(o.status == Observation.STATUS_OK
+                        for o in self.collector.observations), 10.0,
+        ))
+        pause_resp = _call_trigger(self.collector, '/mission/pause')
+        self.assertTrue(pause_resp.success, pause_resp.message)
+        # Pre-fix: the dwell timer fires scan_done() and steps the cursor on
+        # despite the pause. Post-fix: it holds in SCANNING.
+        time.sleep(4.0)  # longer than the remaining dwell
+        self.assertTrue(self.orch.state.endswith('SCANNING'),
+                        f'cursor advanced during pause; state={self.orch.state}')
+        self.assertEqual(len([o for o in self.collector.observations
+                              if o.status == Observation.STATUS_OK]), 1)
+        # Resume completes the run WITHOUT re-scanning the paused tag.
+        resume_resp = _call_trigger(self.collector, '/mission/resume')
+        self.assertTrue(resume_resp.success, resume_resp.message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'DONE', 20.0),
+                        f'state={self.orch.state}')
+        self.assertEqual(len([o for o in self.collector.observations
+                              if o.status == Observation.STATUS_OK]), 3)
+
+    # ── 15. aborting a docked monitoring mission does not crash ─────────
+    def test_docked_abort_during_monitoring_no_crash(self):
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50, nav_delay_s=0.5)
+        resp = _call_start(
+            self.collector, mission_type='ExplorationMission', discovery_goal=2,
+        )
+        self.assertTrue(resp.accepted, resp.error_message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0))
+        self.discovered.publish(['1', '2'])
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state.startswith('MONITORING'), 10.0,
+        ))
+        self.battery.publish_pct(0.10)
+        # Battery divert docks then parks paused (resumable monitoring run).
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state == 'RETURNING'
+            and self.collector.latest_state
+            and self.collector.latest_state.paused, 14.0,
+        ), f'state={self.orch.state}')
+        abort_resp = _call_trigger(self.collector, '/mission/abort')
+        # Pre-fix: AttributeError (remaining_indices on MonitoringMission).
+        self.assertIsNotNone(abort_resp, 'abort service callback crashed')
+        self.assertTrue(abort_resp.success, abort_resp.message)
+        self.assertTrue(_wait_until(
+            lambda: self.orch.state in ('DONE', 'READY'), 8.0,
+        ), f'state={self.orch.state}')
 
 
 if __name__ == '__main__':

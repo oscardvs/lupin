@@ -189,6 +189,8 @@ def build_hsm_spec() -> dict:
         {
             'trigger': 'abort_to_return',
             'source': [
+                'PREPARE',
+                'PREPARE_LOCALIZING',
                 'EXPLORING',
                 'INSPECTING_NAVIGATING',
                 'INSPECTING_SCANNING',
@@ -222,6 +224,10 @@ def build_hsm_spec() -> dict:
         },
         # DONE → READY for next mission
         {"trigger": "reset_for_next", "source": "DONE", "dest": "READY"},
+        # FAULT is otherwise terminal; /mission/reset fires `recover` so an
+        # operator can clear a transient boot/localization fault from the HMI
+        # instead of restarting the process.
+        {"trigger": "recover", "source": "FAULT", "dest": "READY"},
         # FAULT — any non-terminal transitions to FAULT on catastrophic error.
         {
             'trigger': 'fault',
@@ -446,6 +452,9 @@ class MissionOrchestratorNode(Node):
         self._scan_timeout = float(self.get_parameter("scan_timeout_s").value)
         self._flower_scan_dwell = float(self.get_parameter("flower_scan_dwell_s").value)
         self._scan_dwell_timer = None
+        # Set once a tag's reading has been taken so a resume after a pause
+        # during the post-scan dwell advances instead of re-scanning the tag.
+        self._scan_reading_done = False
         self._require_visual_confirmation = bool(
             self.get_parameter("require_visual_confirmation").value
         )
@@ -824,6 +833,15 @@ class MissionOrchestratorNode(Node):
             callback_group=self._cb_group,
         )
 
+        # Operator recovery from FAULT — clears a transient boot/localization
+        # fault without restarting the process.
+        self._srv_reset = self.create_service(
+            Trigger,
+            "/mission/reset",
+            self._handle_reset,
+            callback_group=self._cb_group,
+        )
+
         # ─── timers ────────────────────────────────────────────────────
         # State publisher: fixed rate, always running.
         self._state_timer = self.create_timer(
@@ -919,12 +937,16 @@ class MissionOrchestratorNode(Node):
 
             return
 
-        if self.state in ("READY", "DONE"):
+        if self.state in ("READY", "DONE") or self.state.startswith("PREPARE"):
+            # Idle (READY/DONE) or still localizing (PREPARE) — the robot isn't
+            # driving, so there's nothing to dock-divert; just pause until
+            # charged (resumable). PREPARE used to fall through to the active
+            # branch, set dock flags, hit a guard that never fired a transition,
+            # and freeze with localization unable to time out.
             self._paused = True
             self._manual_dock_requested = False
-
             self.get_logger().info(
-                "Battery low while idle at dock. Entering paused state until charged."
+                "Battery low while idle/preparing. Pausing until charged."
             )
             return
 
@@ -957,6 +979,13 @@ class MissionOrchestratorNode(Node):
     # _check_nav_timeout.
 
     def _cancel_inflight_nav(self, reason: str, *, refund_attempt: bool = True) -> None:
+        # A deferred fold-then-drive timer must not survive a cancel/divert and
+        # fire a nav goal into the next leg. (The scan-dwell timer is left alone;
+        # it self-guards on _is_blocked so a resume can still advance the cursor
+        # without re-scanning.)
+        if self._arm_settle_timer is not None:
+            self._arm_settle_timer.cancel()
+            self._arm_settle_timer = None
         had_inflight = (
             self._nav_goal_handle is not None or self._nav_send_goal_future is not None
         )
@@ -1008,8 +1037,9 @@ class MissionOrchestratorNode(Node):
                 self._check_confirm_timeout()
             else:
                 self._check_scan_timeout()
-        # READY, *_PUBLISHING, RETURNING, DONE, FAULT: nothing for the
-        # watchdog to do.
+        elif state == "RETURNING":
+            self._check_dock_timeout()
+        # READY, *_PUBLISHING, DONE, FAULT: nothing for the watchdog to do.
 
     # Stubs filled in by later sections — declared here so the watchdog
     # body above type-checks. Concrete logic lands with the inspection
@@ -1135,7 +1165,12 @@ class MissionOrchestratorNode(Node):
         return True, ''
 
     def _check_nav_timeout(self) -> None:
-        if self._is_blocked() or self._nav_goal_handle is None:
+        # Gate on _nav_inflight() (handle OR send-future), NOT just the accepted
+        # handle: a Nav2 server that never returns the goal-accept response would
+        # otherwise leave _nav_goal_handle None forever and stall the leg with
+        # no timeout. This makes inspection/monitoring symmetric with the
+        # exploration path, which already uses _nav_inflight().
+        if self._is_blocked() or not self._nav_inflight():
             return
         if self._monotonic() - self._nav_state_started_at <= self._nav_timeout:
             return
@@ -1146,6 +1181,9 @@ class MissionOrchestratorNode(Node):
             f'{self._mission.current_tag_id() if self._mission else "?"}'
         )
         self._cancel_inflight_nav("nav_timeout", refund_attempt=False)
+        # Drop the (possibly never-accepted) send future so a late accept is
+        # treated as stale and cancelled rather than resurrecting the leg.
+        self._nav_send_goal_future = None
         self._handle_nav_failure("nav_timeout")
 
     def _check_scan_timeout(self) -> None:
@@ -1190,6 +1228,49 @@ class MissionOrchestratorNode(Node):
             self._emit_observation_for(result)
         self.scan_done()  # type: ignore[attr-defined]
 
+    def _check_dock_timeout(self) -> None:
+        """Bound the RETURNING dock drive so an accepted-but-stalled dock goal
+        can't strand the robot (battery draining) in RETURNING forever. Gives
+        the previously-dead dock_timeout_s a purpose and routes a stuck dock
+        through the same decide_failed_dock policy as a non-SUCCEEDED result."""
+        if self._estop_engaged or self._paused:
+            return
+        if not self._nav_inflight():
+            return
+        if self._monotonic() - self._nav_state_started_at <= self._dock_timeout:
+            return
+        self.get_logger().warn(
+            f"Dock goal exceeded {self._dock_timeout:.1f}s; treating as failed."
+        )
+        # Ignore the eventual canceled result (null its future first) and clear
+        # the nav handles so _on_return_nav_result doesn't double-handle it.
+        self._nav_get_result_future = None
+        self._cancel_inflight_nav("dock_timeout", refund_attempt=False)
+        self._nav_goal_handle = None
+        self._nav_send_goal_future = None
+        self._nav_pending_cancel = False
+        decision = decide_failed_dock(
+            battery_low=self._battery_low,
+            docked_for_battery=self._docked_for_battery,
+            resumable=self._return_resumable,
+            retry_count=self._dock_retry_count,
+            retry_max=self._dock_retry_max,
+        )
+        if decision == 'retry':
+            self._dock_retry_count += 1
+            self.get_logger().warn(
+                f"Dock retry {self._dock_retry_count}/{self._dock_retry_max}."
+            )
+            self._send_return_nav_goal()
+        elif decision == 'pause':
+            self._paused = True
+            self._last_error = "dock_unreachable"
+        else:  # 'done' — non-battery return: end the mission rather than hang.
+            self._docked_for_battery = False
+            self._manual_dock_requested = False
+            self._paused = False
+            self.returned()  # type: ignore[attr-defined]
+
     # ─── service handlers ──────────────────────────────────────────────
     def _handle_start_mission(
         self, request: StartMission.Request, response: StartMission.Response
@@ -1205,6 +1286,14 @@ class MissionOrchestratorNode(Node):
         if _is_state_busy(self.state):
             response.accepted = False
             response.error_message = f"mission already running ({self.state})"
+            return response
+        if self.state not in ("READY", "DONE"):
+            # READY/DONE are the only startable states (DONE bounces through
+            # READY below). Reject BOOT explicitly so the HSM doesn't silently
+            # swallow the start_mission trigger and strand a phantom mission
+            # object while the lifecycle stays in BOOT.
+            response.accepted = False
+            response.error_message = f"cannot start in state {self.state}"
             return response
         mission_type = request.mission_type or 'InspectionMission'
         if mission_type not in ('InspectionMission', 'ExplorationMission'):
@@ -1271,6 +1360,21 @@ class MissionOrchestratorNode(Node):
         self._return_resumable = False
         self._docked_for_battery = False
         self._manual_dock_requested = False
+        self._return_origin = None
+
+        # If dock_pose was left at the map-origin default, dock where the robot
+        # begins this mission (needs live map→base TF; falls back to the origin
+        # default in sim/tests where TF isn't up). Mirrors MonitoringMission's
+        # start_xy capture so "return home" means "return to where I began".
+        if list(self._dock_pose[:2]) == [0.0, 0.0]:
+            start_xy = self._robot_xy()
+            if start_xy is not None:
+                yaw = self._dock_pose[2] if len(self._dock_pose) > 2 else 0.0
+                self._dock_pose = [start_xy[0], start_xy[1], yaw]
+                self.get_logger().info(
+                    f"dock_pose unset; using mission start pose "
+                    f"({start_xy[0]:.2f}, {start_xy[1]:.2f}) as the dock."
+                )
 
         # State path: READY → PREPARE → EXPLORING/INSPECTING. From DONE we
         # first have to bounce through READY for the next mission.
@@ -1286,6 +1390,15 @@ class MissionOrchestratorNode(Node):
         if not _is_state_busy(self.state):
             response.success = False
             response.message = f"no active mission to pause (state={self.state})"
+            return response
+        # Never pause a battery-driven return: pausing cancels the dock goal and
+        # resume is refused while battery is low (which needs the dock), so the
+        # robot would strand mid-transit draining. Symmetric to the abort guard.
+        if self.state == "RETURNING" and self._battery_low:
+            response.success = False
+            response.message = (
+                "cannot pause: robot is returning to dock due to low battery"
+            )
             return response
         if self._paused:
             response.success = False
@@ -1364,7 +1477,10 @@ class MissionOrchestratorNode(Node):
             and self._paused
             and (self._docked_for_battery or self._manual_dock_requested)
         ):
-            if self._mission is not None:
+            # Only InspectionMission defines remaining_indices/force_skip; a
+            # docked MONITORING/EXPLORING run reaching here would otherwise
+            # raise AttributeError inside the service callback.
+            if isinstance(self._mission, InspectionMission):
                 for idx in self._mission.remaining_indices():
                     result = self._mission.force_skip(idx, "mission_aborted")
                     self._emit_observation_for(result)
@@ -1383,6 +1499,22 @@ class MissionOrchestratorNode(Node):
                 "cannot abort: robot is returning to dock due to low battery"
             )
             return response
+        # Non-battery return (normal-completion divert, a prior abort, or a dock
+        # goal still deferred in its cancel-grace window): a second abort means
+        # "stop now". Clear the deferred-dock machinery and end the mission so
+        # the operator isn't forced to wait out the dock drive/grace timer.
+        if self.state == "RETURNING":
+            self._clear_return_cancel_watchdog()
+            self._cancel_inflight_nav("aborted_by_operator")
+            self._return_requested = False
+            self._return_resumable = False
+            self._docked_for_battery = False
+            self._manual_dock_requested = False
+            self._paused = False
+            self.returned()  # type: ignore[attr-defined]
+            response.success = True
+            response.message = "aborted"
+            return response
         self._return_resumable = False
         self._docked_for_battery = False
         self._return_requested = True
@@ -1396,18 +1528,16 @@ class MissionOrchestratorNode(Node):
             for idx in self._mission.remaining_indices():
                 result = self._mission.force_skip(idx, "mission_aborted")
                 self._emit_observation_for(result)
-        if _is_state_scanning_phase(self.state) or self.state == 'EXPLORING':
+        if (
+            _is_state_scanning_phase(self.state)
+            or self.state == 'EXPLORING'
+            or self.state.startswith("PREPARE")
+        ):
+            # PREPARE is now a legal abort_to_return source, so aborting during
+            # localization ends cleanly (RETURNING → dock → DONE → READY) rather
+            # than dead-ending in the unrecoverable FAULT state.
             self.abort_to_return()  # type: ignore[attr-defined]
-        elif self.state.startswith("PREPARE"):
-            # Prep aborted before any tag was attempted; jump straight to
-            # DONE via RETURNING so the mission cleans up.
-            # transitions doesn't allow a multi-source for the same
-            # trigger from PREPARE, so trigger fault → user can restart
-            # via a fresh /mission/start. PREPARE-abort is rare; treat as
-            # a soft fault rather than a real fault.
-            self._last_error = "aborted_in_prepare"
-            self.fault()  # type: ignore[attr-defined]
-        # RETURNING-abort: no-op, already heading home.
+        # RETURNING-abort is fully handled above; nothing else reaches here.
         response.success = True
         response.message = "aborted"
         return response
@@ -1435,7 +1565,10 @@ class MissionOrchestratorNode(Node):
         return response
 
     def _handle_dock(self, request, response):
-        if not _is_state_busy(self.state) and self.state not in ("READY",):
+        # Dock only makes sense from an active autonomous family. READY (robot
+        # already home), BOOT/DONE/FAULT, and PREPARE (not yet localized) are
+        # all rejected rather than silently accepted.
+        if not _is_state_busy(self.state):
             response.success = False
             response.message = f"cannot dock in state {self.state}"
             return response
@@ -1443,17 +1576,60 @@ class MissionOrchestratorNode(Node):
             response.success = False
             response.message = "already returning to dock"
             return response
+        if self.state.startswith("PREPARE"):
+            response.success = False
+            response.message = "cannot dock during PREPARE (not yet localized)"
+            return response
         self._return_resumable = True
         self._docked_for_battery = False
         self._return_requested = True
         self._manual_dock_requested = True
+        # Capture the family we're leaving so /mission/resume re-enters the
+        # right sub-machine (mirrors on_battery_low) instead of defaulting to
+        # INSPECTING.
+        self._return_origin = _resume_origin_for(self.state)
 
         self._cancel_inflight_nav("manual_dock")
-        if _is_state_inspecting(self.state):
+        # EXPLORING and every INSPECTING/MONITORING sub-state is a legal
+        # abort_to_return source — cover them all so a dock from the autonomous
+        # families actually returns. Previously only INSPECTING did, so a dock
+        # during EXPLORING/MONITORING was a silent no-op that also wedged the
+        # monitoring loop via the stale _manual_dock_requested flag.
+        if _is_state_scanning_phase(self.state) or self.state == 'EXPLORING':
             self.abort_to_return()
 
         response.success = True
         response.message = "heading to dock"
+        return response
+
+    def _handle_reset(self, request, response):  # std_srvs/Trigger
+        """Clear a FAULT so the operator can re-arm without restarting.
+
+        FAULT is reachable only from transient conditions (boot-dependency
+        timeout, localization timeout, prepare-abort) that clear on their own,
+        so expose an explicit escape instead of wedging the node until restart.
+        """
+        if self.state != 'FAULT':
+            response.success = False
+            response.message = f"reset only valid in FAULT (state={self.state})"
+            return response
+        self._cancel_inflight_nav("reset", refund_attempt=False)
+        self._scan_future = None
+        self._confirm_future = None
+        self._scan_reading_done = False
+        self._paused = False
+        self._battery_low = False
+        self._return_requested = False
+        self._return_resumable = False
+        self._docked_for_battery = False
+        self._manual_dock_requested = False
+        self._return_origin = None
+        self._last_error = ""
+        self._mission = None
+        self.recover()  # type: ignore[attr-defined]  # FAULT → READY
+        self.get_logger().info("Reset from FAULT to READY by operator.")
+        response.success = True
+        response.message = "reset to READY"
         return response
 
     # ─── observation / state plumbing ──────────────────────────────────
@@ -1567,6 +1743,11 @@ class MissionOrchestratorNode(Node):
             if self._nav_goal_handle is None:
                 self._send_scan_nav_goal()
         elif st in ('INSPECTING_SCANNING', 'MONITORING_SCANNING'):
+            # If the reading was already taken (paused during the post-scan
+            # dwell), just advance — re-calling the bridge would double-scan.
+            if self._scan_reading_done:
+                self.scan_done()  # type: ignore[attr-defined]
+                return
             # Re-fire whichever sub-call hasn't started yet. Visual-confirm
             # comes first when enabled; the bridge call only lands once
             # confirmation succeeds. If both futures are None we're either
@@ -1665,6 +1846,9 @@ class MissionOrchestratorNode(Node):
         self._enter_scanning()
 
     def _enter_scanning(self) -> None:
+        # Fresh leg → fresh reading; a stale "reading done" must not let a
+        # resume skip the scan.
+        self._scan_reading_done = False
         if self._mission is None or self._mission.is_complete():
             self.get_logger().warn(
                 "on_enter SCANNING with no active mission; holding state."
@@ -1803,9 +1987,9 @@ class MissionOrchestratorNode(Node):
         self._log_final_summary()
 
     def on_enter_FAULT(self, event_data) -> None:
-        # Cancel anything still in flight; FAULT is terminal until a
-        # fresh start_mission is requested (which will be rejected, per
-        # service handler).
+        # Cancel anything still in flight. FAULT holds until the operator calls
+        # /mission/reset (→ recover → READY); /mission/start stays rejected
+        # while faulted.
         self._cancel_inflight_nav("fault", refund_attempt=False)
         self._scan_future = None
         self._confirm_future = None
@@ -2247,6 +2431,8 @@ class MissionOrchestratorNode(Node):
         if response.status == GetTagReading.Response.STATUS_OK:
             result = self._mission.mark_scan_ok(response.reading)
             self._emit_observation_for(result)
+            # The reading is taken; a pause during the dwell must not re-scan.
+            self._scan_reading_done = True
             # Hold SCANNING long enough for the arm to reach the inspect pose
             # and the flower detector/aggregator to read the bloom colour.
             self._finish_scan_with_dwell()
@@ -2275,6 +2461,11 @@ class MissionOrchestratorNode(Node):
         if self._scan_dwell_timer is not None:
             self._scan_dwell_timer.cancel()
             self._scan_dwell_timer = None
+        # Don't step the cursor while frozen (pause/e-stop/battery): the reading
+        # was already published, and a resume re-fires scan_done via
+        # _kick_current_state (keyed on _scan_reading_done) without re-scanning.
+        if self._is_blocked():
+            return
         # Only advance if we're still parked at this pot (not aborted/returned).
         if self.state in ('INSPECTING_SCANNING', 'MONITORING_SCANNING'):
             self.scan_done()  # type: ignore[attr-defined]
