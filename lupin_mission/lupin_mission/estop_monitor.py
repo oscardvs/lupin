@@ -4,9 +4,10 @@ Mirrors `/e_stop_state` (std_msgs/Bool, true = engaged) onto a flag the
 orchestrator can poll, and fires callbacks on the rising and falling edges
 so the node can cancel goals / log transitions exactly once per edge.
 
-Convention is set by `lupin_web/web/src/lib/estop.tsx` and friends — when
-this MR ships to hardware, the same Bool topic carries the e-stop state
-from the physical button. Tests fake it by publishing on the same topic.
+On hardware the physical emergency button reaches this topic via
+`lupin_hmi/estop_bridge` (mirte_msgs/IntensityDigital → std_msgs/Bool); the HMI
+software-STOP (`lupin_web/web/src/lib/estop.tsx`) publishes the same Bool. Both
+paths drive this one flag. Tests fake it by publishing on the same topic.
 """
 
 from __future__ import annotations

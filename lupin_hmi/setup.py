@@ -35,6 +35,9 @@ setup(
             'arm_preset_server = lupin_hmi.arm_preset_server:main',
             'arm_calibrate_server = lupin_hmi.arm_calibrate_server:main',
             'gripper_action_bridge = lupin_hmi.gripper_action_bridge:main',
+            # Republishes the physical MIRTE emergency button onto /e_stop_state
+            # so the autonomous mission actually freezes when it's pressed.
+            'estop_bridge = lupin_hmi.estop_bridge:main',
             'arm_library_server = lupin_hmi.arm_library_server:main',
             # One-shot called by lupin-auto-home.service at boot. Waits for
             # the arm controllers + preset service to come up, then moves

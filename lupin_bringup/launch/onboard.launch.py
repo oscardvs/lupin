@@ -112,14 +112,33 @@ def generate_launch_description() -> LaunchDescription:
         output='log',
     )
 
+    # ── estop_bridge ───────────────────────────────────────────────────
+    # Republishes the physical MIRTE emergency button
+    # (/io/intensity/emergency_button/digital) onto /e_stop_state so the
+    # mission orchestrator + LED safety override actually react to it. Without
+    # this the autonomous mission never freezes on the physical button.
+    # engaged_value MUST be verified on the real button (see estop_bridge).
+    estop_bridge = Node(
+        package='lupin_hmi', executable='estop_bridge',
+        name='estop_bridge',
+        parameters=[{
+            'use_sim_time': False,
+            'button_topic': '/io/intensity/emergency_button/digital',
+            'estop_topic': '/e_stop_state',
+            'engaged_value': True,
+        }],
+        output='log',
+    )
+
     return LaunchDescription([
         LogInfo(msg='[lupin_bringup] onboard: twist_mux + arm_preset_server '
-                    '+ arm_calibrate_server + light_strip_bridge + gripper_action_bridge — '
-                    'operator drives via web HMI (laptop-side joystick lives '
-                    'in hardware.launch.py joystick:=true)'),
+                    '+ arm_calibrate_server + light_strip_bridge + gripper_action_bridge '
+                    '+ estop_bridge — operator drives via web HMI (laptop-side '
+                    'joystick lives in hardware.launch.py joystick:=true)'),
         twist_mux,
         arm_preset_server,
         arm_calibrate_server,
         light_strip_bridge,
         gripper_action_bridge,
+        estop_bridge,
     ])
