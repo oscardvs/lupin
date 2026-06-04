@@ -400,6 +400,8 @@ export function mockMissionState(): MissionState {
     last_event_severity: 0,
     estop_engaged: false,
     paused: false,
+    battery_percentage: 0.92,
+    battery_low: false,
     started_at: ph.lifecycle === 'READY'
       ? { sec: 0, nanosec: 0 }
       : MOCK_STARTED_AT,

@@ -64,6 +64,10 @@ export function EStopProvider({ children }: { children: ReactNode }) {
   const [{ cmdVelTopic, cmdVelType, estopAutoOnFocusLoss, polarityInvertHmi }] = useSettings()
   const { status } = useRos()
   const publishTwist = usePublisher<Twist>(cmdVelTopic, cmdVelType)
+  // Mirror the HMI e-stop onto a dedicated soft-stop topic; the robot-side
+  // estop_bridge ORs it into /e_stop_state so the mission orchestrator + LED
+  // safety override react to the HMI STOP, not just the local cmd_vel gate.
+  const publishHmiEstop = usePublisher<{ data: boolean }>('/lupin/hmi/estop', 'std_msgs/Bool')
   // Nav2 cancel hooks — e-stop alone can't beat Nav2 on the cmd_vel bus
   // (BEST_EFFORT, no QoS priority, both publish at 10–20 Hz). Cancelling
   // the active goal is what actually stops Nav2's velocity_smoother from
@@ -135,6 +139,15 @@ export function EStopProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => publishTwist(ZERO_TWIST), Math.round(1000 / ESTOP_HEARTBEAT_HZ))
     return () => clearInterval(id)
   }, [active, publishTwist])
+
+  // Publish the HMI e-stop state to the soft-stop topic. Republish at 2 Hz so a
+  // late-joining / VOLATILE-subscribed estop_bridge converges; the bridge dedups
+  // edges and republishes /e_stop_state itself.
+  useEffect(() => {
+    publishHmiEstop({ data: active })
+    const id = setInterval(() => publishHmiEstop({ data: active }), 500)
+    return () => clearInterval(id)
+  }, [active, publishHmiEstop])
 
   const publishCmdVel = useCallback(
     (t: Twist) => {

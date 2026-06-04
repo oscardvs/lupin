@@ -352,8 +352,9 @@ export interface GetFieldRequest {
 export interface GetFieldResponse {
   ok: boolean
   error_message: string
-  /** Row-major width*height. NaN cells are encoded as nulls by rosbridge —
-   * the hook normalises those back to NaN before consumers see them. */
+  /** Row-major width*height. NaN ("no data") cells are encoded as JSON `null`
+   * by rosbridge and are NOT renormalised — consumers must treat `null` as
+   * missing (the heatmap renderer already does via valueToRgba). */
   values: (number | null)[]
   width: number
   height: number
@@ -398,6 +399,10 @@ export interface MissionState {
   estop_engaged: boolean
   paused: boolean
   started_at: Time                       // zero when no mission has run
+  /** Orchestrator's battery view (also drives the battery-low → dock divert).
+   * Battery is otherwise surfaced from the raw /battery BatteryState topic. */
+  battery_percentage: number
+  battery_low: boolean
 }
 
 /** Mirror of `lupin_msgs/msg/SensorReading`. */

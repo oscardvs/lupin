@@ -51,6 +51,10 @@ class EStopBridge(Node):
             'button_topic', '/io/intensity/emergency_button/digital'
         )
         self.declare_parameter('estop_topic', '/e_stop_state')
+        # Soft e-stop from the HMI (lupin_web). OR'd with the physical button so
+        # either freezes the mission, while the bridge stays the single
+        # /e_stop_state publisher (no dual-publisher flapping).
+        self.declare_parameter('hmi_estop_topic', '/lupin/hmi/estop')
         # Which raw button `value` means "pressed / e-stop engaged". MUST be
         # verified on the physical button — flip this (launch param) if pressing
         # the button does not drive /e_stop_state true.
@@ -59,6 +63,7 @@ class EStopBridge(Node):
 
         self._engaged_value = bool(self.get_parameter('engaged_value').value)
         button_topic = str(self.get_parameter('button_topic').value)
+        hmi_topic = str(self.get_parameter('hmi_estop_topic').value)
         estop_topic = str(self.get_parameter('estop_topic').value)
         rate = float(self.get_parameter('publish_rate_hz').value)
 
@@ -73,11 +78,15 @@ class EStopBridge(Node):
         )
         self._pub = self.create_publisher(Bool, estop_topic, pub_qos)
 
-        # Latest known engaged state. False until the button says otherwise so
-        # a silent (idle) button means "not engaged".
-        self._engaged = False
+        # Engaged = physical button OR HMI soft-stop. Each False until its source
+        # says otherwise, so a silent system means "not engaged".
+        self._button = False
+        self._hmi = False
         self._sub = self.create_subscription(
             IntensityDigital, button_topic, self._on_button, 10
+        )
+        self._hmi_sub = self.create_subscription(
+            Bool, hmi_topic, self._on_hmi, 10
         )
         self._timer = self.create_timer(1.0 / max(rate, 0.5), self._tick)
 
@@ -89,10 +98,19 @@ class EStopBridge(Node):
 
     def _on_button(self, msg: IntensityDigital) -> None:
         engaged = button_is_engaged(msg.value, self._engaged_value)
-        if engaged != self._engaged:
-            self._engaged = engaged
+        if engaged != self._button:
+            self._button = engaged
             self.get_logger().info(
                 f'e-stop {"ENGAGED" if engaged else "released"} (button)'
+            )
+            self._publish()
+
+    def _on_hmi(self, msg: Bool) -> None:
+        engaged = bool(msg.data)
+        if engaged != self._hmi:
+            self._hmi = engaged
+            self.get_logger().info(
+                f'e-stop {"ENGAGED" if engaged else "released"} (HMI)'
             )
             self._publish()
 
@@ -102,7 +120,7 @@ class EStopBridge(Node):
 
     def _publish(self) -> None:
         msg = Bool()
-        msg.data = self._engaged
+        msg.data = self._button or self._hmi
         self._pub.publish(msg)
 
 
