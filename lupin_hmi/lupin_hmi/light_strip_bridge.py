@@ -36,6 +36,10 @@ TEAL = (0, 180, 140)     # monitoring — continuous re-scan loop
 PURPLE = (180, 0, 255)   # scanning / confirming a tag (the read moment)
 ORANGE = (255, 128, 0)   # returning to dock
 GREEN = (0, 255, 0)      # mission done
+# Auto-mode-only status colour (not an operator manual preset): a battery-low
+# return, so it reads differently from a normal dock return (ORANGE). Distinct
+# from RED/AMBER/ORANGE so an operator can't confuse it with fault/pause/return.
+BATTERY_LOW = (255, 0, 128)  # low battery — urgent return
 
 
 class LightStripBridge(Node):
@@ -198,6 +202,13 @@ class LightStripBridge(Node):
 
         if msg.paused:
             return AMBER
+
+        # Battery-low gets its own colour so a low-battery divert is legible as
+        # such, not as a routine dock return. The flag rides in MissionState and
+        # stays set across the battery-triggered RETURNING leg; only a pause or
+        # safety state (checked first / upstream) outranks it.
+        if msg.battery_low:
+            return BATTERY_LOW
 
         if lifecycle == 'BOOT':
             return WHITE

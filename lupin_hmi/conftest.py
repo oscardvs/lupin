@@ -29,7 +29,7 @@ def _preload(name: str, path: Path) -> None:
 
 # Load the inner package first, then any submodule new tests may import early.
 _preload("lupin_hmi", _inner / "__init__.py")
-for _mod in ("arm_library", "arm_limits", "arm_traj", "estop_bridge"):
+for _mod in ("arm_library", "arm_limits", "arm_traj", "estop_bridge", "light_strip_bridge"):
     _path = _inner / f"{_mod}.py"
     if _path.exists():
         _preload(f"lupin_hmi.{_mod}", _path)
