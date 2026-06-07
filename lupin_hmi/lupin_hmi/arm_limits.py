@@ -3,7 +3,7 @@
 Mirrors the frontend `lupin_web/web/src/lib/arm.ts`. The bridge, the preset
 server and the teleop node all import the canonical per-joint clamp and the
 gripper map from here instead of each carrying their own magic numbers (which
-used to drift — see the audit doc `docs/arm_control_audit_2026-06-02.md`).
+used to drift between the surfaces).
 
 GROUND TRUTH
 ------------

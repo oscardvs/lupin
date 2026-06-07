@@ -13,6 +13,75 @@ change is branch-specific. Unmarked entries apply to all three.
 
 _Nothing yet._
 
+## [1.1.0] — 2026-06-07
+
+Greenhouse mission + perception overhaul on top of `v1.0.0`: per-bloom flower
+localization and rendering, an operator arm pose/sequence library, a hardened
+mission state machine, the physical e-stop wired into the orchestrator, and a
+stabilised OpenCV AprilTag pipeline. Demonstrated end-to-end in Gazebo (`sim`)
+and on the physical MIRTE Master V2 (`hardware`).
+
+### Added
+
+- **Flower localization & render** — new `FlowerPoint` message and
+  `flowers[]` / `box_footprint` fields on `FlowerObservation` and
+  `TwinTagState`. `perception_aggregator` derives a tag-anchored planter-box
+  rectangle and scatters per-bloom points inside it from a pan/bbox cue; the
+  twin republishes them per tag; the HMI draws the box rectangle, a diamond
+  tag marker, species-coloured flower dots, and a 3D bloom health indicator.
+- **Arm pose & sequence library** (`arm_library_server`, laptop-side) — named
+  pose CRUD, kinesthetic/teleop sequence recording with a waypoint cap, and
+  replay with scheduled gripper events and speed scaling. New `lupin_msgs`
+  services (`GetArmLibrary`, `SaveArmPose`, `ArmRecord`, `PlayArmSequence`,
+  `ArmLibraryEdit`), HMI **Pose Library** and **Sequence Recorder** cards, and
+  voice-agent tools for the whole surface.
+- **Mission monitoring** — `ExplorationMission` runs a nearest-neighbour
+  monitoring sweep that completes after `target_cycles` (default 1), with a
+  scan dwell so the per-pot patrol arm and flower detector get their window.
+  Mission events are classified so the HMI shows a tone rather than a raw
+  "orchestrator error".
+- **Physical e-stop** — the hardware emergency-stop button is bridged onto
+  `/e_stop_state`, and the HMI STOP now reaches the orchestrator e-stop.
+- **LED control** — manual LED control plus mission-state strip colours
+  (including EXPLORING/MONITORING and a distinct battery-low return colour),
+  an HMI-colocated light-strip bridge, and a BRG wire-order remap.
+- **Sim** — vision perception and per-pot arm patrol wired into
+  `sim_full.launch.py`, a three-colour flower scan layer (trough clusters +
+  bug anomalies + HSV detector), per-environment slam/nav2 launch wrappers,
+  a `mission_stack` launch, and DEMO_DAY runbooks.
+- Single source of truth for arm joint limits and trajectory building
+  (`arm_limits`, mirrored by the frontend `lib/arm.ts`).
+
+### Changed
+
+- **`cmd_vel_mux` → `twist_mux`** — base-velocity arbitration moved to
+  `twist_mux` over `/cmd_vel_{joy,manual,auto}` (priorities 100/50/10) on both
+  the `sim` and `hardware` branches.
+- **AprilTag detection** moved from the standard ROS detector to OpenCV ArUco
+  for stability, publishing detections as JSON with an HMI overlay toggle
+  (no second bounding-box stream); Gazebo gains real `tag36h11` models in
+  place of the magenta placeholders.
+- **HMI arm control** — sliders seed from `/joint_states` feedback behind a
+  strict Enable arming gate, report convergence-based status, and clamp to the
+  real asymmetric per-joint limits.
+- **Mission FSM hardened** — recoverable FAULT, working dock recall, nav/dock
+  timeouts and a safe freeze; battery docking is resumable into the
+  originating sub-machine and retries then pauses instead of silently
+  reporting DONE.
+- `hardware.launch.py` made wired-demo-ready (`robot_ip` arg, `leds:=false`).
+
+### Fixed
+
+- Metric frontier clearance so exploration goals clear Nav2's inflation layer.
+- Twin UI greys out when `/twin/state` goes stale; tag markers are pinned at
+  the tag pose, not the robot pose.
+- Battery-percentage normalisation and an approach-footprint guard.
+- Hardware clock-sync no longer wedges `ros2_control`.
+- Sim stability: patched `gazebo_ros2_control` so `controller_manager` starts,
+  restored the vendor `planar_move` drive (grounded spawn, no Ogre crash),
+  raised planter bodies above the lidar plane, and added a continuous
+  `/amcl_pose` stand-in so the mission clears localization.
+
 ## [1.0.0] — 2026-06-02
 
 First tagged release: the full FloraNova greenhouse digital-twin stack,
@@ -73,5 +142,6 @@ branch.
   buddy-checked MRs — see [README](README.md#contributing).
 - Public documentation site: <https://lupin-robot.vercel.app>.
 
-[Unreleased]: https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin/-/compare/v1.0.0...main
-[1.0.0]: https://gitlab.tudelft.nl/cor/ro47007/2026/group_14/lupin/-/tags/v1.0.0
+[Unreleased]: https://github.com/oscardvs/lupin/compare/v1.1.0...main
+[1.1.0]: https://github.com/oscardvs/lupin/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/oscardvs/lupin/releases/tag/v1.0.0

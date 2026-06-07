@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>lupin_hmi</name>
-  <version>0.0.0</version>
+  <version>1.1.0</version>
   <description>Teleop (PS4/Xbox + keyboard), cmd_vel arbitration mux, and arm/gripper bridges for the Lupin MIRTE Master stack.</description>
   <maintainer email="koeonvog@gmail.com">koen_vogels</maintainer>
   <license>Apache-2.0</license>

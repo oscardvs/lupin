@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>lupin_bringup</name>
-  <version>0.0.1</version>
+  <version>1.1.0</version>
   <description>Top-level launch files, params, and system glue for MDP Team Lupin.</description>
   <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
   <license>Apache-2.0</license>

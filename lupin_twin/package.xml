@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>lupin_twin</name>
-  <version>0.0.1</version>
+  <version>1.1.0</version>
   <description>Digital-twin node for Team Lupin's MIRTE Master. Aggregates per-tag
     observations from the orchestrator and exposes the live world state
     over /twin/state plus an on-demand IDW-interpolated sensor field

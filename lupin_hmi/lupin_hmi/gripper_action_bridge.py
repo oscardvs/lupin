@@ -79,7 +79,7 @@ Limits / mapping
 Per-joint clamp + gripper map come from ``arm_limits`` (the single source of
 truth, mirrored by the frontend ``lib/arm.ts``). The clamp is now per-joint and
 asymmetric (the real servo software limits intersected with the ±π/2 envelope),
-replacing the old blanket ±π/2 — see ``docs/arm_control_audit_2026-06-02.md``.
+replacing the old blanket ±π/2.
 """
 
 from __future__ import annotations

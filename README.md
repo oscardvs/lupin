@@ -9,6 +9,7 @@
 [![Ubuntu 22.04](https://img.shields.io/badge/Ubuntu-22.04-E95420.svg?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
 [![Platform: MIRTE Master V2](https://img.shields.io/badge/Platform-MIRTE_Master_V2-2ea44f.svg)](https://docs.mirte.org/)
 [![Docs](https://img.shields.io/badge/docs-lupin--robot.vercel.app-000000.svg)](https://lupin-robot.vercel.app)
+[![Release](https://img.shields.io/github/v/release/oscardvs/lupin?label=release&color=blue)](https://github.com/oscardvs/lupin/releases)
 
 RO47007 Multidisciplinary Project, 2025–2026 · Team **Lupin** · Client:
 FloraNova (commercial greenhouse). Robot platform: MIRTE Master V2
@@ -22,6 +23,7 @@ FloraNova (commercial greenhouse). Robot platform: MIRTE Master V2
 
 ## Contents
 
+- [Architecture at a glance](#architecture-at-a-glance)
 - [Prerequisites](#prerequisites)
 - [Cloning this repository](#cloning-this-repository)
 - [Branch model](#branch-model)
@@ -32,6 +34,51 @@ FloraNova (commercial greenhouse). Robot platform: MIRTE Master V2
 - [Team](#team)
 - [Course staff](#course-staff)
 - [License](#license)
+
+## Architecture at a glance
+
+Lupin is a ROS 2 Humble stack split into nine `lupin_*` packages. At runtime the
+robot navigates to AprilTag stations, reads greenhouse sensors and flower health
+at each, fuses everything into a digital twin, and streams it to a browser HMI —
+identically in Gazebo and on the real MIRTE Master V2.
+
+```
+        AprilTag + YOLO              mdp-greenhouse sim
+              │                            │
+        lupin_perception          lupin_greenhouse_bridge
+        (tags, flowers,           (per-tag sensor readings)
+         anomalies)                       │
+              └────────────┐    ┌─────────┘
+                           ▼    ▼
+                       lupin_mission ──────►  lupin_navigation
+                    (orchestrator FSM)         (Nav2 MPPI + SLAM)
+                           │
+                  /floranova/observations
+                           │
+                       lupin_twin  ──►  /twin/state
+                           │
+                     rosbridge :9090
+                           │
+                       lupin_web   (browser HMI :8090)
+```
+
+- **Sense** — `lupin_perception` (OpenCV ArUco tags + Ultralytics YOLO
+  flowers/anomalies) and `lupin_greenhouse_bridge` (the course `mdp-greenhouse`
+  sensor sim) emit observations keyed by AprilTag ID.
+- **Decide** — `lupin_mission` runs the hierarchical orchestrator
+  (`BOOT → READY → PREPARE → {INSPECTING | EXPLORING → MONITORING} →
+  RETURNING → DONE/FAULT`) and drives `lupin_navigation` (Nav2 MPPI +
+  slam_toolbox).
+- **Show** — `lupin_twin` aggregates observations into a queryable digital
+  twin; `lupin_web` renders it — plus teleop, arm, voice, cameras, and
+  telemetry — in the browser over rosbridge.
+- **Move** — `lupin_hmi` + `lupin_bringup` provide chassis arbitration
+  (`twist_mux`), arm/gripper/LED bridges, and the sim + hardware launch chains.
+
+**New here?** Start with the **[full system overview and per-subsystem docs at
+lupin-robot.vercel.app](https://lupin-robot.vercel.app)**, then skim the
+[Repository layout](#repository-layout) table below. The end-to-end demo is a
+single command — [`ros2 launch lupin_bringup sim_full.launch.py`](#running).
 
 ## Prerequisites
 
@@ -152,19 +199,19 @@ are expected to line up with the AprilTag IDs detected by
 
 ## Cloning this repository
 
-Clone Lupin's code as a **sibling** of the MIRTE vendor packages —
-not inside any of them:
+Lupin is mirrored publicly on **GitHub** and developed on the team's TU Delft
+**GitLab**. To read or build the code, clone from GitHub as a **sibling** of the
+MIRTE vendor packages — not inside any of them:
 
 ```bash
 cd ~/ros2_ws/src
-git clone git@gitlab.tudelft.nl:cor/ro47007/2026/group_14/lupin.git
+git clone https://github.com/oscardvs/lupin.git
 ```
 
-If the clone fails with a permissions error, you have not yet added
-your SSH key to GitLab. See the
-[GitLab SSH guide](https://docs.gitlab.com/ee/user/ssh.html), then add
-the public key at
-<https://gitlab.tudelft.nl/-/user_settings/ssh_keys>.
+Team members with GitLab access clone from there instead
+(`git@gitlab.tudelft.nl:cor/ro47007/2026/group_14/lupin.git`); if the SSH clone
+fails on a permissions error, add your key per the
+[GitLab SSH guide](https://docs.gitlab.com/ee/user/ssh.html).
 
 After cloning, check out the branch that matches what you want to do:
 
@@ -225,9 +272,11 @@ Other sim-side entry points are available for partial bringup (debugging
 individual layers, KRR house testing, etc.) — see the per-scenario
 sections below.
 
-`hardware.launch.py` is forthcoming — for now, hardware bringup uses
-the per-package launches via the multi-terminal recipe documented in the
-team wiki.
+On the `hardware` branch, `hardware.launch.py` brings up the real MIRTE
+Master (drivers, `twist_mux`, arm/gripper/LED bridges, cameras) and the
+laptop adds Nav2/SLAM, the mission orchestrator, rosbridge, and the web HMI.
+The `lupin_bringup/DEMO_DAY_WIRED.md` runbook walks through the wired-LAN
+deployment end to end.
 
 ### Greenhouse Gazebo world
 
@@ -341,7 +390,7 @@ detections agree once the textures land.
 
 When you want autonomy in Gazebo (KRR Course small-house world,
 slam-built map, MPPI local planner with mecanum/Omni motion, the
-existing teleop/cmd_vel_mux on `/cmd_vel_auto`), use these launches.
+existing teleop/`twist_mux` on `/cmd_vel_auto`), use these launches.
 The vendor sim package needs `/usr/share/gazebo/setup.sh` sourced or
 spawn_entity hangs — every teammate hits this once.
 
@@ -367,7 +416,7 @@ ros2 launch lupin_navigation nav2.launch.py
 # controller_server (MPPI, motion_model:Omni), planner_server,
 # behavior_server, bt_navigator, waypoint_follower, velocity_smoother,
 # and two lifecycle_managers. velocity_smoother's smoothed output is
-# remapped to /cmd_vel_auto so it goes through cmd_vel_mux just like
+# remapped to /cmd_vel_auto so it goes through twist_mux just like
 # the joystick — manual override still wins.
 ```
 
@@ -566,9 +615,11 @@ expand once the chain is proven.
   and run a `/groundtruth/odom` bridge as the sole publisher;
   deferred until after the sim demo. **Hardware is unaffected** —
   real wheel encoders are accurate.
-- `cmd_vel_mux` only forwards manual Twists when nonzero, so the
-  joystick "release" doesn't actively publish a stop — autonomous
-  resumes 0.5 s later. Tracked separately.
+- The Gazebo `planar_move` driver holds the last commanded twist when its
+  input goes silent, so the sim bringup feeds `twist_mux` a low-priority
+  constant-zero `/zero_cmd_vel` guard that halts the base once joy/manual/auto
+  all time out. On hardware nothing publishes `/zero_cmd_vel` and the base
+  controller's own command timeout stops the wheels.
 
 ## Repository layout
 
@@ -577,12 +628,12 @@ expand once the chain is proven.
 | `lupin_bringup` | Top-level launch files (`sim_full.launch.py`, `greenhouse_sim.launch.py`), the greenhouse SDF + generator, RViz config, and small system-glue helpers (`seed_amcl_pose`). |
 | `lupin_navigation` | Nav2 params + slam_toolbox config; saved KRR-house map; planned home for AprilTag pose corrections. |
 | `lupin_mission` | Mission orchestrator (v2). Hierarchical state machine via `transitions`: `BOOT → READY → PREPARE → {INSPECTING \| EXPLORING → MONITORING} → RETURNING → DONE / FAULT`. Two mission types: `InspectionMission` (fixed tag list, once) and `ExplorationMission` (frontier-discover N tags, then monitor them in a loop). Polymorphic observation publisher on `/floranova/observations`, status on `/mission/state` (5 Hz), operator services `/mission/{start,pause,resume,abort,skip_current}`, `/e_stop_state` monitor. See `lupin_mission/README.md`. |
-| `lupin_msgs` | Custom messages and services: `Observation`, `MissionState`, `TagReading`, `SensorReading`, `FlowerObservation`, `AnomalyReport`, `TwinState`/`TwinTagState`, `DiscoveredTag`/`DiscoveredTags`; `GetTagReading`, `StartMission`, `ConfirmTag`, `GetField`. |
+| `lupin_msgs` | Custom messages and services: `Observation`, `MissionState`, `TagReading`, `SensorReading`, `FlowerObservation`, `FlowerPoint`, `AnomalyReport`, `TwinState`/`TwinTagState`, `DiscoveredTag`/`DiscoveredTags`; services `GetTagReading`, `StartMission`, `ConfirmTag`, `GetField`, `CalibrateArm`, and the arm-library set (`SaveArmPose`, `GetArmLibrary`, `ArmRecord`, `PlayArmSequence`, `ArmLibraryEdit`). |
 | `lupin_greenhouse_bridge` | ROS 2 wrapper around the `mdp-greenhouse` simulator. Single `~/get_tag_reading` service. Open-sourced separately at `lupin_greenhouse_ros/`. |
-| `lupin_hmi` | PS4 + keyboard teleop, `cmd_vel_mux` for arbitration between manual override / Nav2 / web. |
+| `lupin_hmi` | Xbox/PS4 + keyboard teleop, the `twist_mux` arbitration config (manual override / Nav2 / web), and the arm/gripper/light-strip bridges + arm preset and calibration servers. |
 | `lupin_web` | Browser HMI on `:8090` — Vite + React + shadcn/ui. Tabs: Teleop, Arm, Voice, Cameras, Telemetry, Logs, Map. Talks to rosbridge on `:9090`. The Voice tab is a Gemini Live agent with a 14-tool surface (`drive`, `nav_goto`, `nav_forward`, `rotate`, `arm_preset`, `query_state`, `engage_estop`, …) that drives the robot in natural language. |
 | `lupin_perception` | Vision: `tag_annotator` (OpenCV ArUco) for AprilTag detection on the Orbbec stream; `yolo_detector` (Ultralytics) for tulip species + `bug` anomaly on the gripper cam; `perception_aggregator` fuses them into `/perception/discovered_tags`, `KIND_FLOWER` observations, and the `/perception/confirm_tag` service. See `lupin_perception/README.md`. |
-| `docs/` | Architecture diagrams, design notes. |
+| `docs/` | Architecture diagrams (`architecture/`), interface contracts (`CONTRACTS.md`), and the sim mission runbook. |
 
 ## Contributing
 
