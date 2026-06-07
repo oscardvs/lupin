@@ -366,10 +366,14 @@ def generate_launch_description() -> LaunchDescription:
             # `inspect` pose (gripper cam down on the bloom) for the flower
             # detector, then the travel pose between pots. Sim demo of the scan.
             ('arm_patrol_enabled', 'true'),
-            # 'home' is arm-horizontal-forward (~0.28 m reach) and clips the pots
-            # while driving; 'tuck' folds the arm over the base. settle 3.2 s lets
-            # the fold finish before the base drives off. (Matches sim_autonomy.)
-            ('arm_travel_preset', 'tuck'),
+            # Travel/stow pose between pots. FK check (base_link): 'zero' puts the
+            # gripper straight UP at x=0.09 m (inside the ~0.15 m base front edge);
+            # 'tuck' actually pokes it 0.23 m FORWARD and 'home' 0.13 m — both clip
+            # pots/tables in the tight 1.0.8 aisles. (The old comment here had
+            # home/tuck backwards — that mislabel is what was colliding.) Vertical
+            # 'zero' is also ~zero shoulder gravity-moment. settle 3.2 s lets the
+            # fold from 'inspect' finish before the base drives off.
+            ('arm_travel_preset', 'zero'),
             ('arm_travel_settle_s', '3.2'),
             # Dwell ~4 s in SCANNING so the arm (3 s travel) reaches the inspect
             # pose and the flower detector reads the bloom before advancing.

@@ -34,7 +34,7 @@ def generate_launch_description():
         DeclareLaunchArgument('tag_locations_file', default_value=''),
         # Inspection
         DeclareLaunchArgument('approach_yaw', default_value='0.0'),
-        DeclareLaunchArgument('approach_standoff_m', default_value='0.5'),
+        DeclareLaunchArgument('approach_standoff_m', default_value='0.4'),
         DeclareLaunchArgument('approach_overrides_file', default_value=''),
         DeclareLaunchArgument('nav_timeout_s', default_value='60.0'),
         DeclareLaunchArgument('nav_max_attempts', default_value='2'),

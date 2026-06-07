@@ -127,9 +127,11 @@ def generate_launch_description() -> LaunchDescription:
             ('approach_overrides_file', approach_overrides),
             ('arm_patrol_enabled', 'true'),
             ('flower_scan_dwell_s', '4.0'),
-            # Compact travel pose between pots ('home' is arm-horizontal-forward,
-            # ~0.28 m reach → it clips the pots while driving).
-            ('arm_travel_preset', 'tuck'),
+            # Compact travel/stow pose between pots. FK (base_link): 'zero' =
+            # gripper straight UP at x=0.09 m (inside the base footprint); 'tuck'
+            # and 'home' actually extend 0.23 / 0.13 m forward and clip in the
+            # tight aisles. Vertical 'zero' is also ~zero shoulder gravity-moment.
+            ('arm_travel_preset', 'zero'),
             # Let the arm finish folding before driving (preset takes ~3 s).
             ('arm_travel_settle_s', '3.2'),
             # Sim runs on /clock — keep the orchestrator's observation stamps on

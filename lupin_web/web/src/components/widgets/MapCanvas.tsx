@@ -660,8 +660,30 @@ export function MapCanvas() {
         pulseRef.current = null
       } else {
         const target = tagsRef.current.find((t) => t.tag_id === pulse.tagId)
-        if (target && tagHasPose(target)) {
-          const c = proj.worldToCanvas(target.pose.position.x, target.pose.position.y)
+        // Highlight the FLOWER cluster the row represents, not the tag diamond:
+        // centre on the bloom centroid, else the box-footprint centre, else the
+        // tag pose. (A Greenhouse-State row is "this tag's flowers"; ringing the
+        // tag pin missed what the user actually clicked.)
+        let center: { x: number; y: number } | null = null
+        if (target) {
+          const blooms = target.flowers ?? []
+          const box = target.box_footprint?.points ?? []
+          if (blooms.length) {
+            center = {
+              x: blooms.reduce((s, f) => s + f.position.x, 0) / blooms.length,
+              y: blooms.reduce((s, f) => s + f.position.y, 0) / blooms.length,
+            }
+          } else if (box.length >= 3) {
+            center = {
+              x: box.reduce((s, p) => s + p.x, 0) / box.length,
+              y: box.reduce((s, p) => s + p.y, 0) / box.length,
+            }
+          } else if (tagHasPose(target)) {
+            center = { x: target.pose.position.x, y: target.pose.position.y }
+          }
+        }
+        if (center) {
+          const c = proj.worldToCanvas(center.x, center.y)
           // Two concentric rings, each pulsing on a different phase, so
           // the highlight reads even on a busy heat map.
           for (let k = 0; k < 2; k++) {

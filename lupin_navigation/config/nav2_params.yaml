@@ -270,7 +270,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.22
+      robot_radius: 0.19   # real ~half-width incl. mecanum wheels (wheels at y≈0.153 + ~0.0275). The old 0.22 was the *circumscribed* (half-diagonal) radius and over-blocked the 0.45-0.6 m aisles; the Omni base strafes, so lateral half-width is the binding extent.
       # v1 keeps it laser-only; we have /camera/depth/points but voxel_layer adds
       # cost and tuning surface we don't need before the first goal works.
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -291,17 +291,17 @@ local_costmap:
           obstacle_min_range: 0.25
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # The official mdp-greenhouse 1.0.8 demo layout packs the stacked tables
-        # ~0.45 m apart (top group), with 0.5-0.6 m cross/perimeter aisles and a
-        # ~0.95 m central aisle. The robot is 0.22 m inscribed (0.44 m circle), so
-        # inflation_radius must stay >0.22 — keeping the ~0.45 m gaps costed-out
-        # (the base physically can't fit them) — yet small enough that every
-        # >=0.5 m aisle clears to ~zero cost on its centreline. 0.23 m does both;
-        # the old 0.25 m left the 0.5 m perimeter aisles too costly to plan through.
-        # cost_scaling kept steep so the thin halo doesn't bleed into the free band.
-        # NOTE: confirm MPPI threads the 0.5 m aisles smoothly in a sim run.
+        # 1.0.8 layout aisles: ~0.45 m (top-group stacked tables), 0.5-0.6 m
+        # cross/perimeter, ~0.95 m central. With the robot modelled at its REAL
+        # half-width (robot_radius 0.19, not the old 0.22 circumscribed radius),
+        # inflation just needs to stay >0.19 yet leave the aisle centrelines free.
+        # At 0.20 m, any aisle >=0.42 m clears to ~zero cost on its centre — a
+        # 0.45 m gap centre sits 0.225 m from each wall (>0.20). cost_scaling kept
+        # steep so the thin halo doesn't refill the narrow aisles.
+        # NOTE: tuned for the tight layout; the ~0.45 m gaps stay marginal — the
+        # robot should mostly work the wider aisles. Validate MPPI in a sim run.
         cost_scaling_factor: 5.0
-        inflation_radius: 0.23
+        inflation_radius: 0.20
       # Was True — sent the full costmap grid every publish, even unchanged
       # cells. Nav2 supports incremental updates and downstream consumers
       # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on
@@ -317,7 +317,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.22
+      robot_radius: 0.19   # real ~half-width incl. mecanum wheels (wheels at y≈0.153 + ~0.0275). The old 0.22 was the *circumscribed* (half-diagonal) radius and over-blocked the 0.45-0.6 m aisles; the Omni base strafes, so lateral half-width is the binding extent.
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -342,11 +342,11 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # Match local costmap — see comment above. inflation_radius 0.23 keeps
-        # the >=0.5 m demo-layout aisles plannable while the ~0.45 m stacked-table
-        # gaps stay costed-out for the 0.44 m base.
+        # Match local costmap — see comment above. inflation_radius 0.20 (just
+        # above the 0.19 real-half-width robot_radius) keeps every >=0.42 m demo
+        # aisle plannable; the ~0.45 m stacked-table gaps remain marginal by design.
         cost_scaling_factor: 5.0
-        inflation_radius: 0.23
+        inflation_radius: 0.20
       # Was True — sent the full costmap grid every publish, even unchanged
       # cells. Nav2 supports incremental updates and downstream consumers
       # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on

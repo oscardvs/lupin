@@ -344,7 +344,7 @@ class MissionOrchestratorNode(Node):
         # infer as BYTE_ARRAY and reject string overrides.
         self.declare_parameter("tag_sequence", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("approach_yaw", 0.0)
-        self.declare_parameter("approach_standoff_m", 0.5)
+        self.declare_parameter("approach_standoff_m", 0.4)  # was 0.5 — too deep for the tight 1.0.8 aisles; 0.4 m is the Orbbec near-detection edge and parks closer to the table edge
         self.declare_parameter("approach_overrides_file", "")
         self.declare_parameter("nav_timeout_s", 60.0)
         self.declare_parameter("nav_max_attempts", 2)
@@ -400,10 +400,13 @@ class MissionOrchestratorNode(Node):
         self.declare_parameter('frontier_min_cluster_cells', 6)
         # Clearance keeps frontier goals out of Nav2's inflation halo. Given in
         # metres (converted to cells via the live map resolution) so it stays
-        # correct as resolution changes — keep it >= nav2 inflation_radius
-        # (0.25 m). frontier_robot_radius_cells >= 0 overrides with a raw cell
-        # count (mostly for tests); -1 means "use the metric clearance".
-        self.declare_parameter('frontier_robot_clearance_m', 0.35)
+        # correct as resolution changes — keep it ~ robot_radius (0.19) /
+        # inflation_radius (0.20). At 0.35 it pruned EVERY frontier in the
+        # 0.45-0.6 m demo aisles (no cell is 0.35 m from both walls), so the robot
+        # never drove far enough in to discover the inner tags; 0.20 lets
+        # aisle-centre frontiers survive. frontier_robot_radius_cells >= 0
+        # overrides with a raw cell count (mostly for tests); -1 = metric.
+        self.declare_parameter('frontier_robot_clearance_m', 0.20)
         self.declare_parameter('frontier_robot_radius_cells', -1)
         # Occupancy that counts as solid *for the clearance pass only*. Lower it
         # (e.g. 50) to also push frontiers off soft/partially-observed cells;
@@ -1961,6 +1964,14 @@ class MissionOrchestratorNode(Node):
         if len(self._discovered) >= self._active_discovery_goal:
             self.tags_discovered()  # type: ignore[attr-defined]
             return
+        # Stow the arm before frontier-driving. _enter_navigating() folds it
+        # between monitoring pots, but EXPLORING has its OWN nav path that never
+        # passed through there — so the robot frontier-drove the whole
+        # exploration phase with the arm in its forward rest pose and clipped
+        # tables in the tight 1.0.8 aisles. Fire-and-forget (no-op when patrol is
+        # off); the arm also spawns already stowed (sim URDF initial_value) so
+        # there's no fold race on the first drive.
+        self._dispatch_arm_preset(self._arm_travel_preset)
         self._send_frontier_goal()
 
     def on_enter_MONITORING(self, event_data) -> None:

@@ -83,9 +83,13 @@ PRESETS: Dict[str, Tuple[float, float, float, float]] = {
     # and any long-duration "park" state.
     'home':  (0.04, -0.01,  0.01, -1.57),
     'zero':  (0.0,   0.0,   0.0,   0.0),
-    'tuck':  (0.0,  -1.40,  1.40,  0.0),
-    'pick':  (0.0,  -0.60,  0.80, -0.40),
-    'place': (0.0,   0.20,  0.80, -0.40),
+    # tuck/pick/place re-derived 2026-06-07 via FK/IK — the old values were
+    # mislabelled (FK showed 'tuck' poked the gripper 0.23 m FORWARD, 'pick' sat
+    # 0.48 m UP nowhere near a table, 'place' ended up BEHIND the robot). The
+    # base_link gripper pose each pose now hits is noted inline.
+    'tuck':  (0.0,   0.78,  1.57,  1.54),   # folded back over the base: (-0.09, 0, 0.15)
+    'pick':  (0.0,  -0.81, -1.57, -1.04),   # reach fwd+down to table, jaw down: (0.27, 0, 0.14)
+    'place': (0.0,  -0.23, -1.57, -1.54),   # fwd, raised to clear the edge, jaw down: (0.24, 0, 0.25)
     # Per-pot patrol pose: reach forward, pitch the wrist down so the
     # gripper camera frames the bloom from above. Tune visually in Gazebo.
     'inspect': (0.0, -0.40,  0.90, -0.80),

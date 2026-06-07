@@ -65,13 +65,21 @@ export function useTwinState(): TwinSnapshot {
 /**
  * Live age of a tag's most recent reading, in seconds. Prefers the absolute
  * `last_observed` stamp — which keeps advancing even after the twin stops
- * publishing — over the publish-frozen `stale_seconds`, and falls back to
- * `stale_seconds` only when `last_observed` was never set (sec+nanosec == 0).
- * This is what keeps the "LAST SEEN" honest when the twin wedges.
+ * publishing — over the publish-frozen `stale_seconds`. BUT `last_observed` is
+ * only a real wall-clock time on hardware (node clock == wall); under
+ * `use_sim_time` the twin stamps it with the SIM clock (a few hundred seconds
+ * since sim start), so `Date.now()/1000 - last_observed` would read ~56 years
+ * (the "494680 h ago" bug). Guard: trust `last_observed` only when it's a
+ * plausible wall timestamp (after ~2001); otherwise fall back to
+ * `stale_seconds`, which the twin computes entirely in the ROS clock domain
+ * and is therefore correct in sim AND hardware.
  */
 export function tagAgeSeconds(t: TwinTagState, nowSec: number = Date.now() / 1000): number {
   const observed = timeToSec(t.last_observed)
-  if (observed > 0) return Math.max(0, nowSec - observed)
+  // Unix seconds after ~2001-09; sim-clock stamps (hundreds of seconds) fall
+  // below this, so they route to the stale_seconds fallback.
+  const WALL_EPOCH_FLOOR = 1_000_000_000
+  if (observed > WALL_EPOCH_FLOOR) return Math.max(0, nowSec - observed)
   return t.stale_seconds
 }
 
