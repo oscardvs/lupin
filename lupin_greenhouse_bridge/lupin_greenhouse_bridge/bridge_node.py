@@ -29,9 +29,10 @@ class GreenhouseBridgeNode(Node):
         self.declare_parameter('speedup_factor', 0.0)
         self.declare_parameter('debug_seed', -1)
 
-        # mdp-greenhouse 1.0.7's TagManager assigns the path arg directly to
+        # mdp-greenhouse's TagManager assigns the path arg directly to
         # self.file_path and later calls .exists() on it — passing a raw str
-        # crashes with AttributeError. Wrap in Path here until upstream fixes.
+        # crashes with AttributeError. Still reproduces on 1.0.8; wrap in Path
+        # here until upstream fixes.
         tag_file_str = self.get_parameter('tag_file').value
         cfg_file_str = self.get_parameter('sim_config_file').value
         tag_file = Path(tag_file_str) if tag_file_str else None

@@ -184,8 +184,8 @@ python -c "from greenhouse_sim.simulator import GreenhouseSimulator; \
            s = GreenhouseSimulator(); print(s.get_sensor_data(s.tags()[0]))"
 ```
 
-The default greenhouse ships 22 tag locations and 12 tables in a
-~4 m × 8 m footprint; configs live under
+The default greenhouse ships 29 tag locations and 10 tables in a
+narrow ~1.5 m × 7.3 m footprint (the official demo-day layout); configs live under
 `<site-packages>/greenhouse_sim/configs/`. To author your own layout,
 use `python -m greenhouse_sim.cli --init <folder>` followed by
 `--edit <folder>`.
@@ -292,7 +292,7 @@ MIRTE Master with its Astra Pro Plus depth-camera plugin
 (`/camera/image_raw`, `/camera/depth/image_raw`, `/camera/points`,
 `/camera/camera_info`), and starts the standard ros2_control + twist_mux
 pipeline. Override the spawn pose with `x:=`, `y:=`, `yaw:=` if needed —
-the default puts the robot in the south aisle facing the tables.
+the default puts the robot in the central aisle facing up the greenhouse (+Y).
 
 The world's tag and table positions are derived from the
 `tag_locations.json` shipped inside the `mdp-greenhouse` Python package,

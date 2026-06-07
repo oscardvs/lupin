@@ -334,9 +334,10 @@ class MissionOrchestratorNode(Node):
         self.declare_parameter("localization_covariance_threshold", 0.25)
         self.declare_parameter("amcl_pose_topic", "/amcl_pose")
 
-        # Empty → use the upstream mdp-greenhouse package JSON. Set this
-        # when the world generator was run with --aisle-expand-y != 1 so
-        # nav goals match the shifted tables.
+        # Empty → use the upstream mdp-greenhouse package JSON. The demo
+        # launches instead pass the committed snapshot tag_locations_widened.json
+        # (the verbatim 1.0.8 layout) so coords stay pinned to the generated SDF
+        # and don't depend on the installed package version.
         self.declare_parameter("tag_locations_file", "")
 
         # tag_sequence: type-only declaration so an empty default doesn't

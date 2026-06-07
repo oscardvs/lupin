@@ -101,20 +101,21 @@ def generate_launch_description() -> LaunchDescription:
 
     args = [
         # forwarded to greenhouse_sim — defaults match greenhouse_sim's own
-        # defaults (south aisle facing the tables). The (1.0, 0.5) corner
-        # spawn was wrong: it lands the robot against the south wall.
+        # Central aisle of the demo greenhouse (between vertical tables Table6/7),
+        # facing +Y up the greenhouse. The old (2.0, 1.5) default now lands on
+        # Table8/9 in the 1.0.8 layout; (2.0, 3.0) has ~0.23 m clearance each side.
         DeclareLaunchArgument(
             'spawn_x', default_value='2.0',
             description='Mirte spawn X in the greenhouse world (m).',
         ),
         DeclareLaunchArgument(
-            'spawn_y', default_value='1.5',
+            'spawn_y', default_value='3.0',
             description='Mirte spawn Y in the greenhouse world (m).',
         ),
         DeclareLaunchArgument(
             'spawn_yaw', default_value='1.5708',
             description='Mirte spawn yaw in the greenhouse world (rad). '
-                        '1.5708 (90°) faces the tables along +X.',
+                        '1.5708 (90°) faces +Y, up the greenhouse toward Table1.',
         ),
         # web HMI
         DeclareLaunchArgument(
@@ -254,12 +255,12 @@ def generate_launch_description() -> LaunchDescription:
     ))
 
     # ── 4. Greenhouse bridge ────────────────────────────────────────────
-    # The world generator is run with --aisle-expand-y 1.5 so that Nav2
-    # can thread the E-W aisles between table rows. The bridge and the
-    # orchestrator must therefore consume the widened tag_locations JSON
-    # (not the upstream one inside mdp-greenhouse) or their tag coords
-    # disagree with the SDF. The widened file is committed under
-    # lupin_bringup/config/ and installed into share/.
+    # The world generator is run at --aisle-expand-y 1.0 (exact 1.0.8 demo
+    # coords), so this committed JSON is a verbatim snapshot of the upstream
+    # mdp-greenhouse layout. Bridge + orchestrator consume THIS committed file
+    # (not the installed package) so their tag coords stay pinned to the SDF the
+    # world was built from and don't drift with the installed package version.
+    # (Filename kept as ``_widened`` to avoid churn; it is no longer y-stretched.)
     widened_tag_locations = os.path.join(
         get_package_share_directory('lupin_bringup'),
         'config',

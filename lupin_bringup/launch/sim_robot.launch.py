@@ -42,7 +42,8 @@ def generate_launch_description() -> LaunchDescription:
 
     args = [
         DeclareLaunchArgument('spawn_x', default_value='2.0'),
-        DeclareLaunchArgument('spawn_y', default_value='1.5'),
+        # 1.0.8 layout: (2.0, 3.0) = central aisle; old y=1.5 lands on Table8/9.
+        DeclareLaunchArgument('spawn_y', default_value='3.0'),
         DeclareLaunchArgument('spawn_yaw', default_value='1.5708'),
         DeclareLaunchArgument('seed_amcl', default_value='true'),
         DeclareLaunchArgument('joystick', default_value='true'),

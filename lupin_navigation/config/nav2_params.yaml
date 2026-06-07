@@ -291,12 +291,17 @@ local_costmap:
           obstacle_min_range: 0.25
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # Greenhouse aisles are narrow (~0.8 m between plant rows); a 0.55 m
-        # halo on a 0.22 m robot fully blocks them. 0.30 m gives ~0.08 m
-        # clearance past the footprint, and the steeper cost_scaling_factor
-        # keeps the halo thin so MPPI still has drivable space mid-aisle.
+        # The official mdp-greenhouse 1.0.8 demo layout packs the stacked tables
+        # ~0.45 m apart (top group), with 0.5-0.6 m cross/perimeter aisles and a
+        # ~0.95 m central aisle. The robot is 0.22 m inscribed (0.44 m circle), so
+        # inflation_radius must stay >0.22 — keeping the ~0.45 m gaps costed-out
+        # (the base physically can't fit them) — yet small enough that every
+        # >=0.5 m aisle clears to ~zero cost on its centreline. 0.23 m does both;
+        # the old 0.25 m left the 0.5 m perimeter aisles too costly to plan through.
+        # cost_scaling kept steep so the thin halo doesn't bleed into the free band.
+        # NOTE: confirm MPPI threads the 0.5 m aisles smoothly in a sim run.
         cost_scaling_factor: 5.0
-        inflation_radius: 0.25
+        inflation_radius: 0.23
       # Was True — sent the full costmap grid every publish, even unchanged
       # cells. Nav2 supports incremental updates and downstream consumers
       # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on
@@ -337,10 +342,11 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # Match local costmap — see comment above. Same rationale: greenhouse
-        # aisle width forces a thinner halo than KRR house's open rooms.
+        # Match local costmap — see comment above. inflation_radius 0.23 keeps
+        # the >=0.5 m demo-layout aisles plannable while the ~0.45 m stacked-table
+        # gaps stay costed-out for the 0.44 m base.
         cost_scaling_factor: 5.0
-        inflation_radius: 0.25
+        inflation_radius: 0.23
       # Was True — sent the full costmap grid every publish, even unchanged
       # cells. Nav2 supports incremental updates and downstream consumers
       # (RViz, MPPI) handle deltas. Cuts costmap publish bytes ~5-10× on

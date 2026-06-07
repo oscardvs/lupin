@@ -283,12 +283,12 @@ def generate_launch_description() -> LaunchDescription:
         ),
     ]
 
-    # Tag layout — for now the bridge consumes the same widened sim layout
-    # so the orchestrator can be smoke-tested against an oracle bridge on
-    # hardware before real perception lands. Per project_approach_pose_pipeline
-    # the operator can tune approach poses in approach_overrides.yaml without
-    # rebuilding. Replace with tag_locations_hardware.json once the demo
-    # space is measured.
+    # Tag layout — hardware and sim share the SAME committed snapshot
+    # tag_locations_widened.json (the verbatim mdp-greenhouse 1.0.8 demo layout,
+    # exact coords). That IS the official demo space, so the nav goals the
+    # orchestrator builds match the real room. Per project_approach_pose_pipeline
+    # the operator can still tune individual approach poses in
+    # approach_overrides.yaml without rebuilding.
     tag_locations = os.path.join(pkg_bringup, 'config', 'tag_locations_widened.json')
     approach_overrides = os.path.join(pkg_bringup, 'config', 'approach_overrides.yaml')
 

@@ -6,10 +6,10 @@ the MIRTE Master with the standard vendor pipeline.
 
 Why this isn't ``IncludeLaunchDescription(gazebo_mirte_master_empty)``: the
 vendor empty-world launch hardcodes the spawn pose ``(1.05, 0.51, 0.02)``,
-which falls inside our south perimeter wall (the wall sits at ``y≈0.6``).
+which in the 1.0.8 demo layout lands in a perimeter corner against a table.
 Forwarding ``world=`` would give us an immediately stuck robot. So we
 replicate the vendor launch's contents here but expose the spawn pose as
-launch args, defaulting to a spot in the greenhouse's south aisle.
+launch args, defaulting to the greenhouse's central aisle (see x/y/yaw below).
 
 Gazebo classic env: this launch sets ``GAZEBO_PLUGIN_PATH`` /
 ``GAZEBO_RESOURCE_PATH`` / ``GAZEBO_MODEL_PATH`` / ``OGRE_RESOURCE_PATH``
@@ -87,9 +87,11 @@ def generate_launch_description():
             'gui', default_value='true',
             description='Launch the Gazebo client GUI.',
         ),
-        # South aisle of the greenhouse, facing +Y (toward the tables).
+        # Central aisle of the demo greenhouse (between vertical tables Table6/7),
+        # facing +Y up the greenhouse. ~0.23 m footprint clearance each side in
+        # the 1.0.8 layout (the old y=1.5 now lands on Table8/9).
         DeclareLaunchArgument('x', default_value='2.0'),
-        DeclareLaunchArgument('y', default_value='1.5'),
+        DeclareLaunchArgument('y', default_value='3.0'),
         # base_link spawns on the floor. Measured TF base_link->front_left_wheel
         # z = +0.055 and wheel radius 0.05, so the wheel bottoms sit base_link+0.005
         # → base_link at z=0.0 grounds the robot (5 mm gap, invisible). The base is

@@ -13,7 +13,7 @@ setup(
         ('share/' + package_name + '/launch',
             ['launch/greenhouse_bridge.launch.py']),
     ],
-    install_requires=['setuptools', 'mdp-greenhouse>=1.0.7'],
+    install_requires=['setuptools', 'mdp-greenhouse>=1.0.8'],
     zip_safe=True,
     maintainer='Team Lupin',
     maintainer_email='o.a.e.devos@student.tudelft.nl',

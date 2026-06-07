@@ -15,7 +15,7 @@ setup(
     ],
     install_requires=[
         'setuptools',
-        'mdp-greenhouse>=1.0.3,<2',
+        'mdp-greenhouse>=1.0.8,<2',
         # transitions powers the hierarchical state machine in node.py /
         # inspection_mission.py. transitions[diagrams] would also pull in
         # graphviz; we only need that for the docs export, so we leave it

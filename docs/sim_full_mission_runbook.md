@@ -43,10 +43,10 @@ First a quick smoke pass (discover a few tags) to prove the pipeline:
 ros2 service call /mission/start lupin_msgs/srv/StartMission \
   "{mission_type: 'ExplorationMission', discovery_goal: 4}"
 ```
-Then the full sweep (all 22 tags → continuous monitoring):
+Then the full sweep (all 29 tags → continuous monitoring):
 ```bash
 ros2 service call /mission/start lupin_msgs/srv/StartMission \
-  "{mission_type: 'ExplorationMission', discovery_goal: 22}"
+  "{mission_type: 'ExplorationMission', discovery_goal: 29}"
 ```
 (`discovery_goal: 0` uses the node default of 5. Arm patrol is already on in sim.)
 

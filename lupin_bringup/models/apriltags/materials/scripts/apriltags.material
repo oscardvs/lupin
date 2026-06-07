@@ -388,3 +388,78 @@ material AprilTag/Tag36h11_25
     }
   }
 }
+material AprilTag/Tag36h11_26
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00026.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_27
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00027.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_28
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00028.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_29
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00029.png
+        filtering none
+      }
+    }
+  }
+}
+material AprilTag/Tag36h11_30
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture tag36_11_00030.png
+        filtering none
+      }
+    }
+  }
+}

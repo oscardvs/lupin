@@ -5,10 +5,11 @@ Coordinates come from the mdp-greenhouse package's bundled
 configs/tag_locations.json by default. The package is pip-installed
 (declared in setup.py install_requires); colcon won't install it.
 
-When the world generator is run with ``--aisle-expand-y != 1``, callers
-must point this loader at the matching widened JSON via the explicit
-path argument — otherwise nav goals will land inside (now-shifted)
-tables. Bridge + orchestrator share that override.
+The demo launches pass an explicit ``tag_locations_file`` pointing at the
+committed snapshot ``lupin_bringup/config/tag_locations_widened.json`` (a
+verbatim copy of the 1.0.8 layout — the name is historical; it is no longer
+y-stretched). Always pass that file so the bridge, orchestrator and the
+generated SDF agree on tag coords regardless of the installed package version.
 """
 
 from __future__ import annotations
