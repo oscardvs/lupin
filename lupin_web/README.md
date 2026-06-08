@@ -216,6 +216,7 @@ Declared at session start; the model decides which to invoke:
 | `arm_preset`            | `lupin_msgs/srv/SetArmPreset` service call (pending arm-side service).  |
 | `engage_estop`          | Trigger software E-stop (reason `voice-agent`); reset stays manual.     |
 | `query_state`           | Reads cached `pose`, `battery`, `estop`, `nav_status`. Read-only.       |
+| `set_light`             | Pin a palette colour via `mirte_msgs/srv/SetNeopixel` on `/lupin/leds/set`, or `mode:'auto'` → `std_srvs/srv/Trigger` on `/lupin/leds/auto`. Cosmetic; not e-stop gated. |
 | `speak`                 | No action — model just speaks the response.                             |
 
 All motion-producing tools are gated by the same `EStop` provider as Teleop —
