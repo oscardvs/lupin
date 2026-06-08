@@ -22,6 +22,9 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // Label of the in-flight action (e.g. 'Disabling torque…') so Cancel/Stop/
+  // Record aren't dead buttons while a multi-second torque round-trip runs.
+  const [busy, setBusy] = useState<string | null>(null)
 
   // Live recorder/replay state from the node. useTopic returns a ref and fires
   // onMessage; mirror into React state so the card re-renders on each update
@@ -44,8 +47,10 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
 
   const doStart = useCallback(async () => {
     setError(null); setConfirming(false)
+    setBusy(mode === 'kinesthetic' ? 'Disabling torque…' : 'Starting…')
     try { const r = await startRecording(callService, mode, includeGripper); if (!r.success) setError(r.message) }
     catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(null) }
   }, [callService, mode, includeGripper])
 
   const onRecord = useCallback(() => {
@@ -56,15 +61,21 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
   const onSave = useCallback(async () => {
     const n = name.trim()
     if (!n) { setError('name the sequence first'); return }
+    setError(null); setBusy('Saving…')
     try {
       const r = await saveRecording(callService, n)
       if (!r.success) setError(r.message)
       else { setName(''); await refresh() }
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(null) }
   }, [callService, name, refresh])
 
   const onCancel = useCallback(async () => {
-    try { await cancelRecording(callService) } catch { /* ignore */ }
+    setError(null); setBusy('Cancelling…')
+    // Surface failures: a swallowed error here looks like a dead Cancel button.
+    try { const r = await cancelRecording(callService); if (!r.success) setError(r.message) }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(null) }
   }, [callService])
 
   const onPlay = useCallback(async (n: string) => {
@@ -73,7 +84,12 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
     catch (e) { setError(e instanceof Error ? e.message : String(e)) }
   }, [callService, speed])
 
-  const onStop = useCallback(async () => { try { await stopSequence(callService) } catch { /* ignore */ } }, [callService])
+  const onStop = useCallback(async () => {
+    setError(null); setBusy('Stopping…')
+    try { const r = await stopSequence(callService); if (!r.success) setError(r.message) }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(null) }
+  }, [callService])
   const onDelete = useCallback(async (n: string) => {
     if (!confirm(`Delete sequence "${n}"?`)) return
     try { await deleteEntry(callService, 'sequence', n); await refresh() }
@@ -102,22 +118,27 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
       )}
 
       {!recording ? (
-        <button onClick={onRecord} disabled={disabled || playing}
+        <button onClick={onRecord} disabled={disabled || playing || busy !== null}
           className="mb-3 w-full rounded bg-rose-600/80 px-3 py-1.5 text-sm font-semibold disabled:opacity-40">
-          ● Record {mode}
+          {busy ?? `● Record ${mode}`}
         </button>
       ) : (
         <div className="mb-3 rounded bg-rose-950/40 p-2">
           <div className="mb-2 text-sm text-rose-300">
             ● Recording {state.mode} — {state.elapsed_s.toFixed(1)}s · {state.n_waypoints} pts
-            {state.mode === 'kinesthetic' && ' · arm is LIMP, support it'}
+            {/* Only claim the arm is limp once torque-off is actually confirmed. */}
+            {state.mode === 'kinesthetic' &&
+              (state.torque === false ? ' · arm is LIMP, support it' : ' · disabling torque…')}
           </div>
           <div className="flex gap-2">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name…"
               className="flex-1 rounded bg-white/5 px-2 py-1 text-sm outline-none" />
-            <button onClick={onSave} className="rounded bg-emerald-600/80 px-3 py-1 text-sm">Stop & Save</button>
-            <button onClick={onCancel} className="rounded bg-white/10 px-3 py-1 text-sm">Cancel</button>
+            <button onClick={onSave} disabled={busy !== null}
+              className="rounded bg-emerald-600/80 px-3 py-1 text-sm disabled:opacity-40">Stop &amp; Save</button>
+            <button onClick={onCancel} disabled={busy !== null}
+              className="rounded bg-white/10 px-3 py-1 text-sm disabled:opacity-40">Cancel</button>
           </div>
+          {busy && <div className="mt-1 text-xs text-white/50">{busy}</div>}
         </div>
       )}
 
@@ -125,7 +146,8 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
         <span>Speed {speed.toFixed(2)}×</span>
         <input type="range" min={0.25} max={2} step={0.05} value={speed}
           onChange={(e) => setSpeed(parseFloat(e.target.value))} className="flex-1" />
-        {playing && <button onClick={onStop} className="rounded bg-amber-600/70 px-2 py-0.5 text-xs">Stop</button>}
+        {playing && <button onClick={onStop} disabled={busy !== null}
+          className="rounded bg-amber-600/70 px-2 py-0.5 text-xs disabled:opacity-40">Stop</button>}
       </div>
 
       {seqs.length === 0 && <div className="text-xs text-white/30">no sequences yet</div>}
@@ -135,7 +157,7 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
             <span className="flex-1 truncate">
               {s.name} <span className="text-white/40">· {s.mode} · {s.duration_s.toFixed(1)}s · {s.n_waypoints}pt</span>
             </span>
-            <button onClick={() => onPlay(s.name)} disabled={disabled || recording || playing}
+            <button onClick={() => onPlay(s.name)} disabled={disabled || recording || playing || busy !== null}
               className="rounded bg-sky-600/70 px-2 py-0.5 text-xs disabled:opacity-40">Play</button>
             <button onClick={() => onDelete(s.name)} className="rounded bg-rose-600/60 px-2 py-0.5 text-xs">Del</button>
           </li>

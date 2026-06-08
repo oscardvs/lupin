@@ -140,6 +140,10 @@ class LupinArmCommandBridge(Node):
         self._enable_ctrl_srv_name = self.get_parameter('enable_arm_control_service').value
 
         self._lock = threading.Lock()
+        # Serializes the orchestrated set_torque so two near-simultaneous toggles
+        # (e.g. kinesthetic-start disable racing a cancel enable) can't interleave
+        # on the shared sub-clients and leave the arm in a nondeterministic state.
+        self._torque_lock = threading.Lock()
         self._latest_positions: Dict[str, float] = {}
         self._latest_stamp_ns: Dict[str, int] = {}
         # Authoritative HMI-commanded pose (URDF-name keyed). NaN until the pin.
@@ -363,21 +367,24 @@ class LupinArmCommandBridge(Node):
     def _handle_set_torque(
         self, req: SetBool.Request, resp: SetBool.Response,
     ) -> SetBool.Response:
-        if req.data:
-            # ENABLE: re-pin to current pose BEFORE re-energizing so the first
-            # command equals where the arm physically is (no lurch).
-            self._repin_to_current()
-            ok_torque, msg_torque = self._call_setbool(self._torque_client, True)
-            ok_ctrl, msg_ctrl = self._call_setbool(self._enable_ctrl_client, True, optional=True)
-            resp.success = ok_torque
-            resp.message = f'arm torque ON ({msg_torque}); command gate ({msg_ctrl})'
-        else:
-            # DISABLE: close the command gate first (stop re-sends that would
-            # re-energize the servo), then cut torque.
-            ok_ctrl, msg_ctrl = self._call_setbool(self._enable_ctrl_client, False, optional=True)
-            ok_torque, msg_torque = self._call_setbool(self._torque_client, False)
-            resp.success = ok_torque
-            resp.message = f'arm torque OFF ({msg_torque}); command gate ({msg_ctrl})'
+        # Serialize: overlapping enable/disable orchestrations would interleave
+        # on the shared sub-clients and leave torque in a nondeterministic state.
+        with self._torque_lock:
+            if req.data:
+                # ENABLE: re-pin to current pose BEFORE re-energizing so the first
+                # command equals where the arm physically is (no lurch).
+                self._repin_to_current()
+                ok_torque, msg_torque = self._call_setbool(self._torque_client, True)
+                ok_ctrl, msg_ctrl = self._call_setbool(self._enable_ctrl_client, True, optional=True)
+                resp.success = ok_torque
+                resp.message = f'arm torque ON ({msg_torque}); command gate ({msg_ctrl})'
+            else:
+                # DISABLE: close the command gate first (stop re-sends that would
+                # re-energize the servo), then cut torque.
+                ok_ctrl, msg_ctrl = self._call_setbool(self._enable_ctrl_client, False, optional=True)
+                ok_torque, msg_torque = self._call_setbool(self._torque_client, False)
+                resp.success = ok_torque
+                resp.message = f'arm torque OFF ({msg_torque}); command gate ({msg_ctrl})'
         self.get_logger().info(f'set_torque({req.data}): {resp.message}')
         return resp
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -49,6 +50,9 @@ TRAJ_TOPIC = "/mirte_master_arm_controller/joint_trajectory"
 GRIPPER_SRV = "/lupin/gripper/set_angle_with_speed"
 TORQUE_SRV = "/lupin/arm/set_torque"
 GOTO_TRAVEL_S = 3.0
+# Bounded wait (s) for the set_torque round-trip. The bridge orchestrates two
+# vendor SetBool sub-calls (≤2 s each), so this must cover that worst case.
+TORQUE_CALL_TIMEOUT_S = 5.0
 
 
 def _default_library_path() -> Path:
@@ -235,7 +239,19 @@ class ArmLibraryServer(Node):
                 self._rec_mode = mode
                 self._rec_start_clock = self.get_clock().now()
             if mode == "kinesthetic":
-                self._set_torque(False)  # consumer shows the "support the arm" countdown first
+                # Confirm the arm is actually limp BEFORE reporting success — a
+                # kinesthetic recording with a still-energized arm is useless
+                # and the "support the arm" UI would be a lie. Abort + roll back
+                # if torque can't be cut.
+                ok, msg = self._set_torque(False)
+                if not ok:
+                    with self._state_lock:
+                        self._recording = None
+                        self._rec_mode = ""
+                        self._rec_start_clock = None
+                    resp.success, resp.message = False, (
+                        f"could not disable torque — recording aborted ({msg})")
+                    return resp
             resp.success = True
             resp.message = f"recording started ({mode})"
             return resp
@@ -379,14 +395,38 @@ class ArmLibraryServer(Node):
         req.degrees = True
         self._gripper_cli.call_async(req)
 
-    def _set_torque(self, enable: bool) -> None:
-        self._torque_on = enable
+    def _set_torque(self, enable: bool) -> tuple[bool, str]:
+        """Toggle arm torque and wait for confirmation. ``self._torque_on`` (and
+        thus the published state) is updated ONLY on a confirmed success, so the
+        UI never claims the arm went limp when it didn't. Returns (ok, message)."""
+        ok, msg = self._call_torque(enable)
+        if ok:
+            self._torque_on = enable
+        else:
+            self.get_logger().warn(f"set_torque({enable}) failed: {msg}")
+        return ok, msg
+
+    def _call_torque(self, enable: bool) -> tuple[bool, str]:
+        """The unavoidable ROS bit: call /lupin/arm/set_torque and block
+        (bounded) for the result. Mirrors gripper_action_bridge._call_setbool;
+        safe to block here because services + this client share a
+        ReentrantCallbackGroup on a MultiThreadedExecutor."""
         if not self._torque_cli.service_is_ready():
-            self.get_logger().warn("set_torque service not ready")
-            return
+            if not self._torque_cli.wait_for_service(timeout_sec=0.5):
+                return False, "set_torque service unavailable"
         r = SetBool.Request()
         r.data = enable
-        self._torque_cli.call_async(r)
+        future = self._torque_cli.call_async(r)
+        deadline = time.monotonic() + TORQUE_CALL_TIMEOUT_S
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if not future.done():
+            return False, "set_torque timed out"
+        try:
+            res = future.result()
+        except Exception as exc:  # noqa: BLE001 - surface as a failed toggle
+            return False, f"set_torque error: {exc}"
+        return bool(res.success), (res.message or "ok")
 
 
 def main() -> None:
