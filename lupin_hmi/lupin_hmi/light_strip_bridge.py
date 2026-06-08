@@ -315,7 +315,7 @@ class LightStripBridge(Node):
     def _state_to_rgb(self, msg: MissionState) -> RGB:
         """Pure mission-state -> colour map for auto mode.
 
-        e-stop/FAULT are handled upstream in _desired_rgb; this stays the
+        e-stop/FAULT are handled upstream in _decide_style; this stays the
         state-machine view so every lifecycle in MissionState.msg maps to a
         distinct, legible colour.
         """
@@ -428,14 +428,6 @@ class LightStripBridge(Node):
         if phase == 'PUBLISHING':
             return WHITE
         return base
-
-    def _describe_state(self, msg: MissionState) -> str:
-        lifecycle = msg.lifecycle_state or ''
-        phase = msg.mission_phase or ''
-        paused = ' paused' if msg.paused else ''
-        estop = ' estop' if msg.estop_engaged else ''
-        mode = '' if self._mode == 'auto' else ' [manual]'
-        return f'{lifecycle}/{phase}{paused}{estop}{mode}'.strip()
 
     def _on_set_manual(
         self, request: SetNeopixel.Request, response: SetNeopixel.Response
