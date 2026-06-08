@@ -11,6 +11,7 @@ from lupin_hmi.light_strip_bridge import (
     BLUE,
     GREEN,
     LightStripBridge,
+    OFF,
     ORANGE,
     RED,
     SPRING,
@@ -188,3 +189,21 @@ def test_note_arm_motion_filters_to_arm_joints():
     b3 = _detector()
     b3._note_arm_motion(['gripper_joint'], [0.0], now=1.0)
     assert b3._note_arm_motion(['gripper_joint'], [0.2], now=2.0) is True
+
+
+def test_blink_on_is_first_half_of_cycle():
+    b = object.__new__(LightStripBridge)
+    b._blink_hz = 1.0          # 1 Hz -> 0.5 s on / 0.5 s off
+    assert b._blink_on(0.0) is True
+    assert b._blink_on(0.25) is True
+    assert b._blink_on(0.5) is False
+    assert b._blink_on(0.75) is False
+    assert b._blink_on(1.0) is True    # next cycle
+
+
+def test_effective_rgb_blanks_on_off_phase_only():
+    assert LightStripBridge._effective_rgb(GREEN, True, True) == GREEN
+    assert LightStripBridge._effective_rgb(GREEN, True, False) == OFF
+    # Solid styles ignore the blink phase entirely.
+    assert LightStripBridge._effective_rgb(BLUE, False, False) == BLUE
+    assert LightStripBridge._effective_rgb(BLUE, False, True) == BLUE

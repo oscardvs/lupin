@@ -336,6 +336,16 @@ class LightStripBridge(Node):
             self._arm_motion_stamp = now
         return moved
 
+    def _blink_on(self, now):
+        """On for the first half of each blink cycle (blink_hz full cycles/sec)."""
+        period = 1.0 / self._blink_hz
+        return (now % period) < (period / 2.0)
+
+    @staticmethod
+    def _effective_rgb(rgb, blink, blink_on):
+        """The colour to actually write: rgb when solid or in the on-phase, else OFF."""
+        return rgb if (not blink or blink_on) else OFF
+
     @staticmethod
     def _scan_phase_rgb(phase: str, base: RGB) -> RGB:
         """Shared INSPECTING/MONITORING sub-phase colouring.
