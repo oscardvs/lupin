@@ -73,6 +73,17 @@ export function runMockSession(opts: MockOpts): MockHandle {
           turn('model', 'Battery is around 78%, and I\'m parked roughly at the dock.'),
         ),
     },
+    { delayMs: 1400, run: () => opts.onStatus('listening') },
+    { delayMs: 800, run: () => opts.onTranscript(turn('user', 'Turn the status light blue.')) },
+    { delayMs: 600, run: () => opts.onStatus('thinking') },
+    {
+      delayMs: 400,
+      run: async () => {
+        await opts.onToolCall('set_light', `mock-${Date.now()}`, { color: 'blue' })
+      },
+    },
+    { delayMs: 600, run: () => opts.onStatus('speaking') },
+    { delayMs: 200, run: () => opts.onTranscript(turn('model', 'Status light is now blue.')) },
     { delayMs: 1500, run: () => opts.onStatus('ready') },
   ]
 
