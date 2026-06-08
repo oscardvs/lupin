@@ -13,6 +13,10 @@ from rclpy.qos import (
 
 from std_srvs.srv import Trigger
 
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
+
 from lupin_msgs.msg import MissionState
 from mirte_msgs.msg import NeopixelColor
 from mirte_msgs.srv import SetNeopixel
@@ -82,6 +86,16 @@ class LightStripBridge(Node):
         self.declare_parameter('set_on_startup', True)
         self.declare_parameter('unknown_state_off', True)
         self.declare_parameter('color_order', 'RGB')
+        self.declare_parameter('estop_topic', '/e_stop_state')
+        self.declare_parameter('drive_topic', '/mirte_base_controller/cmd_vel')
+        self.declare_parameter('joint_states_topic', '/joint_states')
+        self.declare_parameter('drive_timeout', 0.4)
+        self.declare_parameter('drive_deadband', 1e-3)
+        self.declare_parameter('arm_deadband_rad', 0.0087)
+        self.declare_parameter('arm_motion_hold', 0.3)
+        self.declare_parameter('mission_state_timeout', 2.0)
+        self.declare_parameter('render_rate_hz', 10.0)
+        self.declare_parameter('blink_hz', 1.0)
 
         self._mission_state_topic = str(
             self.get_parameter('mission_state_topic').value
@@ -104,6 +118,16 @@ class LightStripBridge(Node):
         self._color_order = self._parse_color_order(
             str(self.get_parameter('color_order').value)
         )
+        self._estop_topic = str(self.get_parameter('estop_topic').value)
+        self._drive_topic = str(self.get_parameter('drive_topic').value)
+        self._joint_states_topic = str(self.get_parameter('joint_states_topic').value)
+        self._drive_timeout = float(self.get_parameter('drive_timeout').value)
+        self._drive_deadband = float(self.get_parameter('drive_deadband').value)
+        self._arm_deadband_rad = float(self.get_parameter('arm_deadband_rad').value)
+        self._arm_motion_hold = float(self.get_parameter('arm_motion_hold').value)
+        self._mission_state_timeout = float(self.get_parameter('mission_state_timeout').value)
+        self._render_rate_hz = float(self.get_parameter('render_rate_hz').value)
+        self._blink_hz = float(self.get_parameter('blink_hz').value)
 
         self._last_rgb: Optional[RGB] = None
         self._pending_rgb: Optional[RGB] = None
@@ -115,6 +139,14 @@ class LightStripBridge(Node):
         self._mode = 'auto'
         self._manual_rgb: Optional[RGB] = None
         self._last_msg: Optional[MissionState] = None
+
+        # Activity-layer cached inputs (timestamps are float seconds from _now()).
+        self._estop_state = False
+        self._twist_nonzero = False
+        self._twist_stamp: Optional[float] = None
+        self._arm_motion_stamp: Optional[float] = None
+        self._arm_last_pos: dict = {}
+        self._mission_stamp: Optional[float] = None
 
         self._client = self.create_client(SetNeopixel, self._led_service)
 
@@ -138,6 +170,34 @@ class LightStripBridge(Node):
             self._mission_state_topic,
             self._on_state,
             state_qos,
+        )
+
+        # Sensor-style inputs: tolerate a missed frame (re-evaluated every render
+        # tick) and stay QoS-compatible with reliable OR best-effort publishers.
+        sensor_qos = QoSProfile(
+            depth=1,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
+        # Match estop_bridge's publisher QoS exactly (RELIABLE, VOLATILE, depth 10).
+        estop_qos = QoSProfile(
+            depth=10,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
+        self._estop_sub = self.create_subscription(
+            Bool, self._estop_topic, self._on_estop, estop_qos
+        )
+        self._drive_sub = self.create_subscription(
+            Twist, self._drive_topic, self._on_cmd_vel, sensor_qos
+        )
+        self._joint_sub = self.create_subscription(
+            JointState, self._joint_states_topic, self._on_joint_states, sensor_qos
+        )
+        self._render_timer = self.create_timer(
+            1.0 / max(self._render_rate_hz, 1.0), self._on_render_tick
         )
 
         self._wait_timer = self.create_timer(1.0, self._poll_service_ready)
@@ -168,33 +228,39 @@ class LightStripBridge(Node):
 
     def _on_state(self, msg: MissionState) -> None:
         self._last_msg = msg
-        rgb = self._desired_rgb(msg)
-        # Skip if already on the strip (_last_rgb) or already in flight
-        # (_pending_rgb) — the latter stops a 5 Hz state tick re-dispatching a
-        # colour an async send is still resolving.
-        if rgb == self._last_rgb or rgb == self._pending_rgb:
+        self._mission_stamp = self._now()
+
+    def _now(self) -> float:
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    def _on_estop(self, msg: Bool) -> None:
+        self._estop_state = bool(msg.data)
+
+    def _on_cmd_vel(self, msg: Twist) -> None:
+        self._twist_nonzero = self._twist_is_nonzero(msg, self._drive_deadband)
+        self._twist_stamp = self._now()
+
+    def _on_joint_states(self, msg: JointState) -> None:
+        self._note_arm_motion(msg.name, msg.position, self._now())
+
+    def _on_render_tick(self) -> None:
+        now = self._now()
+        mission = self._last_msg if self._last_msg is not None else MissionState()
+        rgb, blink = self._decide_style(
+            mission,
+            estop=self._estop_state,
+            mission_fresh=self._mission_fresh(now),
+            mode=self._mode,
+            manual_rgb=self._manual_rgb,
+            arm_moving=self._arm_moving(now),
+            base_driving=self._base_driving(now),
+        )
+        effective = self._effective_rgb(rgb, blink, self._blink_on(now))
+        # Dedup: don't re-send a colour already shown or in flight. Solid styles
+        # send once; a blink sends on each on/off transition.
+        if effective == self._last_rgb or effective == self._pending_rgb:
             return
-        self._send_color(rgb, reason=self._describe_state(msg))
-
-    def _desired_rgb(self, msg: MissionState) -> RGB:
-        """Colour to show right now, accounting for a manual hold.
-
-        Safety states win unconditionally: a stopped or faulted robot is red
-        even while the operator is holding a manual colour, so the strip can
-        never imply the robot is fine when it isn't.
-        """
-        safety = self._safety_rgb(msg)
-        if safety is not None:
-            return safety
-        # A plain operator pause is shown even under a manual hold — a frozen
-        # robot must be legible across the room; only e-stop/FAULT (safety)
-        # outrank it. (Was only surfaced inside _state_to_rgb, unreachable in
-        # manual mode.)
-        if msg.paused:
-            return AMBER
-        if self._mode == 'manual' and self._manual_rgb is not None:
-            return self._manual_rgb
-        return self._state_to_rgb(msg)
+        self._send_color(effective, reason=f'{"blink " if blink else ""}{rgb}')
 
     def _decide_style(self, mission, *, estop, mission_fresh, mode,
                       manual_rgb, arm_moving, base_driving):
@@ -374,64 +440,36 @@ class LightStripBridge(Node):
     def _on_set_manual(
         self, request: SetNeopixel.Request, response: SetNeopixel.Response
     ) -> SetNeopixel.Response:
-        """HMI -> hold a manual colour; stop following mission state.
+        """HMI -> hold a manual colour; stop following the activity/mission layer.
 
-        Honoured immediately, but an active e-stop / FAULT still forces red so
-        the operator can't accidentally paint over a stopped robot.
+        Rejected if the LED service is down, so the HMI never renders a manual
+        hold the operator can't actually see. An active e-stop / FAULT still wins
+        at render time, so a manual colour can't mask a stopped robot.
         """
-        rgb = (
-            int(request.color.r),
-            int(request.color.g),
-            int(request.color.b),
-        )
-
-        # Don't claim success the operator can't see: if the MIRTE LED service
-        # is down the colour goes nowhere, so reject rather than enter a manual
-        # hold the HMI would render as applied.
         if not self._client.service_is_ready():
             self.get_logger().warn(
-                f'manual colour {rgb} rejected: LED service '
-                f'{self._led_service} not ready'
+                f'manual colour rejected: LED service {self._led_service} not ready'
             )
             response.status = False
             return response
 
         self._mode = 'manual'
-        self._manual_rgb = rgb
-
-        safety = self._safety_rgb(self._last_msg) if self._last_msg else None
-        target = safety if safety is not None else rgb
-        self._send_color(target, reason=f'manual {rgb}')
-
-        if safety is not None:
-            self.get_logger().warn(
-                f'manual colour {rgb} held but overridden by safety state '
-                f'{self._describe_state(self._last_msg)}'
-            )
+        self._manual_rgb = (
+            int(request.color.r),
+            int(request.color.g),
+            int(request.color.b),
+        )
         response.status = True
         return response
 
     def _on_set_auto(
         self, request: Trigger.Request, response: Trigger.Response
     ) -> Trigger.Response:
-        """HMI -> hand colouring back to the mission state machine."""
+        """HMI -> hand colouring back to the automatic activity/mission layer."""
         self._mode = 'auto'
         self._manual_rgb = None
-        if self._last_msg is not None:
-            self._send_color(
-                self._desired_rgb(self._last_msg),
-                reason=self._describe_state(self._last_msg),
-            )
-            response.message = (
-                f'auto: {self._describe_state(self._last_msg)}'
-            )
-        else:
-            # No state yet to derive a colour from — clear the held manual
-            # colour to OFF (mirrors startup) so the strip doesn't keep showing
-            # the manual colour while the HMI claims it's following mission state.
-            self._send_color(OFF, reason='auto: awaiting /mission/state')
-            response.message = 'auto: awaiting /mission/state'
         response.success = True
+        response.message = 'auto'
         return response
 
     def _parse_color_order(self, value: str) -> str:
