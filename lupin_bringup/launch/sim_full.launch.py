@@ -435,12 +435,20 @@ def generate_launch_description() -> LaunchDescription:
     #   /cmd_vel_manual web HMI joystick widget   (prio  50) ── remote operator
     #   /cmd_vel_auto   Nav2 velocity_smoother    (prio  10) ── autonomy
     #
-    # Output goes to /mirte_base_controller/cmd_vel_unstamped, which is
-    # the input of the *vendor* twist_mux (priority 200), which then
-    # publishes /cmd_vel → gazebo_planar_move. We sit upstream of the
-    # vendor mux on purpose: it only de-conflicts the controller bus
-    # against /zero_cmd_vel; our mux is where Lupin's own arbitration
-    # lives.
+    # Output goes straight to /cmd_vel, which gazebo_planar_move consumes.
+    # greenhouse_sim.launch.py drives the kinematic base with the vendor
+    # planar_move plugin on /cmd_vel and deliberately does NOT spawn a
+    # mirte_base_controller or the vendor empty-world twist_mux — so this is
+    # the ONLY arbiter on the chassis bus in sim (mirror of sim_robot.launch.py,
+    # which also remaps cmd_vel_out → /cmd_vel). The /zero_cmd_vel fallback
+    # (prio 1) keeps a constant zero on the bus so planar_move — which latches
+    # the last twist forever — stops when no higher-priority source is active.
+    #
+    # NB: hardware (sim_robot/onboard) remaps cmd_vel_out to
+    # /mirte_base_controller/cmd_vel_unstamped (→ the ros2_control base
+    # controller). In sim there is no such controller, so the previous
+    # /mirte_base_controller/cmd_vel_unstamped remap dead-ended (0 subscribers)
+    # and Nav2/teleop never reached the base.
     #
     # Replaces the old custom cmd_vel_mux node. Behaviour difference:
     # twist_mux uses pure priority+timeout (no "manual takeover" window),
@@ -453,7 +461,7 @@ def generate_launch_description() -> LaunchDescription:
             {'use_sim_time': True},
         ],
         remappings=[
-            ('cmd_vel_out', '/mirte_base_controller/cmd_vel_unstamped'),
+            ('cmd_vel_out', '/cmd_vel'),
         ],
         output='log',
     )
