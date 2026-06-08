@@ -22,16 +22,21 @@ import { SpeechEndpointer } from './vad'
 
 import { GRIPPER_CLOSE_DEG, GRIPPER_HMI_MAX_DEG, GRIPPER_OPEN_DEG } from '@/lib/arm'
 import { useEStop } from '@/lib/estop'
+import { LED_PRESET_NAMES, ledPresetByName } from '@/lib/leds'
 import { invertTwist } from '@/lib/polarity'
 import { isMockMode, useSettings, type Settings, type VoiceNamedLocation } from '@/lib/settings'
 import { useMapPose, useRos, useTopic, type MapPose } from '@/lib/ros'
 import {
+  LED_SERVICE,
+  LUPIN_SRV,
   MIRTE_SRV,
   ROS_TYPE,
   quatToEuler,
   type BatteryState,
   type Odometry,
   type PoseStamped,
+  type SetNeopixelRequest,
+  type SetNeopixelResponse,
   type SetServoAngleWithSpeedRequest,
 } from '@/types/ros'
 
@@ -618,6 +623,60 @@ export function useVoiceSession(): VoiceSession {
             }
           }
 
+          case 'set_light': {
+            // Cosmetic — NOT e-stop gated. The widget isn't gated either, and the
+            // light_strip_bridge force-overrides the strip red while e-stopped/
+            // faulted regardless of a manual hold, so a colour set here can never
+            // mask a safety state.
+            const mode = String(args.mode ?? '').trim().toLowerCase()
+            if (mode === 'auto') {
+              try {
+                const res = await ros.callService<
+                  Record<string, never>,
+                  { success: boolean; message: string }
+                >(LED_SERVICE.setAuto, LUPIN_SRV.Trigger, {})
+                return finish({
+                  ok: !!res?.success,
+                  action: 'light_auto',
+                  message: res?.message || 'following mission state',
+                  ...(res?.success ? {} : { error: res?.message || 'auto rejected' }),
+                })
+              } catch (e) {
+                return finish({
+                  ok: false,
+                  error: `LED auto service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+                })
+              }
+            }
+            const raw = String(args.color ?? '')
+            const preset = ledPresetByName(raw)
+            if (!preset) {
+              return finish({
+                ok: false,
+                error: `unknown colour "${raw}". Known: ${LED_PRESET_NAMES.join(', ')}, or pass mode:'auto'.`,
+              })
+            }
+            try {
+              const res = await ros.callService<SetNeopixelRequest, SetNeopixelResponse>(
+                LED_SERVICE.setManual,
+                MIRTE_SRV.SetNeopixel,
+                { color: preset.rgb },
+              )
+              return finish({
+                ok: !!res?.status,
+                action: 'set_light',
+                color: preset.name,
+                rgb: preset.rgb,
+                ...(res?.status ? {} : { error: 'LED service rejected the colour' }),
+              })
+            } catch (e) {
+              return finish({
+                ok: false,
+                error: `LED service unavailable: ${e instanceof Error ? e.message : String(e)}`,
+              })
+            }
+          }
+
           case 'query_state': {
             const fields = Array.isArray(args.fields) ? (args.fields as string[]) : ['pose', 'battery', 'estop']
             const out: Record<string, unknown> = {}
@@ -712,7 +771,8 @@ export function useVoiceSession(): VoiceSession {
     const seqLine = sequences.length
       ? `Saved arm sequences: ${sequences.join(', ')}.`
       : 'No saved arm sequences yet.'
-    return `${settings.voiceSystemPrompt}\n\n${locLine}\n${poseLine}\n${seqLine}`
+    const ledLine = `Status-light colours: ${LED_PRESET_NAMES.join(', ')}.`
+    return `${settings.voiceSystemPrompt}\n\n${locLine}\n${poseLine}\n${seqLine}\n${ledLine}`
   }, [settings.voiceSystemPrompt, settings.voiceNamedLocations])
 
   const start = useCallback(async () => {
