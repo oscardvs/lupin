@@ -283,6 +283,26 @@ export const ROBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     parameters: { type: 'object', properties: {} },
   },
   {
+    name: 'set_light',
+    description:
+      "Control the robot's status light strip (cosmetic — never moves the robot). To pin a colour, pass `color` with one of the named palette colours listed in the system prompt; this takes the strip OFF mission-state control and holds that colour. To hand the strip back to the mission state machine so it reflects robot state again, pass `mode:'auto'`. Note `color:'off'` makes the strip dark but stays manual — that is different from `mode:'auto'`, which resumes the automatic state colours. The robot still forces the strip red on its own while e-stopped or faulted, regardless of a colour set here.",
+    parameters: {
+      type: 'object',
+      properties: {
+        color: {
+          type: 'string',
+          description:
+            "Palette colour name to pin, e.g. 'blue', 'green', 'off'. Must be one of the names listed in the system prompt. Ignored when mode='auto'.",
+        },
+        mode: {
+          type: 'string',
+          enum: ['auto'],
+          description: "Pass 'auto' to return the strip to mission-state control. Omit when setting a colour.",
+        },
+      },
+    },
+  },
+  {
     name: 'speak',
     description:
       "Push a written reply into the on-screen transcript without producing any motion or audio. Do NOT call this for ordinary chat — your normal voice output already reaches the user. Use it only when the user has muted the speaker, when you want to leave a written note in the transcript log, or in the offline mock harness where there is no audio channel.",
@@ -318,6 +338,7 @@ export type ToolName =
   | 'calibrate_arm'
   | 'engage_estop'
   | 'query_state'
+  | 'set_light'
   | 'speak'
 
 export function clampNumber(n: unknown, min: number, max: number, fallback = 0): number {
