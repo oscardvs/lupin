@@ -155,6 +155,16 @@ ssh lupin 'sudo systemctl start lupin-onboard lupin-cameras'
 
 A power-cycle is **not** the fix here — it *recurs* (dead RTC → cold boot on the wrong clock → `date -s` re-wedges after `mirte-ros` is live). See `project_robot_clock_skew`.
 
+> **Clock sync now happens at boot (chrony).** `lupin-clock-sync.service` steps the
+> robot to the laptop NTP *before* `mirte-ros` starts, so a healthy boot begins at
+> drift 0 and the `date -s` path above is the **fallback**. One-time setup is in
+> `DEMO_DAY_WIRED.md §A.4` (robot) + `§B7` (laptop) — identical, but swap the wired
+> `10.42.0.x` for **AP-mode IPs**: serve NTP on the laptop with `allow
+> 192.168.42.0/24` + `local stratum 10`, and install on the robot with
+> `LUPIN_LAPTOP_NTP=192.168.42.<laptop>` (the laptop's AP-side IP — `ip -br addr`).
+> The robot's `chronyd` must run **and** the laptop must actually serve `:123` —
+> chrony *installed* ≠ serving (the gotcha that cost an afternoon, 2026-06-08).
+
 The "controllers (should show 5 active)" line at the end of `post-boot-sync.sh` sometimes fails with `rcl node's context is invalid` — that's a `ros2 control` CLI bug, not a real failure. The state to trust is what `ros2 control list_controllers` reports directly.
 
 ---
@@ -438,7 +448,7 @@ confirm T5 reached "Managed nodes are active" and that T9 was started after it.
 
 | Test | How | Pass criterion |
 |---|---|---|
-| **Xbox drive** | Hold **LB**, push left stick forward | Robot moves **forward** physically (drive fixed at the source — `xbox_config.yaml` scales are positive) |
+| **Xbox drive** | Hold **LB**, push left stick forward | Robot moves **forward** physically. Mapping auto-selects `xbox_config.usb.yaml` / `xbox_config.bluetooth.yaml` by transport; re-probe a swapped pad with `ros2 run lupin_hmi calibrate_xbox` |
 | **Xbox arm** | Release LB. Press/hold **Y/A** → lift up/down. **B/X** → pan right/left. D-pad → wrist/elbow | Arm joints move at ~1.5 rad/s while held; quick taps step 0.15 rad. Watch `arm joints active:` log to confirm input is reaching `arm_teleop` |
 | **Xbox gripper** | Release LB. Pull **RT** (open) or **LT** (close) | Gripper opens/closes between [−0.20, 0.25] rad |
 | **HMI joystick** | HMI Teleop view, click Reset on e-stop banner, wiggle virtual stick | Robot drives in operator-expected direction (`polarityInvertHmi` now false — no flip needed) |

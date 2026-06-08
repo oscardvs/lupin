@@ -95,11 +95,45 @@ but NOT yet implemented:** pin the robot's FastDDS to `eth0` via an
 > `DEMO_DAY_WIRED_REVERT.md` (re-enable `mirte-ap` + reboot, pull the cable,
 > repoint the laptop DDS at `192.168.42.1`).
 
-That's the entire robot-side delta. `MIRTE_FASTDDS=true` is already set on
-Mirte-247264. The discovery server is *supposed* to come up at boot, but the
+That's the entire robot-side **networking** delta. `MIRTE_FASTDDS=true` is already
+set on Mirte-247264. The discovery server is *supposed* to come up at boot, but the
 vendor's start is a fire-and-forget one-shot that can lose a cold-boot race and
 silently leave **nothing on `:11811`** while `mirte-ros` still reports `active`.
 §1 verifies it; §1's "nothing on 11811" recovery fixes it without a stack restart.
+
+## A.4 — Clock sync (chrony), one-time
+
+The Orange Pi 3B has **no RTC** and over a direct cable there's **no NTP**, so it
+boots on whatever clock it had at shutdown (seen 84 min behind). A skewed clock
+floods SLAM with `Message Filter dropping message` and — the one that bit
+2026-06-07 — makes every **Nav2 goal** fail with `Could not transform the start or
+goal pose` (tf2 won't extrapolate a laptop-now-stamped goal past the robot's older
+TF), so Nav2 reaches "active" but the robot never moves on a goal.
+
+`install-clock-sync.sh` installs a `lupin-clock-sync` **oneshot** ordered
+`Before=mirte-ros.service` that steps the clock from the laptop NTP **once, before
+ros2_control starts** — never a live-stack step, which is what wedges controllers —
+then chrony only *slews* for the rest of the session. It also comments out Ubuntu's
+stock `makestep 1 3` so chrony can't step a live stack later either.
+
+```bash
+cd ~/ros2_ws/src/lupin/lupin_bringup
+ssh lupin-wired 'sudo bash -s' < scripts/install-clock-sync.sh   # installs + enables (does NOT step now)
+ssh lupin-wired sudo reboot                                      # activates it — it steps at boot, before mirte-ros
+```
+
+Needs `chronyd` on the robot (already on Mirte-247264) **and the laptop actually
+serving NTP** — see §B7, the half that's easy to forget. Verify after the reboot:
+
+```bash
+ssh lupin-wired 'chronyc tracking | grep -E "Reference ID|Stratum"'  # want: Reference ID … (10.42.0.2), Stratum 4
+ssh lupin-wired date -u +%s; date -u +%s                             # the two epochs should match
+```
+
+> **Kill switch:** `ssh lupin-wired 'sudo systemctl mask lupin-clock-sync && sudo reboot'`,
+> or uninstall (restores the stock `makestep`):
+> `ssh lupin-wired 'sudo bash -s -- --uninstall' < scripts/install-clock-sync.sh`.
+> Either way the clock falls back to §1's `post-boot-sync.sh`.
 
 ---
 
@@ -208,6 +242,28 @@ cable/adapter or §A static IP is the problem, not DDS.
 > the robot-side joy path was removed). BLE only if you must — run
 > `scripts/install-bluetooth-xbox-fix.sh` once first.
 
+**B7. Laptop NTP server (clock sync).** The robot's `lupin-clock-sync` (§A.4) syncs
+*from* the laptop, so the laptop has to actually **serve** NTP — and chrony being
+installed is **not** enough (it ships client-only). Add a server drop-in once:
+
+```bash
+sudo apt-get install -y chrony
+printf '# Lupin: serve UTC to the wired robot LAN.\nallow 10.42.0.0/24\nlocal stratum 10\n' \
+  | sudo tee /etc/chrony/conf.d/lupin-server.conf
+sudo systemctl restart chrony
+ss -lnup | grep ':123' || echo 'NOT SERVING'        # expect chronyd on 0.0.0.0:123
+```
+
+`allow` lets the robot query; `local stratum 10` makes the laptop serve its own
+clock even with no upstream (AP mode / no internet), so the robot always has a
+source. This persists across laptop reboots (it's the host chrony service).
+
+> **The gotcha that cost an afternoon (2026-06-08):** with chrony *active* but no
+> `allow` line and nothing on `:123`, the robot's `lupin-clock-sync` still runs,
+> finds the source unreachable, and silently proceeds **84 min behind** — and Nav2
+> goals then fail. If `ssh lupin-wired chronyc -n sources` shows the laptop `^?` /
+> `Reach 0`, the laptop isn't serving: re-check `ss -lnup | grep :123` here.
+
 ---
 
 ## 0. Pre-flight (do this BEFORE the audience walks in)
@@ -221,10 +277,13 @@ cable/adapter or §A static IP is the problem, not DDS.
 - [ ] `ip -br addr` on the laptop shows the adapter at `10.42.0.2/24`, and WiFi
       (internet) on a **separate** interface. Internet route must NOT be the cable.
 - [ ] `ping -c2 10.42.0.1` succeeds.
+- [ ] Laptop is **serving NTP** (robot clock sync): `ss -lnup | grep ':123'` shows
+      `chronyd` on `0.0.0.0:123`. If not, do §B7 — without it the robot boots skewed
+      and Nav2 goals fail.
 
 ---
 
-## 1. Verify robot health + sync clock
+## 1. Verify robot health + confirm clock
 
 ```bash
 ROBOT=mirte@10.42.0.1 ~/.config/lupin/post-boot-sync.sh
@@ -275,12 +334,17 @@ fast-discovery-server` (process-name match) or kill by PID. This manual server
 **dies on reboot/power-cycle** — re-run the line after any robot restart. Durable
 fix: a `lupin-discovery-server.service` (designed, not yet installed).
 
-The clock sync matters: the Orange Pi has no RTC and over a direct cable there's
-no NTP, so it boots with whatever clock it had at shutdown. **`post-boot-sync.sh`
-now sets the clock with `mirte-ros` STOPPED** (only when drift > 3 s), wipes stale
-SHM, then restarts the stack — because `date -s` on a *live* ros2_control stack
-wedges the controllers (see the warning below). It then re-triggers
-`lupin-auto-home` (heals any stuck controllers + parks the arm at `home`).
+**Clock sync is now automatic at boot** (§A.4): `lupin-clock-sync` steps the robot to
+the laptop NTP *before* `mirte-ros`, so `post-boot-sync.sh` should now report `drift
+before sync: 0s` and do **no** clock step. **Keep running it anyway** — clock is only
+one of the things it does. It's still your discovery-server bind check, the
+`lupin-auto-home` re-trigger (heals stuck controllers + parks the arm at `home`, and
+handles resume-from-suspend where systemd won't re-fire boot units), and the
+5-controller verification; the `drift: 0s` line it prints doubles as your confirmation
+that chrony worked. Only its `date -s` **step** is now a fallback: it fires (stack
+STOPPED, only when drift > 3 s, wipe SHM, restart) if the laptop NTP was unreachable at
+boot, because `date -s` on a *live* ros2_control stack wedges the controllers (see the
+warning below).
 
 **If `lupin-auto-home` shows `failed`/`activating` > 90 s**, or controllers are
 stuck `unconfigured`/`inactive`, or the wheels are dead (confirm with the drive
@@ -639,6 +703,12 @@ Wheels dead → controller wedged → §1 reboot-free recovery (stop → wipe SH
   vendor and laptop rosbridge. Cosmetic.
 - **`Message Filter dropping …`** once at SLAM startup is normal; repeated = clock
   drift.
+- **Nav2 reaches "active" but the robot won't move on a goal**, and the
+  `bt_navigator` log shows `Could not transform the start or goal pose` — that's
+  **clock skew, not Nav2**. The robot booted before the laptop served NTP (§B7), so
+  `lupin-clock-sync` couldn't sync. Confirm drift (`ssh lupin-wired date -u +%s` vs
+  `date -u +%s`), fix the laptop NTP (§B7), then `ssh lupin-wired sudo reboot` — or
+  step it now with `post-boot-sync.sh`.
 
 ---
 
@@ -677,6 +747,7 @@ the wipe + restart and keep the clock stable after.
 - **rosbridge:** `wss://localhost:8090/_ros` (same-origin proxy)
 - **Robot's DDS discovery server:** `10.42.0.1:11811` (binds `0.0.0.0`)
 - **DDS env (laptop):** `~/.config/lupin/ros-env.sh` (`setup-laptop-dds-env.sh 10.42.0.1`)
-- **Clock + health:** `ROBOT=mirte@10.42.0.1 ~/.config/lupin/post-boot-sync.sh`
+- **Clock sync (auto at boot):** `lupin-clock-sync.service` (chrony, steps before `mirte-ros`) — robot install `scripts/install-clock-sync.sh` (§A.4); laptop serves NTP (§B7)
+- **Clock + health (fallback / manual):** `ROBOT=mirte@10.42.0.1 ~/.config/lupin/post-boot-sync.sh`
 - **Cableless (AP) guide:** `DEMO_DAY.md` · **Sim guide:** `DEMO_DAY_SIM.md`
 - **Revert wired → AP:** `DEMO_DAY_WIRED_REVERT.md`
