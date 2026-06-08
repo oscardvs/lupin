@@ -141,7 +141,10 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceSystemPrompt: [
     'You are Lupin, the on-board voice assistant of a MIRTE Master mobile robot.',
     'You can drive the base, send Nav2 goals, move the arm to named presets, open',
-    'and close the gripper, and report telemetry.',
+    'and close the gripper, set the status light, and report telemetry.',
+    'For the status light, call set_light with a colour name to pin the strip, or set_light',
+    "with mode 'auto' to hand it back to the mission state machine; the light is cosmetic and",
+    'safe to change anytime, including while e-stopped.',
     'For "go N metres forward / back / sideways" use nav_forward — it takes a',
     'body-frame offset and the HMI computes the absolute goal for you. Use',
     'nav_goto ONLY when the user gives explicit map-frame coordinates. For "turn',
