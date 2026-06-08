@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { LED_PRESETS, hexToRgb, rgbToCss, rgbToHex, type Rgb } from '@/lib/leds'
 import { useService } from '@/lib/ros'
 import { cn } from '@/lib/utils'
 import {
@@ -21,12 +22,6 @@ import {
 
 interface LightControlProps {
   className?: string
-}
-
-interface Rgb {
-  r: number
-  g: number
-  b: number
 }
 
 /**
@@ -126,7 +121,7 @@ export function LightControl({ className }: LightControlProps) {
 
       <CardContent className="flex flex-col gap-3">
         <div className="grid grid-cols-6 gap-2">
-          {PRESETS.map((p) => {
+          {LED_PRESETS.map((p) => {
             const isHeld =
               mode === 'manual' &&
               held?.r === p.rgb.r &&
@@ -218,40 +213,4 @@ export function LightControl({ className }: LightControlProps) {
       </CardContent>
     </Card>
   )
-}
-
-// Preset palette — mirrors light_strip_bridge's status colours so a manual
-// pick reads the same as the mission state it stands for.
-const PRESETS: { label: string; rgb: Rgb }[] = [
-  { label: 'Red', rgb: { r: 255, g: 0, b: 0 } },
-  { label: 'Orange', rgb: { r: 255, g: 128, b: 0 } },
-  { label: 'Amber', rgb: { r: 255, g: 191, b: 0 } },
-  { label: 'Yellow', rgb: { r: 255, g: 255, b: 0 } },
-  { label: 'Green', rgb: { r: 0, g: 255, b: 0 } },
-  { label: 'Spring', rgb: { r: 0, g: 255, b: 128 } },
-  { label: 'Teal', rgb: { r: 0, g: 180, b: 140 } },
-  { label: 'Cyan', rgb: { r: 0, g: 255, b: 255 } },
-  { label: 'Blue', rgb: { r: 0, g: 0, b: 255 } },
-  { label: 'Purple', rgb: { r: 180, g: 0, b: 255 } },
-  { label: 'White', rgb: { r: 255, g: 255, b: 255 } },
-  { label: 'Off', rgb: { r: 0, g: 0, b: 0 } },
-]
-
-function rgbToCss({ r, g, b }: Rgb): string {
-  return `rgb(${r}, ${g}, ${b})`
-}
-
-function rgbToHex({ r, g, b }: Rgb): string {
-  const h = (n: number) => n.toString(16).padStart(2, '0')
-  return `#${h(r)}${h(g)}${h(b)}`
-}
-
-function hexToRgb(hex: string): Rgb {
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim())
-  if (!m) return { r: 0, g: 0, b: 0 }
-  return {
-    r: parseInt(m[1], 16),
-    g: parseInt(m[2], 16),
-    b: parseInt(m[3], 16),
-  }
 }
