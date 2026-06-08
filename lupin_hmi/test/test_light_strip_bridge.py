@@ -18,6 +18,8 @@ from lupin_hmi.light_strip_bridge import (
 )
 from lupin_msgs.msg import MissionState
 
+from geometry_msgs.msg import Twist
+
 
 def _rgb(**fields):
     # Exercise the pure colour map without standing up a ROS node.
@@ -110,9 +112,6 @@ def test_safety_outranks_manual():
 
 def test_pause_outranks_in_progress_and_manual():
     assert _style({'lifecycle_state': 'INSPECTING', 'paused': True}) == (AMBER, False)
-
-
-from geometry_msgs.msg import Twist
 
 
 def _detector(**attrs):
