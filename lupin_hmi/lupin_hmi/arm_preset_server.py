@@ -51,6 +51,13 @@ Default preset values (radians)
              so the shoulder servo stays well inside its gravity-safe window
              (project_arm_servo_thermal_trip). Tunable — verify the exact
              camera framing in Gazebo and re-tune the angles there.
+``pick_open`` / ``pick_closed`` / ``tuck`` / ``detect_left``
+           — 2026-06-08 poses dialed in live on Mirte-247264 via the HMI arm
+             tab. These four ALSO command the jaw via ``PRESET_GRIPPER_DEG``
+             (-30°=open … +30°=closed); every other preset leaves the gripper
+             untouched. pick_open/pick_closed share one arm pose and differ only
+             at the jaw. Deposit-pot poses are pending the real shoulder_pan
+             range (the configured +90° is a software cap, not the servo stop).
 
 These are conservative starting points — re-tune on the real robot once
 the arm is mounted in its final configuration. Values are clamped to the
@@ -60,6 +67,7 @@ mistuned preset can't command a pose the servo silently rejects.
 
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Tuple
 
 import rclpy
@@ -68,6 +76,7 @@ from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory  # publisher message type
 
 from lupin_msgs.srv import SetArmPreset
+from mirte_msgs.srv import SetServoAngleWithSpeed
 
 from lupin_hmi.arm_limits import ARM_JOINTS, clamp_arm_joint
 from lupin_hmi.arm_traj import build_arm_trajectory
@@ -87,12 +96,29 @@ PRESETS: Dict[str, Tuple[float, float, float, float]] = {
     # mislabelled (FK showed 'tuck' poked the gripper 0.23 m FORWARD, 'pick' sat
     # 0.48 m UP nowhere near a table, 'place' ended up BEHIND the robot). The
     # base_link gripper pose each pose now hits is noted inline.
-    'tuck':  (0.0,   0.78,  1.57,  1.54),   # folded back over the base: (-0.09, 0, 0.15)
+    'tuck':  (math.radians(1), math.radians(0), math.radians(90), math.radians(-90)),  # 2026-06-08 measured live, jaw closed (overrides the 2026-06-07 FK value)
     'pick':  (0.0,  -0.81, -1.57, -1.04),   # reach fwd+down to table, jaw down: (0.27, 0, 0.14)
     'place': (0.0,  -0.23, -1.57, -1.54),   # fwd, raised to clear the edge, jaw down: (0.24, 0, 0.25)
     # Per-pot patrol pose: reach forward, pitch the wrist down so the
     # gripper camera frames the bloom from above. Tune visually in Gazebo.
     'inspect': (0.0, -0.40,  0.90, -0.80),
+    # ── 2026-06-08: dialed in live on Mirte-247264 via the HMI arm tab (degrees
+    # inline). The jaw for these is set via PRESET_GRIPPER_DEG below.
+    # pick_open / pick_closed share one arm pose, differing only at the jaw.
+    'pick_open':   (math.radians(1),  math.radians(-58), math.radians(-38), math.radians(-2)),
+    'pick_closed': (math.radians(1),  math.radians(-58), math.radians(-38), math.radians(-2)),
+    'detect_left': (math.radians(89), math.radians(12),  math.radians(-62), math.radians(-78)),
+}
+
+# Optional jaw target per preset, in HMI degrees (-30 = OPEN .. +30 = CLOSED, the
+# inverted Mirte-247264 convention). A preset absent here doesn't touch the jaw
+# (the arm JTC and the gripper are separate controllers). Driven through the
+# gripper_action_bridge service so the single gripper command path is preserved.
+PRESET_GRIPPER_DEG: Dict[str, float] = {
+    'tuck': 30.0,
+    'pick_open': -23.0,
+    'pick_closed': 30.0,
+    'detect_left': 25.0,
 }
 
 # Time the controller is given to reach each preset. Conservative — slow
@@ -113,6 +139,13 @@ class ArmPresetServer(Node):
 
         self._srv = self.create_service(
             SetArmPreset, '/lupin/arm/preset', self._on_set_preset,
+        )
+
+        # Optional gripper command path: presets in PRESET_GRIPPER_DEG also set
+        # the jaw via the bridge (the single gripper command path), not the raw
+        # Hiwonder service. Fire-and-forget — see _on_set_preset.
+        self._gripper_client = self.create_client(
+            SetServoAngleWithSpeed, '/lupin/gripper/set_angle_with_speed',
         )
 
         self.get_logger().info(
@@ -143,10 +176,29 @@ class ArmPresetServer(Node):
             build_arm_trajectory(list(ARM_JOINT_NAMES), positions, PRESET_TRAVEL_SECONDS)
         )
 
+        # If this preset defines a jaw target, drive the gripper too — via the
+        # bridge service (NOT the raw Hiwonder service), async so this single-
+        # threaded executor doesn't deadlock. A missing bridge leaves the jaw be.
+        gripper_deg = PRESET_GRIPPER_DEG.get(key)
+        if gripper_deg is not None:
+            if self._gripper_client.service_is_ready():
+                greq = SetServoAngleWithSpeed.Request()
+                greq.angle = float(gripper_deg)
+                greq.degrees = True
+                greq.rate = 0.0
+                self._gripper_client.call_async(greq)
+            else:
+                self.get_logger().warn(
+                    f'preset "{key}" wants jaw={gripper_deg:+.0f}° but '
+                    '/lupin/gripper/set_angle_with_speed is not up — jaw unchanged'
+                )
+
         resp.success = True
+        jaw_msg = f', jaw={gripper_deg:+.0f}°' if gripper_deg is not None else ''
         resp.message = (
             f'preset "{key}" sent: '
             + ', '.join(f'{n}={p:+.2f}' for n, p in zip(ARM_JOINT_NAMES, positions))
+            + jaw_msg
         )
         self.get_logger().info(resp.message)
         return resp

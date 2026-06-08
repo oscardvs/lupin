@@ -16,7 +16,7 @@ import {
 } from '@/types/ros'
 
 /** Built-in presets owned by the onboard arm_preset_server (not the library). */
-export const BUILTIN_PRESETS = ['home', 'zero', 'tuck', 'pick', 'place', 'inspect'] as const
+export const BUILTIN_PRESETS = ['home', 'zero', 'tuck', 'pick', 'pick_open', 'pick_closed', 'detect_left', 'place', 'inspect'] as const
 export function isBuiltinPreset(name: string): boolean {
   return (BUILTIN_PRESETS as readonly string[]).includes(name.trim().toLowerCase())
 }
