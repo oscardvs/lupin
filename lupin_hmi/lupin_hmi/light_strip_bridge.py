@@ -288,6 +288,55 @@ class LightStripBridge(Node):
         return OFF if self._unknown_state_off else WHITE
 
     @staticmethod
+    def _twist_is_nonzero(twist, deadband):
+        """True if any mecanum-relevant component exceeds the deadband."""
+        return (
+            abs(twist.linear.x) > deadband
+            or abs(twist.linear.y) > deadband
+            or abs(twist.angular.z) > deadband
+        )
+
+    def _base_driving(self, now):
+        """A non-zero twist was received within drive_timeout (silence => stopped)."""
+        return (
+            self._twist_nonzero
+            and self._twist_stamp is not None
+            and (now - self._twist_stamp) <= self._drive_timeout
+        )
+
+    def _arm_moving(self, now):
+        """An arm/gripper joint moved within the last arm_motion_hold seconds."""
+        return (
+            self._arm_motion_stamp is not None
+            and (now - self._arm_motion_stamp) <= self._arm_motion_hold
+        )
+
+    def _mission_fresh(self, now):
+        """/mission/state seen within mission_state_timeout (else treat as absent)."""
+        return (
+            self._mission_stamp is not None
+            and (now - self._mission_stamp) <= self._mission_state_timeout
+        )
+
+    def _note_arm_motion(self, names, positions, now):
+        """Update per-joint position cache; stamp motion if a tracked joint moved.
+
+        Filters to ARM_STRIP_JOINTS so the wheel joints that also ride
+        /joint_states don't read as arm motion. Returns True if motion stamped.
+        """
+        moved = False
+        for name, pos in zip(names, positions):
+            if name not in ARM_STRIP_JOINTS:
+                continue
+            prev = self._arm_last_pos.get(name)
+            if prev is not None and abs(pos - prev) > self._arm_deadband_rad:
+                moved = True
+            self._arm_last_pos[name] = pos
+        if moved:
+            self._arm_motion_stamp = now
+        return moved
+
+    @staticmethod
     def _scan_phase_rgb(phase: str, base: RGB) -> RGB:
         """Shared INSPECTING/MONITORING sub-phase colouring.
 
