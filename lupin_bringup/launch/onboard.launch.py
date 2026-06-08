@@ -96,6 +96,12 @@ def generate_launch_description() -> LaunchDescription:
             # red→blue at the hardware). The MIRTE C++ neopixel driver has no
             # reorder knob, so the bridge remaps. See reference_mirte_ledstrip.
             'color_order': 'BRG',
+            # Activity layer (see 2026-06-08-led-mode-indication spec): live
+            # driving/arm/standby indication when no mission owns the strip.
+            'estop_topic': '/e_stop_state',
+            'drive_topic': '/mirte_base_controller/cmd_vel',
+            'joint_states_topic': '/joint_states',
+            'blink_hz': 1.0,
         }],
         output='log',
     )
