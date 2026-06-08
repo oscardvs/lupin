@@ -17,6 +17,8 @@ from lupin_msgs.msg import MissionState
 from mirte_msgs.msg import NeopixelColor
 from mirte_msgs.srv import SetNeopixel
 
+from lupin_hmi.arm_limits import ARM_JOINT_FULL
+
 
 RGB = Tuple[int, int, int]
 
@@ -40,6 +42,19 @@ GREEN = (0, 255, 0)      # mission done
 # return, so it reads differently from a normal dock return (ORANGE). Distinct
 # from RED/AMBER/ORANGE so an operator can't confuse it with fault/pause/return.
 BATTERY_LOW = (255, 0, 128)  # low battery — urgent return
+
+# Lifecycle sets for the activity layer (see 2026-06-08-led-mode-indication spec).
+# In-progress: the mission owns the strip; live motion must NOT override it.
+IN_PROGRESS_LIFECYCLES = frozenset(
+    {'PREPARE', 'EXPLORING', 'INSPECTING', 'MONITORING', 'RETURNING'}
+)
+# Resting: mission idle/finished; the activity layer applies, and when idle the
+# resting lifecycle colour is shown (DONE->green, READY->blue, BOOT->white).
+RESTING_LIFECYCLES = frozenset({'BOOT', 'READY', 'DONE'})
+
+# Arm + gripper joint names as they appear in /joint_states (URDF joints). The
+# wheel joints also ride /joint_states, so motion detection filters to these.
+ARM_STRIP_JOINTS = frozenset(ARM_JOINT_FULL.values()) | {'gripper_joint'}
 
 
 class LightStripBridge(Node):
@@ -180,6 +195,47 @@ class LightStripBridge(Node):
         if self._mode == 'manual' and self._manual_rgb is not None:
             return self._manual_rgb
         return self._state_to_rgb(msg)
+
+    def _decide_style(self, mission, *, estop, mission_fresh, mode,
+                      manual_rgb, arm_moving, base_driving):
+        """Pure precedence: cached inputs -> (rgb, blink).
+
+        Highest priority wins. Rows 1-4 are the existing behaviour (rows 2/4
+        gated by mission freshness so a dead orchestrator can't latch the strip);
+        rows 5-7 are the activity layer, reached only when no fresh in-progress
+        mission owns the strip. See the 2026-06-08-led-mode-indication spec.
+        """
+        lifecycle = (mission.lifecycle_state or '').upper()
+
+        # 1. Safety — NOT freshness-gated (fail-safe). Live /e_stop_state OR the
+        #    mission's own estop flag OR a FAULT lifecycle all force red.
+        if estop or self._safety_rgb(mission) is not None:
+            return RED, False
+
+        # 2. Operator pause (mission) — a frozen robot must read as held.
+        if mission_fresh and mission.paused:
+            return AMBER, False
+
+        # 3. Manual HMI colour hold — operator override (auto restores live layer).
+        if mode == 'manual' and manual_rgb is not None:
+            return manual_rgb, False
+
+        # 4. In-progress mission — existing lifecycle palette, solid, untouched.
+        if mission_fresh and lifecycle in IN_PROGRESS_LIFECYCLES:
+            return self._state_to_rgb(mission), False
+
+        # 5. Arm moving — orange blink (out-ranks base).
+        if arm_moving:
+            return ORANGE, True
+
+        # 6. Base driving — green blink.
+        if base_driving:
+            return GREEN, True
+
+        # 7. Idle — resting mission colour if a mission node is present, else blue.
+        if mission_fresh and lifecycle in RESTING_LIFECYCLES:
+            return self._state_to_rgb(mission), False
+        return BLUE, False
 
     @staticmethod
     def _safety_rgb(msg: MissionState) -> Optional[RGB]:
