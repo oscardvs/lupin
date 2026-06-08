@@ -11,7 +11,16 @@ change is branch-specific. Unmarked entries apply to all three.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **LED activity indication** — the onboard status strip now communicates live
+  robot activity whenever no mission owns it: green-blink while driving (any
+  source — Xbox teleop, web HMI, or Nav2), orange-blink while the arm or gripper
+  moves, and solid blue on standby. A physical or HMI e-stop forces solid red in
+  every mode — including standalone teleop — via a new direct `/e_stop_state`
+  subscription. The mission-lifecycle palette is unchanged and still takes
+  priority during a run. `light_strip_bridge` gains a render loop (1 Hz blink)
+  and tunable drive/arm detection params. (`lupin_hmi`)
 
 ## [1.1.0] — 2026-06-07
 
