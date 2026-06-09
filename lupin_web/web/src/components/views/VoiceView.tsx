@@ -12,12 +12,14 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { ViewShell } from '@/components/system/ViewShell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { VoiceOrb } from '@/components/widgets/VoiceOrb'
 import { useEStop, ESTOP_REASON_LABELS } from '@/lib/estop'
+import { useIsPhone } from '@/lib/responsive'
 import { isMockMode, useSettings } from '@/lib/settings'
 import { useVoiceSession } from '@/lib/voice/session'
 import type { ToolInvocation, TranscriptTurn, VoiceStatus } from '@/lib/voice/types'
@@ -94,8 +96,10 @@ export function VoiceView() {
     setTextDraft('')
   }, [session, textDraft])
 
+  const isPhone = useIsPhone()
+
   return (
-    <div className="flex w-full flex-col gap-3 p-3 sm:gap-4 sm:p-4">
+    <ViewShell intent="fit">
       {/* E-stop banner — same chrome as Teleop */}
       {estop.active ? (
         <div className="reticle relative flex flex-wrap items-center gap-3 rounded-sm border-2 border-destructive bg-destructive/10 px-3 py-2.5 text-sm sm:px-4 sm:py-3">
@@ -166,8 +170,8 @@ export function VoiceView() {
         </div>
       ) : null}
 
-      {/* Console */}
-      <div className="reticle relative rounded-sm border border-hairline bg-card/35 p-4 sm:p-6 scanline">
+      {/* Console — opaque ink tile that flexes to fill; transcript scrolls inside. */}
+      <div className="reticle relative flex min-h-0 flex-1 flex-col rounded-sm border border-hairline bg-ink-2 p-4 sm:p-6">
         <span className="reticle-bl" aria-hidden />
         <span className="reticle-br" aria-hidden />
 
@@ -194,7 +198,7 @@ export function VoiceView() {
           ) : null}
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 gap-5 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
           {/* ───────────────── controls column ───────────────── */}
           <div className="flex flex-col items-center gap-4">
             <div className="flex flex-col items-center gap-2">
@@ -210,7 +214,7 @@ export function VoiceView() {
                   if (session.micActive) void session.endUtterance()
                   else void session.beginUtterance()
                 }}
-                size={240}
+                size={isPhone ? 160 : 240}
                 ariaLabel={
                   settings.voicePushToTalk
                     ? session.micActive
@@ -274,7 +278,7 @@ export function VoiceView() {
                 <span className="tag tag-strong">tool calls</span>
                 <span className="ml-auto tag">{session.tools.length}</span>
               </div>
-              <ScrollArea className="h-44 rounded-sm border border-hairline bg-background/40">
+              <ScrollArea className="h-44 rounded-sm border border-hairline bg-ink-1">
                 <div className="flex flex-col gap-1.5 p-2">
                   {session.tools.length === 0 ? (
                     <div className="px-1 py-2 text-[11px] text-muted-foreground">
@@ -289,12 +293,12 @@ export function VoiceView() {
           </div>
 
           {/* ───────────────── transcript column ───────────────── */}
-          <div className="flex flex-col gap-2 min-h-0">
+          <div className="flex min-h-0 flex-col gap-2">
             <div className="flex items-baseline gap-2">
               <span className="tag tag-strong">transcript</span>
               <span className="ml-auto tag">{session.transcript.length} turns</span>
             </div>
-            <ScrollArea className="h-[42vh] min-h-[280px] rounded-sm border border-hairline bg-background/40 lg:h-[48vh]">
+            <ScrollArea className="min-h-[240px] rounded-sm border border-hairline bg-ink-1 md:min-h-0 md:flex-1">
               <div className="flex flex-col gap-2 p-3">
                 {session.transcript.length === 0 ? (
                   <div className="rounded-sm border border-dashed border-hairline px-3 py-6 text-center text-xs text-muted-foreground">
@@ -339,7 +343,7 @@ export function VoiceView() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <AlertCircle className="h-3 w-3 text-primary/80" />
         <span className="tag">model</span>
         <span className="font-mono text-foreground/80">{settings.geminiModel}</span>
@@ -352,7 +356,7 @@ export function VoiceView() {
         <span className="tag">{settings.voicePushToTalk ? 'tap-to-talk' : 'hands-free'}</span>
         {settings.voiceVadEnabled ? <span className="tag">vad</span> : null}
       </div>
-    </div>
+    </ViewShell>
   )
 }
 
