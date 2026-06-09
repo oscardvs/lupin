@@ -242,3 +242,33 @@ def test_counts_unique_tracked_flowers_and_bugs_per_base(node):
     assert rec.bug_count == 1
     assert node.emitted[-1].flower.flower_count == 2
     assert node.emitted[-1].flower.bug_count == 1
+
+
+def _ready(node):
+    # Mission orchestrator alive but idle (READY) — the steady state when no
+    # mission has been started. This is what blocked flower attribution before.
+    ms = MissionState()
+    ms.lifecycle_state = 'READY'
+    node._on_mission_state(ms)
+
+
+def test_attributes_flower_when_idle(node):
+    # No active mission: a flower seen near a discovered tag is attributed to
+    # the nearest tag (teleop / manual-SLAM), so the twin fills in.
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((5, 0.8)))
+    _ready(node)
+    node._on_yolo_detections(_yolo((0, 0.9)))  # class 0 == tulip_red
+    assert node._registry['5'].species == 'tulip_red'
+    assert any(o.kind == Observation.KIND_FLOWER for o in node.emitted)
+
+
+def test_idle_attribution_can_be_disabled(node):
+    # attribute_when_idle=False restores the old strict behaviour.
+    node._attribute_when_idle = False
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((5, 0.8)))
+    _ready(node)
+    node._on_yolo_detections(_yolo((0, 0.9)))
+    assert node._registry['5'].species == ''
+    assert node.emitted == []
