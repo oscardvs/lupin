@@ -6,6 +6,7 @@ import { SettingsDrawer } from '@/components/SettingsDrawer'
 import { TopBar } from '@/components/TopBar'
 import { AuroraBackground, type AuroraTone } from '@/components/system/AuroraBackground'
 import { BootSequence } from '@/components/system/BootSequence'
+import { FocusPanelProvider } from '@/components/system/FocusPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ArmView } from '@/components/views/ArmView'
@@ -38,7 +39,9 @@ export default function App() {
       <TooltipProvider delayDuration={200}>
         <RosProvider>
           <EStopProvider>
-            <Shell />
+            <FocusPanelProvider>
+              <Shell />
+            </FocusPanelProvider>
           </EStopProvider>
         </RosProvider>
       </TooltipProvider>
