@@ -45,6 +45,10 @@ def generate_launch_description():
         DeclareLaunchArgument('flower_scan_dwell_s', default_value='0.0'),
         # Exploration / monitoring (ExplorationMission)
         DeclareLaunchArgument('discovery_goal', default_value='5'),
+        # Front-load the first climate reading the moment a tag is discovered
+        # (oracle bridge shortcut). Shadows the node default so it takes effect
+        # on hardware.
+        DeclareLaunchArgument('seed_climate_on_discovery', default_value='true'),
         DeclareLaunchArgument('exploration_timeout_s', default_value='180.0'),
         DeclareLaunchArgument('map_topic', default_value='/map'),
         DeclareLaunchArgument('base_frame', default_value='base_link'),
@@ -103,6 +107,9 @@ def generate_launch_description():
             'scan_timeout_s': LaunchConfiguration('scan_timeout_s'),
             'flower_scan_dwell_s': LaunchConfiguration('flower_scan_dwell_s'),
             'discovery_goal': LaunchConfiguration('discovery_goal'),
+            'seed_climate_on_discovery': LaunchConfiguration(
+                'seed_climate_on_discovery',
+            ),
             'exploration_timeout_s': LaunchConfiguration('exploration_timeout_s'),
             'map_topic': LaunchConfiguration('map_topic'),
             'base_frame': LaunchConfiguration('base_frame'),

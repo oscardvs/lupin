@@ -732,7 +732,11 @@ class TestOrchestratorV2(unittest.TestCase):
         # discovery feed (faked) drives the EXPLORING→MONITORING switch.
         self.discovered = DiscoveredPub()
         self.harness.add(self.discovered)
-        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50)
+        # Disable discovery-time climate seeding here so the OK-observation
+        # count reflects ONLY the monitoring sweep — seeding would emit one
+        # extra OK obs per tag at discovery (that path has its own tests).
+        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50,
+                      seed_climate_on_discovery=False)
 
         resp = _call_start(
             self.collector, mission_type='ExplorationMission', discovery_goal=2,
@@ -912,6 +916,161 @@ class TestOrchestratorV2(unittest.TestCase):
         self.assertTrue(_wait_until(
             lambda: self.orch.state in ('DONE', 'READY'), 8.0,
         ), f'state={self.orch.state}')
+
+    # ── 16. discovery-time climate seeding ─────────────────────────────
+    def test_discovery_seeds_climate_during_exploring(self):
+        # The moment a NEW tag is discovered during EXPLORING the orchestrator
+        # must fire a one-shot bridge read and publish a KIND_TAG_READING/OK
+        # observation pinned at the tag's discovered pose — front-loading
+        # climate for the twin/HMI before the MONITORING scan ever runs.
+        #
+        # discovery_goal is set ABOVE the number of tags we publish so the
+        # mission STAYS in EXPLORING: monitoring never runs, so any bridge call
+        # / OK observation here can only be a discovery seed. That isolates the
+        # seed path cleanly.
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50)
+        resp = _call_start(
+            self.collector, mission_type='ExplorationMission', discovery_goal=5,
+        )
+        self.assertTrue(resp.accepted, resp.error_message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0),
+                        f'state={self.orch.state}')
+
+        self.discovered.publish(['1', '2', '3'])  # 3 < goal 5 → stays EXPLORING
+
+        # Each newly-discovered tag → exactly one bridge read.
+        self.assertTrue(_wait_until(
+            lambda: set(self.bridge.calls) >= {'1', '2', '3'}, 5.0),
+            f'bridge calls={self.bridge.calls}')
+        self.assertEqual(sorted(self.bridge.calls), ['1', '2', '3'],
+                         'each discovered tag should be seeded exactly once')
+
+        # One KIND_TAG_READING/OK observation per seeded tag.
+        self.assertTrue(_wait_until(
+            lambda: len([o for o in self.collector.observations
+                         if o.status == Observation.STATUS_OK]) >= 3, 5.0))
+        ok = [o for o in self.collector.observations
+              if o.status == Observation.STATUS_OK]
+        self.assertEqual(len(ok), 3)
+        for o in ok:
+            self.assertEqual(o.kind, Observation.KIND_TAG_READING)
+            # Shaped exactly like a MONITORING reading so the twin ingests it
+            # identically (the twin keys on tag_reading.tag_id, not source).
+            self.assertEqual(o.source, 'ExplorationMission')
+            self.assertEqual(o.status_detail, '')
+            self.assertEqual(o.header.frame_id, 'map')
+        self.assertEqual({o.tag_reading.tag_id for o in ok}, {'1', '2', '3'})
+        # Pose is pinned at the tag's discovered map pose (DiscoveredPub sets
+        # position.x = enumerate index): tag '2' is index 1 → x == 1.0.
+        by_id = {o.tag_reading.tag_id: o for o in ok}
+        self.assertAlmostEqual(by_id['2'].tag_pose_in_map.position.x, 1.0)
+        self.assertEqual(by_id['2'].tag_pose_in_map.orientation.w, 1.0)
+
+        # Never left EXPLORING → these are seeds, not monitoring scans.
+        self.assertEqual(self.orch.state, 'EXPLORING')
+
+    # ── 17. a tag is seeded only once ──────────────────────────────────
+    def test_repeat_discovery_does_not_reseed(self):
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50)
+        resp = _call_start(
+            self.collector, mission_type='ExplorationMission', discovery_goal=5,
+        )
+        self.assertTrue(resp.accepted, resp.error_message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0))
+
+        self.discovered.publish(['1', '2'])
+        self.assertTrue(_wait_until(
+            lambda: set(self.bridge.calls) >= {'1', '2'}, 5.0))
+        self.assertEqual(sorted(self.bridge.calls), ['1', '2'])
+
+        # The discovery feed is latched and re-delivers the same set; that must
+        # NOT re-fire the bridge (each tag is seeded at most once).
+        self.discovered.publish(['1', '2'])
+        self.discovered.publish(['1', '2'])
+        time.sleep(0.5)  # give any erroneous re-fire time to land
+        self.assertEqual(sorted(self.bridge.calls), ['1', '2'],
+                         'repeat discovery must not re-seed')
+
+        # A genuinely NEW tag in a later message IS seeded; the old ones are
+        # still not re-fired.
+        self.discovered.publish(['1', '2', '3'])
+        self.assertTrue(_wait_until(lambda: '3' in self.bridge.calls, 5.0))
+        self.assertEqual(sorted(self.bridge.calls), ['1', '2', '3'])
+
+    # ── 18. seeding never blocks the discovery callback / nav ──────────
+    def test_seed_does_not_block_discovery_callback(self):
+        # The seed must be non-blocking (call_async). If it blocked — e.g. a
+        # synchronous bridge call — the orchestrator's single mutually-exclusive
+        # callback group would stall on the first seed and frontier nav /
+        # subsequent discoveries would freeze. We gate the bridge so it never
+        # answers, fire a seed, and prove the orchestrator stays live: a SECOND
+        # discovery is still processed while the first seed is parked in flight.
+        gate = threading.Event()
+
+        def gated(tag_id):
+            gate.wait(timeout=10.0)
+            return GetTagReading.Response.STATUS_OK, '', FakeBridge.DEFAULT_READINGS
+
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        try:
+            # goal high → mission stays EXPLORING, so the bridge is only ever
+            # touched by seeds (never a monitoring scan).
+            self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50,
+                          bridge_behaviour=gated)
+            resp = _call_start(
+                self.collector, mission_type='ExplorationMission',
+                discovery_goal=5,
+            )
+            self.assertTrue(resp.accepted, resp.error_message)
+            self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0))
+
+            # First discovery → seed fires and PARKS on the gated bridge (the
+            # bridge records the call_async request before blocking on the gate).
+            self.discovered.publish(['1'])
+            self.assertTrue(_wait_until(lambda: '1' in self.bridge.calls, 5.0),
+                            'seed call never reached the bridge')
+
+            # The crux: if that in-flight seed had blocked the orchestrator's
+            # (mutually-exclusive) discovery callback, this second discovery
+            # could never be processed. It IS — the new tag lands in the
+            # registry AND gets its own seed fired — proving the seed is
+            # non-blocking (call_async), so frontier nav never stalls.
+            # (We can't assert '2' in bridge.calls: FakeBridge's handler is
+            # serialized, so the gated first call holds it until release.)
+            self.discovered.publish(['1', '2'])
+            self.assertTrue(_wait_until(
+                lambda: '2' in self.orch._discovered
+                and '2' in self.orch._seeded_tag_ids, 5.0),
+                'discovery callback wedged by an in-flight seed')
+        finally:
+            gate.set()  # release the parked bridge handler(s) for clean teardown
+
+    # ── 19. seeding is gated by the parameter ──────────────────────────
+    def test_seeding_disabled_by_param(self):
+        self.discovered = DiscoveredPub()
+        self.harness.add(self.discovered)
+        self._bringup(nav_outcomes=[GoalStatus.STATUS_SUCCEEDED] * 50,
+                      seed_climate_on_discovery=False)
+        resp = _call_start(
+            self.collector, mission_type='ExplorationMission', discovery_goal=5,
+        )
+        self.assertTrue(resp.accepted, resp.error_message)
+        self.assertTrue(_wait_until(lambda: self.orch.state == 'EXPLORING', 10.0))
+
+        self.discovered.publish(['1', '2', '3'])
+        time.sleep(0.7)  # ample time for a seed to fire if the gate were open
+        self.assertEqual(self.bridge.calls, [],
+                         'seeding disabled → no bridge reads on discovery')
+        self.assertEqual(
+            [o for o in self.collector.observations
+             if o.status == Observation.STATUS_OK], [],
+            'seeding disabled → no seed observations')
+        self.assertEqual(self.orch.state, 'EXPLORING')
 
 
 if __name__ == '__main__':
