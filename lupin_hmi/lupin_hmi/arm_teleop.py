@@ -123,6 +123,13 @@ class ArmTeleop(Node):
         self.declare_parameter('gripper_action', '/mirte_master_gripper_controller/gripper_cmd')
         self.declare_parameter('gripper_open_axis', 4)    # RT
         self.declare_parameter('gripper_close_axis', 5)   # LT
+        # Trigger axis value at rest / fully pulled. Differs by transport:
+        # BT rests +1 / pulls -1; wired xpad often rests -1 / pulls +1 (or 0/1).
+        # calibrate_xbox measures these; pull = (v - rest) / (full - rest).
+        self.declare_parameter('gripper_open_rest', 1.0)
+        self.declare_parameter('gripper_open_full', -1.0)
+        self.declare_parameter('gripper_close_rest', 1.0)
+        self.declare_parameter('gripper_close_full', -1.0)
         self.declare_parameter('gripper_pos_min', -0.20)
         self.declare_parameter('gripper_pos_max', 0.25)
         self.declare_parameter('gripper_step_rad', 0.03)
@@ -158,6 +165,10 @@ class ArmTeleop(Node):
         # Gripper state.
         self._gripper_open_ax = self._iparam('gripper_open_axis')
         self._gripper_close_ax = self._iparam('gripper_close_axis')
+        self._gripper_open_rest = float(self.get_parameter('gripper_open_rest').value)
+        self._gripper_open_full = float(self.get_parameter('gripper_open_full').value)
+        self._gripper_close_rest = float(self.get_parameter('gripper_close_rest').value)
+        self._gripper_close_full = float(self.get_parameter('gripper_close_full').value)
         self._gripper_pos_min = float(self.get_parameter('gripper_pos_min').value)
         self._gripper_pos_max = float(self.get_parameter('gripper_pos_max').value)
         self._gripper_step = float(self.get_parameter('gripper_step_rad').value)
@@ -170,9 +181,10 @@ class ArmTeleop(Node):
         self._gripper_pos = float('nan')
         self._last_gripper_goal = float('nan')
         self._gripper_seeded = False
-        # Trigger axes rest at +1 by convention; before the user pulls a
-        # trigger they may publish 0 (uninitialised). Treat values close to
-        # +1 OR exactly 0 as "rest" until proven otherwise.
+        # Per-axis "seen a real frame yet" latch — joy_node emits a spurious
+        # 0.0 for trigger axes before the first physical event. The rest/full
+        # convention is now data (gripper_*_rest/full); _trigger_pull uses this
+        # latch to avoid reading that startup 0.0 as a false half-pull.
         self._trigger_init = {self._gripper_open_ax: False,
                               self._gripper_close_ax: False}
         self._gripper_action_name = self.get_parameter('gripper_action').value
@@ -308,8 +320,12 @@ class ArmTeleop(Node):
         )
 
         # Gripper triggers — pull strength in [0, 1].
-        self._gripper_pull_open = self._trigger_pull(msg, self._gripper_open_ax)
-        self._gripper_pull_close = self._trigger_pull(msg, self._gripper_close_ax)
+        self._gripper_pull_open = self._trigger_pull(
+            msg, self._gripper_open_ax,
+            self._gripper_open_rest, self._gripper_open_full)
+        self._gripper_pull_close = self._trigger_pull(
+            msg, self._gripper_close_ax,
+            self._gripper_close_rest, self._gripper_close_full)
 
     def _on_joint_state(self, msg: JointState) -> None:
         """Seed commanded pose from the first reading and log subsequent
@@ -395,22 +411,29 @@ class ArmTeleop(Node):
             self._js_last[name] = pos
             self._js_logged_ns[name] = now_ns
 
-    def _trigger_pull(self, msg: Joy, idx: int) -> float:
-        """Convert an Xbox-style trigger axis (rest +1, full pull -1) to a
-        pull magnitude in [0, 1]. Returns 0 until the axis has produced a
-        clearly-pulled value at least once — ignores the 0.0 reading some
-        drivers send before the first physical event."""
+    def _trigger_pull(self, msg: Joy, idx: int, rest: float, full: float) -> float:
+        """Convert a trigger axis to a pull magnitude in [0, 1] given the axis
+        value at rest and fully pulled. These differ by transport: a Bluetooth
+        pad rests at +1 / pulls to -1, while a wired xpad pad commonly rests at
+        -1 / pulls to +1 (or rests at 0). pull = (v - rest) / (full - rest).
+
+        joy_node emits a spurious 0.0 for a trigger axis before its first
+        physical event. When the resting value sits near ±1 that 0.0 would read
+        as a half-pull, so we ignore the axis until a real frame arrives
+        (|v| > 0.5). When rest is already near 0 there is no ambiguity, so we
+        initialise immediately."""
         if idx < 0 or idx >= len(msg.axes):
             return 0.0
         v = float(msg.axes[idx])
         if not self._trigger_init.get(idx, False):
-            # Initialised once we see a value clearly different from the 0
-            # reading uninitialised joy_node sometimes emits.
-            if v > 0.5 or v < -0.1:
+            if abs(rest) < 0.5 or abs(v) > 0.5:
                 self._trigger_init[idx] = True
             else:
                 return 0.0
-        pull = (1.0 - v) / 2.0
+        span = full - rest
+        if abs(span) < 1e-6:
+            return 0.0
+        pull = (v - rest) / span
         return max(0.0, min(1.0, pull))
 
     def timer_callback(self) -> None:

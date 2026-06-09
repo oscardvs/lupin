@@ -31,6 +31,10 @@ setup(
         'console_scripts': [
             'cmd_vel_mux = lupin_hmi.cmd_vel_mux:main',
             'arm_teleop = lupin_hmi.arm_teleop:main',
+            # Interactive Xbox-pad calibrator — re-probes button/axis indices
+            # for the current transport (USB vs BT) and rewrites the matching
+            # config/xbox_config.<mode>.yaml that xbox_teleop auto-selects.
+            'calibrate_xbox = lupin_hmi.calibrate_xbox:main',
             'arm_sim_shim = lupin_hmi.arm_sim_shim:main',
             'arm_preset_server = lupin_hmi.arm_preset_server:main',
             'arm_calibrate_server = lupin_hmi.arm_calibrate_server:main',

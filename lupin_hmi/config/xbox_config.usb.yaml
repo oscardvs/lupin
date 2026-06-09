@@ -1,0 +1,74 @@
+# Xbox Wireless Controller — USB-CABLE mapping (045e:0b12 via the xpad driver).
+#
+# Auto-selected by xbox_teleop.launch.py when the pad is on a USB cable (the
+# launch reads the transport bus via lupin_hmi.pad_detect). Bluetooth uses a
+# different layout — see xbox_config.bluetooth.yaml.
+#
+# !!! SEED VALUES — best-guess "standard xpad" layout. Drive should work, but
+# !!! VERIFY/CORRECT on your kernel with:  ros2 run lupin_hmi calibrate_xbox
+# !!! (it detects USB vs BT and rewrites THIS file in place).
+#
+# Standard wired xpad layout:
+#   axes[0] Left X   axes[1] Left Y (up = -1)   axes[2] LT   axes[3] Right X
+#   axes[4] Right Y  axes[5] RT     axes[6] D-pad X   axes[7] D-pad Y (up = -1)
+#   buttons: A=0 B=1 X=2 Y=3   LB=4 RB=5   Back=6 Start=7
+
+joy_node:
+  ros__parameters:
+    device_name: "Xbox Series X Controller"
+    device_id: 0
+    deadzone: 0.10
+
+teleop_twist_joy_node:
+  ros__parameters:
+    require_enable_button: true
+    enable_button: 4          # LB — dead-man
+    enable_turbo_button: 5    # RB — boost
+
+    axis_linear:
+      x: 1                    # left stick vertical   → forward/back
+      y: 0                    # left stick horizontal → strafe
+    scale_linear:             # negative: xpad reports stick-forward as -1, so -×- = +x
+      x: -0.2
+      y: -0.2
+    scale_linear_turbo:
+      x: -0.6
+      y: -0.6
+
+    axis_angular:
+      yaw: 3                  # right stick horizontal (xpad axis 3) → yaw
+    scale_angular:
+      yaw: -0.7
+    scale_angular_turbo:
+      yaw: -1.4
+
+arm_teleop:
+  ros__parameters:
+    shoulder_pan_axis: -1
+    shoulder_lift_axis: -1
+    shoulder_pan_plus_button: 1     # B → pan +
+    shoulder_pan_minus_button: 2    # X → pan -   (xpad X=2)
+    shoulder_lift_plus_button: 3    # Y → lift +  (xpad Y=3)
+    shoulder_lift_minus_button: 0   # A → lift -
+    elbow_axis: 7                   # D-pad up/down → elbow ±
+    wrist_axis: 6                   # D-pad left/right → wrist ±
+    elbow_plus_button: -1
+    elbow_minus_button: -1
+    wrist_plus_button: -1
+    wrist_minus_button: -1
+    shoulder_disable_button: 4      # LB (same physical button as enable_button)
+    shoulder_enable_button: -1
+    # xpad D-pad reports up/left as -1; flip so the prompted direction → joint +.
+    shoulder_pan_sign: 1
+    shoulder_lift_sign: 1
+    elbow_sign: -1
+    wrist_sign: -1
+    # Gripper triggers DISABLED in the seed: the wired-trigger rest/full
+    # convention varies by kernel and a wrong guess could drive the jaw at
+    # rest. calibrate_xbox measures rest+full and enables them safely.
+    gripper_open_axis: -1           # set by calibrate_xbox (xpad RT is axis 5)
+    gripper_close_axis: -1          # set by calibrate_xbox (xpad LT is axis 2)
+    gripper_open_rest: 0.0
+    gripper_open_full: 1.0
+    gripper_close_rest: 0.0
+    gripper_close_full: 1.0

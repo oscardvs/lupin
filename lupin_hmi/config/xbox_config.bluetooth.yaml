@@ -1,0 +1,81 @@
+# Xbox Wireless Controller — BLUETOOTH mapping (045e:0b13 over BT HID).
+#
+# Auto-selected by xbox_teleop.launch.py when the pad is on Bluetooth (the
+# launch reads the transport bus via lupin_hmi.pad_detect). The USB-cable
+# layout is different — see xbox_config.usb.yaml.
+#
+# These indices were probed live against this pad in BT mode (the MS-HID
+# layout, NOT SDL2's default Xbox layout):
+#   axes[0] Left X   axes[1] Left Y   axes[2] Right X  axes[3] Right Y
+#   axes[4] RT (rest +1, full -1)     axes[5] LT       axes[6] D-pad X  axes[7] D-pad Y
+#   buttons: A=0 B=1 (idx 2 skipped) X=3 Y=4   LB=6 RB=7
+#
+# Re-probe after a kernel/controller swap with:  ros2 run lupin_hmi calibrate_xbox
+# (it detects BT vs USB and rewrites the matching file in place).
+
+joy_node:
+  ros__parameters:
+    # SDL2 normalises both transports to this friendly name; device_id 0 is a
+    # safe fallback (SDL filters non-gamepads like the laptop accelerometer).
+    device_name: "Xbox Series X Controller"
+    device_id: 0
+    # 0.15 covers the Series X|S BT-mode resting drift on Mirte-247264's pad.
+    deadzone: 0.15
+
+teleop_twist_joy_node:
+  ros__parameters:
+    require_enable_button: true
+    enable_button: 6          # LB — dead-man, must be held to drive
+    enable_turbo_button: 7    # RB — boost while held
+
+    axis_linear:
+      x: 1                    # left stick vertical   → forward/back
+      y: 0                    # left stick horizontal → strafe
+    scale_linear:             # sign encodes direction (positive = stick fwd → robot fwd)
+      x: 0.2
+      y: 0.2
+    scale_linear_turbo:
+      x: 0.6
+      y: 0.6
+
+    axis_angular:
+      yaw: 2                  # right stick horizontal → yaw
+    scale_angular:
+      yaw: 0.7
+    scale_angular_turbo:
+      yaw: 1.4
+
+arm_teleop:
+  ros__parameters:
+    # Shoulder pan/lift on face buttons (sticks reserved for chassis). Axis
+    # fallback disabled with -1; the *_plus/_minus buttons carry direction.
+    shoulder_pan_axis: -1
+    shoulder_lift_axis: -1
+    shoulder_pan_plus_button: 1     # B  (right)  → pan +
+    shoulder_pan_minus_button: 3    # X  (left)   → pan -
+    shoulder_lift_plus_button: 4    # Y  (top)    → lift +
+    shoulder_lift_minus_button: 0   # A  (bottom) → lift -
+    elbow_axis: 7                   # D-pad up/down → elbow ±
+    wrist_axis: 6                   # D-pad left/right → wrist ±
+    elbow_plus_button: -1
+    elbow_minus_button: -1
+    wrist_plus_button: -1
+    wrist_minus_button: -1
+    # LB silences the shoulder buttons while driving (don't move the arm while
+    # the dead-man is held). Same physical button as enable_button above.
+    shoulder_disable_button: 6
+    shoulder_enable_button: -1
+    # Axis direction normalisers (the prompted physical input → joint +).
+    shoulder_pan_sign: 1
+    shoulder_lift_sign: 1
+    elbow_sign: 1
+    wrist_sign: 1
+    # Gripper triggers. rest/full define the axis value at rest and fully
+    # pulled, so pull = (v - rest) / (full - rest) ∈ [0, 1]. BT triggers
+    # rest at +1 and read -1 fully pulled.
+    gripper_open_axis: 4            # RT
+    gripper_close_axis: 5           # LT
+    gripper_open_rest: 1.0
+    gripper_open_full: -1.0
+    gripper_close_rest: 1.0
+    gripper_close_full: -1.0
