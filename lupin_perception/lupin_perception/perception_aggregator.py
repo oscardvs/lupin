@@ -87,6 +87,11 @@ from .box_geometry import (
 _SCANNING_PHASE = 'SCANNING'
 _SCANNING_LIFECYCLES = ('MONITORING', 'INSPECTING')
 
+# Lifecycle states during which a mission owns observation end-to-end. Outside
+# these (BOOT/READY/DONE/FAULT/empty, or no mission seen) the aggregator may
+# passively attribute a flower to the nearest seen tag — teleop / SLAM-test.
+_ACTIVE_LIFECYCLES = ('PREPARE', 'EXPLORING', 'INSPECTING', 'MONITORING', 'RETURNING')
+
 
 class _TagRecord:
     """In-memory state for one discovered tag. Pure data, no ROS."""
@@ -149,6 +154,10 @@ class PerceptionAggregator(Node):
         )
         self.declare_parameter('anomaly_class_name', 'bug')
         self.declare_parameter('publish_rate_hz', 2.0)
+        # When no mission is active, attribute flowers to the nearest seen tag
+        # so teleop / manual-SLAM sessions still pin flower/pest markers. Set
+        # False to require an active SCANNING mission (the pre-2026-06-09 gate).
+        self.declare_parameter('attribute_when_idle', True)
 
         # ── flower localization (Stream B) ──────────────────────────────
         self.declare_parameter('joint_states_topic', '/joint_states')
@@ -209,6 +218,7 @@ class PerceptionAggregator(Node):
         self._flower_box_gate = bool(self.get_parameter('flower_box_gate').value)
         self._flower_box_gate_margin = float(
             self.get_parameter('flower_box_gate_margin_m').value)
+        self._attribute_when_idle = bool(self.get_parameter('attribute_when_idle').value)
 
         # ── runtime state ──────────────────────────────────────────────
         self._registry: dict[str, _TagRecord] = {}
@@ -498,14 +508,23 @@ class PerceptionAggregator(Node):
             frame_dets.append((f, name, conf, track_id))
         self._fuse_flower(now_mono, frame_dets)
 
+    def _mission_active(self) -> bool:
+        """True while a mission is driving/scanning, so it owns observation.
+        Idle lifecycles and 'no mission state seen' are not active."""
+        ms = self._mission_state
+        if not self._mission_state_seen or ms is None:
+            return False
+        return ms.lifecycle_state in _ACTIVE_LIFECYCLES
+
     def _focus_tag(self) -> Optional[str]:
         """Which mission target/base a fresh flower detection belongs to.
 
-        Primary: the target the mission says it is parked SCANNING. Fallback
-        (standalone / no mission): the nearest tag in the latest frame. Returns
-        None when we shouldn't attribute (e.g. EXPLORING / driving)."""
+        Active mission: the target the mission says it is parked SCANNING
+        (None otherwise, to avoid drive-by misassociation while EXPLORING/
+        RETURNING). No active mission (idle / standalone): the nearest seen
+        tag, when ``attribute_when_idle`` — lets teleop pin flowers."""
         ms = self._mission_state
-        if self._mission_state_seen and ms is not None:
+        if self._mission_active():
             scanning = (
                 ms.lifecycle_state in _SCANNING_LIFECYCLES
                 and _SCANNING_PHASE in (ms.mission_phase or '')
@@ -513,10 +532,10 @@ class PerceptionAggregator(Node):
             if scanning and (ms.current_target in self._boxes
                              or ms.current_target in self._registry):
                 return ms.current_target
-            # Mission is running but not scanning — don't attribute (avoids
-            # drive-by misassociation during EXPLORING).
             return None
-        # Standalone: nearest detected tag this frame, if any.
+        if not self._attribute_when_idle:
+            return None
+        # Nearest detected tag this frame, if any.
         if not self._last_frame:
             return None
         nearest = min(self._last_frame, key=lambda t: t[1] if t[1] > 0 else math.inf)
