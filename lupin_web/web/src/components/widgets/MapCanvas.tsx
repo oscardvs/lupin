@@ -31,6 +31,9 @@ import {
   type TwinTagState,
 } from '@/types/ros'
 
+/** A resolved (non-null) /twin/get_field response. */
+type TwinField = NonNullable<ReturnType<typeof useTwinField>['field']>
+
 /**
  * Renders the SLAM occupancy grid, the live robot pose (via TF), and the
  * current Nav2 plan. Click to set a goal — drag while clicking to set the
@@ -61,9 +64,13 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
   const pose = useMapPose(mapFrame, baseFrame)
   const publishGoal = usePublisher<PoseStamped>(goalPoseTopic, ROS_TYPE.PoseStamped)
 
-  // Active sensor + per-layer toggles. Local-state, no settings persistence
-  // — these are operator preferences for the current page session.
-  const [sensor, setSensor] = useState<TwinSensor>('temperature')
+  // Active sensors + per-layer toggles. Local-state, no settings persistence
+  // — these are operator preferences for the current page session. The metric
+  // selector is multi-select: each chosen sensor paints its own translucent
+  // heat-map layer (own hue) over the same map area. `primarySensor` (first in
+  // canonical order) is the one the tag pins are tinted by.
+  const [sensors, setSensors] = useState<TwinSensor[]>(['temperature'])
+  const primarySensor = sensors[0] ?? null
   const [layers, setLayers] = useState({
     heatmap: true,
     trajectory: true,
@@ -99,19 +106,30 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
     // stable React value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapRef.current?.info.width, mapRef.current?.info.height])
-  const { field } = useTwinField({
-    sensor,
-    bbox: fieldBbox,
-    resolution: 0.25,
-    enabled: layers.heatmap && fieldBbox != null,
-    refreshIntervalMs: 5000,
-  })
-  // Keep the painted offscreen canvas around so the render loop only
-  // rebuilds it when the field response actually changes.
-  const fieldBitmapRef = useRef<{
-    key: string
-    bitmap: HTMLCanvasElement | null
-  } | null>(null)
+  // One field hook per possible sensor. Hooks can't be called in a
+  // variable-length loop, so we call all five at fixed positions and gate
+  // each with `enabled` — only the metrics the operator selected actually
+  // poll /twin/get_field. `TWIN_SENSORS` is a module constant, so this set
+  // of calls never changes shape across renders.
+  const heatOn = layers.heatmap && fieldBbox != null
+  const fTemp = useTwinField({ sensor: 'temperature', bbox: fieldBbox, resolution: 0.25, enabled: heatOn && sensors.includes('temperature'), refreshIntervalMs: 5000 })
+  const fHum = useTwinField({ sensor: 'humidity', bbox: fieldBbox, resolution: 0.25, enabled: heatOn && sensors.includes('humidity'), refreshIntervalMs: 5000 })
+  const fCo2 = useTwinField({ sensor: 'co2', bbox: fieldBbox, resolution: 0.25, enabled: heatOn && sensors.includes('co2'), refreshIntervalMs: 5000 })
+  const fLight = useTwinField({ sensor: 'light', bbox: fieldBbox, resolution: 0.25, enabled: heatOn && sensors.includes('light'), refreshIntervalMs: 5000 })
+  const fSoil = useTwinField({ sensor: 'soil_moisture', bbox: fieldBbox, resolution: 0.25, enabled: heatOn && sensors.includes('soil_moisture'), refreshIntervalMs: 5000 })
+  const fieldBySensor: Record<TwinSensor, TwinField | null> = {
+    temperature: fTemp.field,
+    humidity: fHum.field,
+    co2: fCo2.field,
+    light: fLight.field,
+    soil_moisture: fSoil.field,
+  }
+  const primaryField = primarySensor ? fieldBySensor[primarySensor] : null
+  // Keep the painted offscreen canvases around (one per sensor) so the render
+  // loop only rebuilds a layer when its field response actually changes.
+  const fieldBitmapRef = useRef<
+    Map<TwinSensor, { key: string; bitmap: HTMLCanvasElement | null }>
+  >(new Map())
 
   // 60 s pose tail. Buffered as (x, y, t) tuples in a ref so the render
   // loop reads the latest without needing a re-render.
@@ -183,9 +201,18 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
     if (!canvas) return
     const resize = () => {
       const dpr = window.devicePixelRatio || 1
-      const rect = canvas.getBoundingClientRect()
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr))
-      canvas.height = Math.max(1, Math.floor(rect.height * dpr))
+      // Size the backing store from the LAYOUT box (clientWidth/Height), not
+      // getBoundingClientRect(): the latter returns the *visual* box, which a
+      // CSS transform shrinks — and the FocusPanel opens with a `zoom-in-95`
+      // scale animation. Reading it mid-animation froze the buffer at 0.95×
+      // (ResizeObserver never re-fires, since transforms don't touch the layout
+      // box), so the draw loop — which works in clientWidth/Height space —
+      // stretched, drifting goal clicks off the cursor. clientW/H are
+      // transform-independent and match the projection's coordinate space.
+      const cw = canvas.clientWidth
+      const ch = canvas.clientHeight
+      canvas.width = Math.max(1, Math.floor(cw * dpr))
+      canvas.height = Math.max(1, Math.floor(ch * dpr))
       const ctx = canvas.getContext('2d')
       if (ctx) {
         ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -626,35 +653,42 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
       ctx.restore()
     }
 
-    // Heat-map layer (twin field). Painted over the SLAM bitmap but
-    // *under* the 1 m grid so the map's structure stays legible. Updates
-    // only when the field response or its dimensions change — render
+    // Heat-map layers (twin fields). Painted over the SLAM bitmap but
+    // *under* the 1 m grid so the map's structure stays legible. One
+    // translucent layer per selected metric, in canonical sensor order, so
+    // the blend is deterministic; each field's per-cell alpha (≤0.6, baked
+    // in paintFieldToCanvas) keeps the floor plan readable underneath.
+    // Updates only when a field response or its dimensions change — render
     // loop is at 60 Hz, paintFieldToCanvas would be wasteful per frame.
-    if (layers.heatmap && field && field.width > 0 && field.height > 0) {
-      const fieldKey =
-        `${field.width}x${field.height}|${field.value_min}|${field.value_max}|${sensor}|${field.sample_count}`
-      const ramp = SENSOR_RAMPS[sensor]
-      if (fieldBitmapRef.current?.key !== fieldKey) {
-        fieldBitmapRef.current = {
-          key: fieldKey,
-          bitmap: paintFieldToCanvas(field, ramp),
+    if (layers.heatmap) {
+      for (const s of sensors) {
+        const field = fieldBySensor[s]
+        if (!field || field.width <= 0 || field.height <= 0) continue
+        const fieldKey =
+          `${field.width}x${field.height}|${field.value_min}|${field.value_max}|${s}|${field.sample_count}`
+        const cached = fieldBitmapRef.current.get(s)
+        if (cached?.key !== fieldKey) {
+          fieldBitmapRef.current.set(s, {
+            key: fieldKey,
+            bitmap: paintFieldToCanvas(field, SENSOR_RAMPS[s]),
+          })
         }
-      }
-      const fbmp = fieldBitmapRef.current?.bitmap
-      if (fbmp) {
-        const fw = field.width * field.resolution_used
-        const fh = field.height * field.resolution_used
-        const center = proj.worldToCanvas(
-          field.origin_x + fw / 2,
-          field.origin_y + fh / 2,
-        )
-        ctx.save()
-        ctx.translate(center.x, center.y)
-        ctx.rotate(-proj.rot)
-        // Smoothing on so the cell-grid blurs into a continuous gradient.
-        ctx.imageSmoothingEnabled = true
-        ctx.drawImage(fbmp, (-fw * proj.s) / 2, (-fh * proj.s) / 2, fw * proj.s, fh * proj.s)
-        ctx.restore()
+        const fbmp = fieldBitmapRef.current.get(s)?.bitmap
+        if (fbmp) {
+          const fw = field.width * field.resolution_used
+          const fh = field.height * field.resolution_used
+          const center = proj.worldToCanvas(
+            field.origin_x + fw / 2,
+            field.origin_y + fh / 2,
+          )
+          ctx.save()
+          ctx.translate(center.x, center.y)
+          ctx.rotate(-proj.rot)
+          // Smoothing on so the cell-grid blurs into a continuous gradient.
+          ctx.imageSmoothingEnabled = true
+          ctx.drawImage(fbmp, (-fw * proj.s) / 2, (-fh * proj.s) / 2, fw * proj.s, fh * proj.s)
+          ctx.restore()
+        }
       }
     }
 
@@ -733,11 +767,15 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
     // recent tag. Pins fade as their stale_seconds climbs past 0; older
     // tags desaturate but stay visible.
     if (layers.pins) {
-      const ramp = SENSOR_RAMPS[sensor]
+      // Pins follow the primary metric (first selected, canonical order) —
+      // a pin shows one real reading, never a fabricated blend of several.
+      const ramp = primarySensor ? SENSOR_RAMPS[primarySensor] : null
       for (const t of tagsRef.current) {
         if (!tagHasPose(t)) continue  // never been seen with a pose
-        const reading = t.readings.find((r) => r.name === sensor)?.value
-        const hasReading = reading != null
+        const reading = primarySensor
+          ? t.readings.find((r) => r.name === primarySensor)?.value
+          : undefined
+        const hasReading = reading != null && primaryField != null && ramp != null
         // Live age from last_observed (keeps advancing even when the twin
         // wedged), with an extra desaturation when the whole twin is offline.
         const age = tagAgeSeconds(t)
@@ -754,9 +792,9 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
         ctx.lineTo(c.x, c.y + r)
         ctx.lineTo(c.x - r, c.y)
         ctx.closePath()
-        if (hasReading && field) {
-          const span = Math.max(1e-9, field.value_max - field.value_min)
-          const tNorm = Math.min(1, Math.max(0, (reading - field.value_min) / span))
+        if (hasReading) {
+          const span = Math.max(1e-9, primaryField.value_max - primaryField.value_min)
+          const tNorm = Math.min(1, Math.max(0, (reading - primaryField.value_min) / span))
           ctx.fillStyle = rampCssColor(ramp, tNorm, sat)
           ctx.fill()
           ctx.lineWidth = 1
@@ -933,7 +971,7 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
           <span>Map · navigation</span>
           <span className="tag tag-accent">PNL-NAV-01</span>
           <div className="ml-auto flex items-center gap-2">
-            <SensorPills value={sensor} onChange={setSensor} />
+            <SensorPills value={sensors} onChange={setSensors} />
             <span className="h-3 w-px bg-hairline" aria-hidden />
             <LayerToggles value={layers} onChange={setLayers} />
             <span className="h-3 w-px bg-hairline" aria-hidden />
@@ -1022,9 +1060,17 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
             </button>
           )}
 
-          {/* Bottom-left legend — single-hue ramp + min/max labels + unit. */}
-          {layers.heatmap && field && field.sample_count > 0 && (
-            <FieldLegend sensor={sensor} field={field} />
+          {/* Bottom-left legend — one stacked row per active metric:
+              single-hue ramp + min/max labels + unit. */}
+          {layers.heatmap && (
+            <FieldLegendStack
+              entries={sensors
+                .map((s) => ({ sensor: s, field: fieldBySensor[s] }))
+                .filter(
+                  (e): e is { sensor: TwinSensor; field: TwinField } =>
+                    e.field != null && e.field.sample_count > 0,
+                )}
+            />
           )}
 
           {/* Hover tooltip. Positioned near the pin in canvas coords. */}
@@ -1054,25 +1100,37 @@ const SENSOR_LABELS: Record<TwinSensor, string> = {
 
 function SensorPills({
   value, onChange,
-}: { value: TwinSensor; onChange: (v: TwinSensor) => void }) {
+}: { value: TwinSensor[]; onChange: (v: TwinSensor[]) => void }) {
+  // Multi-select: each click toggles a metric in/out. The result is kept in
+  // canonical TWIN_SENSORS order so heat-map paint order + the legend stack
+  // are deterministic regardless of click sequence.
+  const toggle = (s: TwinSensor) =>
+    onChange(
+      value.includes(s)
+        ? value.filter((x) => x !== s)
+        : TWIN_SENSORS.filter((x) => x === s || value.includes(x)),
+    )
   return (
     <div className="flex items-center rounded-sm border border-hairline bg-card/40 p-0.5">
-      {TWIN_SENSORS.map((s) => (
-        <button
-          key={s}
-          type="button"
-          onClick={() => onChange(s)}
-          aria-pressed={value === s}
-          className={cn(
-            'tag rounded-sm px-1.5 py-0.5 transition-colors',
-            value === s
-              ? 'bg-primary/15 text-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {SENSOR_LABELS[s]}
-        </button>
-      ))}
+      {TWIN_SENSORS.map((s) => {
+        const on = value.includes(s)
+        return (
+          <button
+            key={s}
+            type="button"
+            onClick={() => toggle(s)}
+            aria-pressed={on}
+            className={cn(
+              'tag rounded-sm px-1.5 py-0.5 transition-colors',
+              on
+                ? 'bg-primary/15 text-primary'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {SENSOR_LABELS[s]}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -1213,24 +1271,31 @@ function EraseMapButton() {
 
 /* ---------- legend + tooltip ---------- */
 
-function FieldLegend({
-  sensor, field,
-}: { sensor: TwinSensor; field: NonNullable<ReturnType<typeof useTwinField>['field']> }) {
-  const ramp = SENSOR_RAMPS[sensor]
+function FieldLegendStack({
+  entries,
+}: { entries: Array<{ sensor: TwinSensor; field: TwinField }> }) {
+  if (entries.length === 0) return null
   return (
-    <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col gap-1 rounded-sm border border-hairline bg-card/70 px-2 py-1 backdrop-blur">
-      <div className="flex items-baseline gap-2">
-        <span className="tag tag-strong">{SENSOR_LABELS[sensor]}</span>
-        <span className="font-mono text-[10px] text-muted-foreground">{ramp.unit}</span>
-      </div>
-      <div
-        className="h-2 w-[120px] rounded-sm border border-hairline"
-        style={{ backgroundImage: rampGradientCss(ramp) }}
-      />
-      <div className="flex items-baseline justify-between font-mono text-[10px] text-muted-foreground">
-        <span>{formatLegendNumber(field.value_min)}</span>
-        <span>{formatLegendNumber(field.value_max)}</span>
-      </div>
+    <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col gap-2 rounded-sm border border-hairline bg-card/70 px-2 py-1.5 backdrop-blur">
+      {entries.map(({ sensor, field }) => {
+        const ramp = SENSOR_RAMPS[sensor]
+        return (
+          <div key={sensor} className="flex flex-col gap-1">
+            <div className="flex items-baseline gap-2">
+              <span className="tag tag-strong">{SENSOR_LABELS[sensor]}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">{ramp.unit}</span>
+            </div>
+            <div
+              className="h-2 w-[120px] rounded-sm border border-hairline"
+              style={{ backgroundImage: rampGradientCss(ramp) }}
+            />
+            <div className="flex items-baseline justify-between font-mono text-[10px] text-muted-foreground">
+              <span>{formatLegendNumber(field.value_min)}</span>
+              <span>{formatLegendNumber(field.value_max)}</span>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
