@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import { prefersReducedMotion } from '@/lib/motion'
+import { useSettings } from '@/lib/settings'
 
 export type AuroraTone = 'idle' | 'active' | 'alert'
 
@@ -209,7 +210,49 @@ function CssAurora({ tone }: { tone: AuroraTone }) {
   )
 }
 
+/**
+ * Daylight field for light mode. The dark GLSL shader fills its plane with a
+ * near-black base, so over a light theme it just muddies everything — instead
+ * we let the `.light body` lichen/sky blooms shine through and add only a faint
+ * mood-following colour wash, a soft grid texture, and a gentle floor vignette.
+ * Pure CSS, so it also spares the tablet GPU a fully-veiled shader.
+ */
+function LightAtmosphere({ tone }: { tone: AuroraTone }) {
+  const wash =
+    tone === 'alert'
+      ? 'radial-gradient(1200px 820px at 8% 4%, hsla(4,80%,52%,0.16), transparent 56%), radial-gradient(1000px 720px at 96% 2%, hsla(10,72%,50%,0.11), transparent 54%)'
+      : tone === 'active'
+        ? 'radial-gradient(1120px 760px at 10% 6%, hsla(96,66%,46%,0.10), transparent 56%)'
+        : 'transparent'
+  return (
+    <>
+      {/* mood wash, layered over the body blooms */}
+      <div
+        className="absolute inset-0"
+        style={{ background: wash, transition: 'background 600ms var(--ease-out-expo)' }}
+      />
+      {/* drifting hex grid — faint dark lines read as texture on the paper */}
+      <div
+        className="absolute inset-0 bg-grid opacity-[0.5]"
+        style={{
+          maskImage: 'radial-gradient(ellipse 88% 66% at 50% 30%, #000 18%, transparent 82%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 88% 66% at 50% 30%, #000 18%, transparent 82%)',
+        }}
+      />
+      {/* soft daylight floor vignette for depth — light, never black */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(120% 95% at 50% -8%, transparent 62%, hsl(90 14% 80% / 0.5) 100%)',
+        }}
+      />
+    </>
+  )
+}
+
 export function AuroraBackground({ tone = 'idle' }: { tone?: AuroraTone }) {
+  const [{ theme }] = useSettings()
   const [reduced] = useState(prefersReducedMotion)
   const [hidden, setHidden] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -228,6 +271,17 @@ export function AuroraBackground({ tone = 'idle' }: { tone?: AuroraTone }) {
   }, [])
 
   const useWebGL = !reduced && !failed
+
+  if (theme === 'light') {
+    return (
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden noise"
+      >
+        <LightAtmosphere tone={tone} />
+      </div>
+    )
+  }
 
   return (
     <div

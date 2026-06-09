@@ -86,44 +86,49 @@
   }
 
   .light {
-    --background: 60 25% 97%;
-    --foreground: 120 30% 8%;
+    /* Daylight glasshouse — a soft eucalyptus-paper canvas with crisp white
+       tiles floating on it. Neutral tints hold the lichen hue family (~88–96)
+       at low saturation so the whole theme reads botanical, not clinical.
+       Elevation: tinted base canvas → pure-white tiles (lifted by shadow) →
+       faint-green inset/hover fields. */
+    --background: 88 16% 95%;
+    --foreground: 110 26% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 120 30% 8%;
+    --card-foreground: 110 26% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 120 30% 8%;
-    --primary: 88 80% 32%;
+    --popover-foreground: 110 26% 11%;
+    --primary: 96 58% 28%;             /* deep grass-green, legible on white */
     --primary-foreground: 0 0% 100%;
-    --secondary: 60 20% 92%;
-    --secondary-foreground: 120 30% 8%;
-    --muted: 60 20% 92%;
-    --muted-foreground: 120 8% 38%;
-    --accent: 88 70% 88%;
-    --accent-foreground: 88 80% 22%;
-    --destructive: 8 80% 45%;
+    --secondary: 88 18% 91%;
+    --secondary-foreground: 110 26% 11%;
+    --muted: 88 16% 92%;
+    --muted-foreground: 108 11% 32%;   /* ~8:1 on white — comfortable body */
+    --accent: 94 48% 86%;
+    --accent-foreground: 98 66% 18%;
+    --destructive: 4 74% 47%;
     --destructive-foreground: 0 0% 100%;
-    --border: 60 12% 84%;
-    --input: 60 12% 84%;
-    --ring: 88 80% 32%;
-    --hairline: 60 8% 80%;
-    --signal: 195 80% 38%;
-    --signal-soft: 195 70% 48%;
-    --warning: 32 90% 45%;
-    --bloom: 88 80% 45%;
-    --glass-bg: 60 30% 100%;
+    --border: 90 13% 81%;
+    --input: 90 13% 81%;
+    --ring: 96 58% 28%;
+    --hairline: 92 11% 75%;            /* firmer than border — tile edges read */
+    --signal: 196 80% 35%;             /* deep cyan data lane */
+    --signal-soft: 196 66% 45%;
+    --warning: 28 92% 42%;             /* amber, darkened for white ground */
+    --bloom: 94 62% 42%;
+    --glass-bg: 88 44% 99%;
     --glass-blur: 16px;
-    --glass-saturate: 1.3;
+    --glass-saturate: 1.2;
     --glass-edge: 0 0% 100%;
     --glass-plate: 0 0% 100%;
-    --ink-0: 60 20% 90%;
-    --ink-1: 60 25% 97%;
-    --ink-2: 0 0% 100%;
-    --ink-3: 60 20% 99%;
-    --ink-4: 0 0% 100%;
-    --status-nominal: 88 80% 32%;
-    --status-data: 195 80% 38%;
-    --status-caution: 32 90% 45%;
-    --status-critical: 8 80% 45%;
+    --ink-0: 88 14% 84%;               /* recessed well / dialog scrim base   */
+    --ink-1: 88 16% 95%;               /* = background, base canvas           */
+    --ink-2: 0 0% 100%;                /* = card, base tiles (shadow lifts)   */
+    --ink-3: 96 24% 96.5%;             /* faint-green inset / hover field      */
+    --ink-4: 0 0% 100%;                /* overlay opaque backing plate         */
+    --status-nominal: 96 58% 28%;
+    --status-data: 196 80% 35%;
+    --status-caution: 28 92% 42%;
+    --status-critical: 4 74% 47%;
   }
 }
 
@@ -168,9 +173,13 @@
   }
 
   .light body {
+    /* Daylight atmosphere — soft lichen + sky blooms from the upper corners and
+       a gentle bottom wash, on the eucalyptus paper. The AuroraBackground stays
+       light/transparent over this so the blooms read instead of a dark field. */
     background-image:
-      radial-gradient(1100px 700px at -10% -10%, hsla(88, 80%, 60%, 0.18), transparent 60%),
-      radial-gradient(900px 600px at 110% 0%, hsla(195, 70%, 60%, 0.12), transparent 60%);
+      radial-gradient(1120px 760px at -8% -12%, hsla(96, 66%, 52%, 0.16), transparent 58%),
+      radial-gradient(960px 680px at 112% -4%, hsla(196, 72%, 54%, 0.11), transparent 56%),
+      radial-gradient(900px 640px at 50% 116%, hsla(92, 52%, 56%, 0.10), transparent 60%);
   }
 
   .tabular-nums {
@@ -311,6 +320,16 @@
     10%  { opacity: 0.9; }
     90%  { opacity: 0.9; }
     100% { transform: translateY(100%); opacity: 0.0; }
+  }
+  /* Light mode: the bright dark-theme chartreuse scan line vanishes on white —
+     ride the darkened primary instead so the sweep still reads. */
+  .light .scanline::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.45) 50%,
+      transparent 100%
+    );
   }
 
   /* Reticle / L-bracket corners — pure CSS, dropped on any positioned panel. */
