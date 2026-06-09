@@ -26,6 +26,11 @@
     --ring: 78 90% 58%;
     --radius: 0.25rem;
 
+    /* Density scale — consumed by ViewShell + view paddings/gaps. Bumps up at
+       sm and xl so large screens densify instead of leaving voids. */
+    --pad: 0.75rem;
+    --gap: 0.75rem;
+
     /* Custom palette tokens (used directly via arbitrary-value classes) */
     --hairline: 120 6% 25%;
     --edge-tile: 60 30% 88%;           /* 1px inset top highlight on tiles */
@@ -71,6 +76,13 @@
     --dur-2: 240ms;
     --dur-3: 420ms;
     --dur-4: 720ms;
+  }
+
+  @media (min-width: 640px) {
+    :root { --pad: 1rem; --gap: 1rem; }
+  }
+  @media (min-width: 1280px) {
+    :root { --pad: 1.25rem; --gap: 1.25rem; }
   }
 
   .light {

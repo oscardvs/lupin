@@ -1,5 +1,6 @@
 import type { Config } from 'tailwindcss'
 import animate from 'tailwindcss-animate'
+import containerQueries from '@tailwindcss/container-queries'
 
 export default {
   darkMode: ['class'],
@@ -36,6 +37,12 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        // Opaque elevation ramp — base tiles use these (never glass).
+        'ink-0': 'hsl(var(--ink-0))',
+        'ink-1': 'hsl(var(--ink-1))',
+        'ink-2': 'hsl(var(--ink-2))',
+        'ink-3': 'hsl(var(--ink-3))',
+        'ink-4': 'hsl(var(--ink-4))',
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -44,5 +51,5 @@ export default {
       },
     },
   },
-  plugins: [animate],
+  plugins: [animate, containerQueries],
 } satisfies Config
