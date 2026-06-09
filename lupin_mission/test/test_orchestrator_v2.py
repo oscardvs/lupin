@@ -339,6 +339,21 @@ class _SpinHarness:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
+        # Stop the executor's OWN worker threads before destroying nodes.
+        # The spin thread above only drives spin_once; the MultiThreadedExecutor
+        # still owns worker threads that run action execute_callbacks. Without an
+        # explicit shutdown those workers (and any in-flight FakeNavServer goal)
+        # outlive this harness: a lingering callback calls goal_handle.succeed()
+        # after destroy_node() has invalidated the publisher ("feedback publisher
+        # is invalid"), and the abandoned executor's still-registered
+        # navigate_to_pose server leaks into the next test — which is exactly why
+        # test_pause_resume's cancel was never observed in-suite yet passed in
+        # isolation. shutdown() joins the workers first, so callbacks finish on a
+        # valid handle and no stale server survives.
+        try:
+            self.executor.shutdown(timeout_sec=2.0)
+        except Exception:
+            pass
         for node in self.nodes:
             try:
                 node.destroy_node()
