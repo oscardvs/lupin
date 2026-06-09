@@ -34,7 +34,11 @@ export function ViewShell({
     <div
       className={cn(
         'flex h-full min-h-0 w-full flex-col gap-[var(--gap)] p-[var(--pad)]',
-        intent === 'fit' ? 'overflow-hidden' : 'overflow-y-auto',
+        // `fit` is strict from sm up (desktop/tablet are tall enough to fill
+        // without scroll). On phone it keeps a scroll safety-valve so a rare
+        // overflow (e.g. stacked e-stop + mission banners) never clips a
+        // primary control like STOP — it just scrolls instead.
+        intent === 'fit' ? 'overflow-y-auto sm:overflow-hidden' : 'overflow-y-auto',
         className,
       )}
     >

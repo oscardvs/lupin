@@ -17,7 +17,7 @@ export function TwistReadout({ value, className }: TwistReadoutProps) {
   return (
     <div
       className={cn(
-        'reticle relative flex flex-col gap-2 rounded-sm border border-hairline bg-card/70 p-3 text-sm',
+        'reticle relative flex flex-col gap-2 rounded-sm border border-hairline bg-ink-3 p-3 text-sm',
         moving && 'glow-primary',
         className,
       )}
