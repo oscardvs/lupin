@@ -147,6 +147,34 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
                   </Button>
                 </div>
               </Field>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="surfaceContrast" className="text-sm">High-contrast surfaces</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Firmer panel borders and labels for a glare-prone tablet. Reuses the
+                    system high-contrast styling.
+                  </p>
+                </div>
+                <Switch
+                  id="surfaceContrast"
+                  checked={settings.surfaceContrast === 'high'}
+                  onCheckedChange={(v) => update({ surfaceContrast: v ? 'high' : 'normal' })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="reduceTransparency" className="text-sm">Reduce transparency</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Drop frosted overlays (drawers, dialogs, top rail) to solid plates for
+                    maximum legibility.
+                  </p>
+                </div>
+                <Switch
+                  id="reduceTransparency"
+                  checked={settings.reduceTransparency}
+                  onCheckedChange={(v) => update({ reduceTransparency: v })}
+                />
+              </div>
             </Section>
 
             <Section title="Voice (Gemini Live)">

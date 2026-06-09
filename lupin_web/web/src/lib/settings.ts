@@ -70,6 +70,13 @@ export interface Settings {
   /** Named map poses the voice agent can navigate to via `nav_goto_named`. */
   voiceNamedLocations: Record<string, VoiceNamedLocation>
   theme: 'dark' | 'light'
+  /**
+   * Firmer borders + fills for operators on a glare-prone greenhouse tablet who
+   * can't change OS-level contrast. Reuses the same rules as `prefers-contrast`.
+   */
+  surfaceContrast: 'normal' | 'high'
+  /** Drop frosted glass overlays to solid plates (mirrors prefers-reduced-transparency). */
+  reduceTransparency: boolean
   debugPublish: boolean
   /**
    * Auto-trigger E-stop on `visibilitychange` / window `blur`. Default true for
@@ -161,6 +168,8 @@ export const DEFAULT_SETTINGS: Settings = {
     home: { x: 0, y: 0, yaw: 0 },
   },
   theme: 'dark',
+  surfaceContrast: 'normal',
+  reduceTransparency: false,
   debugPublish: false,
   estopAutoOnFocusLoss: true,
   polarityInvertHmi: false,
@@ -288,13 +297,17 @@ export function useSettings(): readonly [Settings, (patch: Partial<Settings>) =>
 }
 
 export function useApplyTheme() {
-  const [{ theme }] = useSettings()
+  const [{ theme, surfaceContrast, reduceTransparency }] = useSettings()
   useEffect(() => {
     const root = document.documentElement
     root.classList.remove('dark', 'light')
     root.classList.add(theme)
     root.style.colorScheme = theme
-  }, [theme])
+    // Manual operator overrides that reuse the prefers-contrast /
+    // prefers-reduced-transparency CSS (see index.css).
+    root.classList.toggle('contrast-high', surfaceContrast === 'high')
+    root.classList.toggle('opaque', reduceTransparency)
+  }, [theme, surfaceContrast, reduceTransparency])
 }
 
 export function isMockMode(): boolean {

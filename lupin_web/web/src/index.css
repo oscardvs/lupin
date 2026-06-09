@@ -445,6 +445,20 @@
   .border-hairline { border-color: hsl(var(--foreground) / 0.25); }
 }
 
+/* Manual operator overrides (Settings → toggled as html classes by useApplyTheme),
+   reusing the same declarations as the a11y media queries above so a greenhouse
+   tablet operator who can't change OS settings still gets the effect. */
+.opaque .glass,
+.opaque .glass-strong {
+  background-color: hsl(var(--ink-4)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 12px 32px -16px hsl(var(--ink-0) / 0.8) !important;
+}
+.contrast-high .glass { background-color: hsl(var(--glass-bg) / 0.85); border-color: hsl(var(--foreground) / 0.2); }
+.contrast-high .tag { color: hsl(var(--foreground) / 0.85); }
+.contrast-high .border-hairline { border-color: hsl(var(--foreground) / 0.25); }
+
 /* Registered animatable channels — GPU-tweenable + interpolate in keyframes.
    Progressive enhancement: where unsupported the target value still applies
    (it just snaps instead of tweening). */
