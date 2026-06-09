@@ -556,9 +556,14 @@ export function CameraStream({
             {...(interactive ? bind : {})}
           >
             {/* img + overlay-canvas share one transformed box so AprilTag boxes
-                stay registered while zooming/panning. */}
+                stay registered while zooming/panning. Both are absolutely
+                positioned: an in-flow <img> with h-full/w-full feeds its
+                aspect-transferred intrinsic height into the auto grid track,
+                inflating it past the (overflow-hidden) panel and clipping the
+                frame. Absolute positioning keeps the image from driving layout,
+                so object-contain letterboxes the full frame as intended. */}
             <div
-              className="grid h-full w-full place-items-center"
+              className="relative h-full w-full"
               style={interactive ? { transform: toCss(transform), transformOrigin: 'center', willChange: 'transform' } : undefined}
             >
               <img
@@ -568,13 +573,13 @@ export function CameraStream({
                 onError={() => setErrored(true)}
                 onLoad={onLoad}
                 draggable={false}
-                className="col-start-1 row-start-1 h-full w-full select-none object-contain"
+                className="absolute inset-0 h-full w-full select-none object-contain"
               />
               <canvas
                 ref={canvasRef}
                 width={dims.w}
                 height={dims.h}
-                className="col-start-1 row-start-1 h-full w-full object-contain pointer-events-none"
+                className="absolute inset-0 h-full w-full object-contain pointer-events-none"
               />
             </div>
           </div>
