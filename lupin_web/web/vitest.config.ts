@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 
 // Kept separate from vite.config.ts so the production build (`tsc -b && vite
@@ -6,6 +7,11 @@ import { defineConfig } from 'vitest/config'
 // Default environment is 'node' (fast); the settings migration test opts into
 // jsdom for localStorage via a `// @vitest-environment jsdom` docblock.
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],

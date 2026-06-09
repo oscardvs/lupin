@@ -442,3 +442,135 @@ def map_box_from_rect(
         box_id=str(box_id), x=cx, y=cy, yaw=math.atan2(ny, nx),
         width=long_len, depth=short_len, height=float(height),
     )
+
+
+# ── Lidar front-face snap: refine a registered MapBox against the map ────────
+#
+# The tag-registered MapBox is a prior; the SLAM occupancy grid is an
+# independent measurement of the bench's aisle-facing face. `front_face_occupied_points`
+# gathers the occupied cells in a thin band around that face and `snap_front_face`
+# fits them with a line, correcting the box yaw and its offset along the normal
+# (2-DOF). Width/depth/height and the along-edge position stay from the tags.
+# Pure: the node wraps the live OccupancyGrid in a GridView (no copy).
+
+
+@dataclass(frozen=True)
+class GridView:
+    """Read-only view of a nav_msgs/OccupancyGrid for the snap. ROS-free so the
+    snap is unit-testable; ``data`` is row-major (length width*height) and may
+    alias the live message's data array."""
+    width: int
+    height: int
+    resolution: float
+    origin_x: float
+    origin_y: float
+    data: Sequence[int]
+
+
+def front_face_occupied_points(
+    box: MapBox, grid: GridView, *, band_m: float = 0.12, threshold: int = 65,
+) -> List[Tuple[float, float]]:
+    """Map-frame centres of occupied cells (value ≥ ``threshold``) within
+    ``band_m`` of ``box``'s front face, inside the face's width extent. Scans
+    only the grid's local bounding box. Empty for a degenerate grid."""
+    res = float(grid.resolution)
+    if res <= 0.0 or grid.width <= 0 or grid.height <= 0:
+        return []
+    nx, ny = math.cos(box.yaw), math.sin(box.yaw)
+    lx, ly = -ny, nx
+    half_w = 0.5 * float(box.width)
+    fcx = float(box.x) + nx * 0.5 * float(box.depth)
+    fcy = float(box.y) + ny * 0.5 * float(box.depth)
+    # World AABB of the ±half_w (lateral) × ±band_m (normal) band.
+    cs = [
+        (fcx + lx * half_w + nx * band_m, fcy + ly * half_w + ny * band_m),
+        (fcx + lx * half_w - nx * band_m, fcy + ly * half_w - ny * band_m),
+        (fcx - lx * half_w + nx * band_m, fcy - ly * half_w + ny * band_m),
+        (fcx - lx * half_w - nx * band_m, fcy - ly * half_w - ny * band_m),
+    ]
+    xs = [c[0] for c in cs]
+    ys = [c[1] for c in cs]
+    col0 = max(0, int((min(xs) - grid.origin_x) / res))
+    col1 = min(grid.width - 1, int((max(xs) - grid.origin_x) / res))
+    row0 = max(0, int((min(ys) - grid.origin_y) / res))
+    row1 = min(grid.height - 1, int((max(ys) - grid.origin_y) / res))
+    pts: List[Tuple[float, float]] = []
+    for row in range(row0, row1 + 1):
+        wy = grid.origin_y + (row + 0.5) * res
+        base = row * grid.width
+        for col in range(col0, col1 + 1):
+            if int(grid.data[base + col]) < threshold:
+                continue
+            wx = grid.origin_x + (col + 0.5) * res
+            dx, dy = wx - fcx, wy - fcy
+            if abs(dx * nx + dy * ny) <= band_m and abs(dx * lx + dy * ly) <= half_w:
+                pts.append((wx, wy))
+    return pts
+
+
+def _principal_axis(points: Sequence[Tuple[float, float]]):
+    """(dirx, diry, lambda1, lambda2, mean_x, mean_y) of a 2-D point set via
+    closed-form 2x2 PCA. ``dir`` is the major-axis unit vector; lambda1 ≥ lambda2."""
+    n = len(points)
+    mx = sum(p[0] for p in points) / n
+    my = sum(p[1] for p in points) / n
+    sxx = syy = sxy = 0.0
+    for x, y in points:
+        dx, dy = x - mx, y - my
+        sxx += dx * dx
+        syy += dy * dy
+        sxy += dx * dy
+    sxx /= n
+    syy /= n
+    sxy /= n
+    tr = sxx + syy
+    det = sxx * syy - sxy * sxy
+    root = math.sqrt(max(0.0, tr * tr - 4.0 * det))
+    lam1 = 0.5 * (tr + root)
+    lam2 = 0.5 * (tr - root)
+    if abs(sxy) > 1e-12:
+        vx, vy = lam1 - syy, sxy
+    elif sxx >= syy:
+        vx, vy = 1.0, 0.0
+    else:
+        vx, vy = 0.0, 1.0
+    norm = math.hypot(vx, vy) or 1.0
+    return (vx / norm, vy / norm, lam1, lam2, mx, my)
+
+
+def snap_front_face(
+    box: MapBox,
+    points: Sequence[Tuple[float, float]],
+    *,
+    min_points: int = 8,
+    min_elongation: float = 3.0,
+    max_yaw_rad: float = 0.20944,  # 12 deg
+    max_shift_m: float = 0.15,
+) -> MapBox:
+    """Refine ``box`` (a tag-registered prior) against front-face ``points``.
+
+    Fits a line, then corrects yaw to the line and shifts the box along its
+    normal so the front face lands on the line — both clamped. Returns the
+    prior unchanged (same object) when the points are too few, too blob-like
+    (PCA elongation below ``min_elongation``) to define a line."""
+    if len(points) < min_points:
+        return box
+    dirx, diry, lam1, lam2, mx, my = _principal_axis(points)
+    if lam1 < min_elongation * max(lam2, 1e-9):
+        return box  # a blob, not a line
+    nx, ny = math.cos(box.yaw), math.sin(box.yaw)
+    cnx, cny = -diry, dirx  # normal ⟂ line direction
+    if cnx * nx + cny * ny < 0.0:
+        cnx, cny = -cnx, -cny  # keep the prior outward hemisphere
+    new_yaw = math.atan2(cny, cnx)
+    dyaw = math.atan2(math.sin(new_yaw - box.yaw), math.cos(new_yaw - box.yaw))
+    dyaw = max(-max_yaw_rad, min(max_yaw_rad, dyaw))
+    out_yaw = box.yaw + dyaw
+    fcx = box.x + nx * 0.5 * box.depth
+    fcy = box.y + ny * 0.5 * box.depth
+    d = (mx - fcx) * nx + (my - fcy) * ny  # signed gap face→line along normal
+    d = max(-max_shift_m, min(max_shift_m, d))
+    return MapBox(
+        box_id=box.box_id, x=box.x + d * nx, y=box.y + d * ny,
+        yaw=out_yaw, width=box.width, depth=box.depth, height=box.height,
+    )

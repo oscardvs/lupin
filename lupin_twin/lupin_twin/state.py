@@ -39,6 +39,26 @@ class TwinFlower:
     height_m: float = 0.0
 
 
+def box_footprint_corners(
+    x: float, y: float, yaw: float, width: float, depth: float,
+) -> list[tuple[float, float]]:
+    """Four map-frame corners (front-left, front-right, back-right, back-left)
+    of a box centre+yaw+dims. ``yaw`` is the outward-normal direction; the front
+    face is corners[0]→corners[1]. Matches box_geometry.BoxGeometry.footprint
+    ordering so HMI/perception agree on which edge is the front."""
+    nx, ny = math.cos(yaw), math.sin(yaw)
+    lx, ly = -ny, nx
+    hw, hd = 0.5 * width, 0.5 * depth
+    fx, fy = x + nx * hd, y + ny * hd
+    bx, by = x - nx * hd, y - ny * hd
+    return [
+        (fx + lx * hw, fy + ly * hw),
+        (fx - lx * hw, fy - ly * hw),
+        (bx - lx * hw, by - ly * hw),
+        (bx + lx * hw, by + ly * hw),
+    ]
+
+
 @dataclass
 class TagBuffer:
     """Per-tag ring buffer of recent observations.
@@ -78,6 +98,10 @@ class TagBuffer:
     # localizes blooms (box_geometry in perception_aggregator).
     flowers: list[TwinFlower] = field(default_factory=list)
     box_footprint: list[tuple[float, float]] = field(default_factory=list)
+    # 'channel' once box_geometry_json sets the footprint; 'flower' if only the
+    # flower path has. The channel is authoritative — record_flower won't
+    # overwrite a channel footprint.
+    box_footprint_source: str = ''
 
     def has_pose(self) -> bool:
         return self.pose_x is not None and self.pose_y is not None
@@ -194,7 +218,12 @@ class TwinStateStore:
         buf.flower_count = max(0, int(upd.flower_count))
         buf.bug_count = max(0, int(upd.bug_count))
         buf.flowers = list(upd.flowers)
-        buf.box_footprint = list(upd.box_footprint)
+        # The live box-geometry channel is authoritative; only fall back to the
+        # flower-carried footprint when the channel hasn't claimed this tag.
+        if buf.box_footprint_source != 'channel':
+            buf.box_footprint = list(upd.box_footprint)
+            if upd.box_footprint:
+                buf.box_footprint_source = 'flower'
         if not buf.has_pose() and upd.pose_x is not None and upd.pose_y is not None:
             buf.pose_x = upd.pose_x
             buf.pose_y = upd.pose_y
@@ -202,6 +231,25 @@ class TwinStateStore:
             buf.pose_qw = upd.pose_qw if upd.pose_qw is not None else 1.0
 
         self._observation_count += 1
+        return True
+
+    def record_box(self, tag_id: str, footprint: list[tuple[float, float]]) -> bool:
+        """Set a tag's box footprint from the live box-geometry channel.
+
+        Authoritative over the flower path. Deliberately does NOT touch
+        last_seen / pose / readings or bump observation_count — box geometry is
+        not a sensor observation, so it must not refresh tag staleness or
+        invalidate the IDW field cache. Creates a box-only entry if the tag is
+        unknown (rare — the discovery feed normally pins it first)."""
+        if not tag_id:
+            return False
+        buf = self._tags.get(tag_id)
+        if buf is None:
+            buf = TagBuffer(tag_id=tag_id)
+            buf.history = deque(maxlen=self._buffer_len)
+            self._tags[tag_id] = buf
+        buf.box_footprint = list(footprint)
+        buf.box_footprint_source = 'channel'
         return True
 
     # ── inspection ─────────────────────────────────────────────────────

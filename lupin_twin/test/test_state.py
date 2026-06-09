@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import pytest
 
+import math
+
 from lupin_twin.state import (
     FlowerUpdate,
     TagSensorEntry,
     TwinFlower,
     TwinObservation,
     TwinStateStore,
+    box_footprint_corners,
 )
 
 
@@ -254,3 +257,50 @@ def test_record_flower_blooms_without_footprint():
     buf = store.tag('1')
     assert len(buf.flowers) == 1
     assert buf.box_footprint == []
+
+
+# ── box-channel footprint (Task 3) ────────────────────────────────────────────
+
+def test_box_footprint_corners_order_and_geometry():
+    # yaw=0 → normal +x, lateral +y. centre (1,0); width 1.0 (lateral), depth 0.4 (normal).
+    c = box_footprint_corners(1.0, 0.0, 0.0, 1.0, 0.4)
+    assert c[0] == pytest.approx((1.2, 0.5))   # front-left
+    assert c[1] == pytest.approx((1.2, -0.5))  # front-right
+    assert c[2] == pytest.approx((0.8, -0.5))  # back-right
+    assert c[3] == pytest.approx((0.8, 0.5))   # back-left
+
+
+def test_record_box_sets_footprint_on_unknown_tag():
+    store = TwinStateStore()
+    assert store.record_box('7', [(1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)])
+    buf = store.tag('7')
+    assert buf is not None
+    assert buf.box_footprint == [(1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
+    assert buf.box_footprint_source == 'channel'
+
+
+def test_record_box_channel_wins_over_flower():
+    store = TwinStateStore()
+    store.record_box('7', [(2.0, 0.0)])
+    store.record_flower(FlowerUpdate(
+        tag_id='7', monotonic_at=1.0, species='tulip',
+        species_confidence=0.9, anomaly=False, box_footprint=[(9.0, 9.0)],
+    ))
+    assert store.tag('7').box_footprint == [(2.0, 0.0)]  # channel preserved
+
+
+def test_flower_footprint_used_when_no_channel_box():
+    store = TwinStateStore()
+    store.record_flower(FlowerUpdate(
+        tag_id='7', monotonic_at=1.0, species='tulip',
+        species_confidence=0.9, anomaly=False, box_footprint=[(3.0, 3.0)],
+    ))
+    assert store.tag('7').box_footprint == [(3.0, 3.0)]
+    assert store.tag('7').box_footprint_source == 'flower'
+
+
+def test_record_box_does_not_bump_observation_count():
+    store = TwinStateStore()
+    c0 = store.observation_count
+    store.record_box('7', [(1.0, 0.0)])
+    assert store.observation_count == c0
