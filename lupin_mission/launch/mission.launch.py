@@ -34,7 +34,7 @@ def generate_launch_description():
         DeclareLaunchArgument('tag_locations_file', default_value=''),
         # Inspection
         DeclareLaunchArgument('approach_yaw', default_value='0.0'),
-        DeclareLaunchArgument('approach_standoff_m', default_value='0.4'),
+        DeclareLaunchArgument('approach_standoff_m', default_value='0.35'),
         DeclareLaunchArgument('approach_overrides_file', default_value=''),
         DeclareLaunchArgument('nav_timeout_s', default_value='60.0'),
         DeclareLaunchArgument('nav_max_attempts', default_value='2'),
@@ -53,8 +53,8 @@ def generate_launch_description():
             'visual_confirmation_service', default_value='/perception/confirm_tag',
         ),
         DeclareLaunchArgument('visual_confirmation_timeout_s', default_value='3.0'),
-        # Per-pot arm patrol (optional; sim flower-scan demo — default off)
-        DeclareLaunchArgument('arm_patrol_enabled', default_value='false'),
+        # Per-pot arm patrol — default ON for sim and hardware on main
+        DeclareLaunchArgument('arm_patrol_enabled', default_value='true'),
         DeclareLaunchArgument('arm_preset_service', default_value='/lupin/arm/preset'),
         DeclareLaunchArgument('arm_inspect_preset', default_value='inspect'),
         DeclareLaunchArgument('arm_travel_preset', default_value='home'),

@@ -344,7 +344,7 @@ class MissionOrchestratorNode(Node):
         # infer as BYTE_ARRAY and reject string overrides.
         self.declare_parameter("tag_sequence", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("approach_yaw", 0.0)
-        self.declare_parameter("approach_standoff_m", 0.4)  # was 0.5 — too deep for the tight 1.0.8 aisles; 0.4 m is the Orbbec near-detection edge and parks closer to the table edge
+        self.declare_parameter("approach_standoff_m", 0.35)  # base_link→tag standoff along the tag normal. 0.35 m keeps the body Orbbec close enough to frame the tag head-on. NB: measured to base_link, and the camera sits forward of base, so camera→tag is a touch under 0.35 m.
         self.declare_parameter("approach_overrides_file", "")
         self.declare_parameter("nav_timeout_s", 60.0)
         self.declare_parameter("nav_max_attempts", 2)
@@ -420,12 +420,12 @@ class MissionOrchestratorNode(Node):
         # ─── per-pot arm patrol (optional; sim flower-scan demo) ────────
         # When enabled, the orchestrator strikes a named arm pose at each pot
         # so the gripper/wrist camera frames the bloom for the flower
-        # detector, and returns to a travel pose between pots. Default OFF so
-        # hardware behaviour is unchanged unless explicitly enabled (the arm
-        # otherwise stays parked at home for the whole mission). sim_full
-        # turns it on. Fire-and-forget — a missing /lupin/arm/preset service
+        # detector, and returns to a travel pose between pots. Default ON for
+        # both sim and hardware on main: the arm stows (home) for travel/explore
+        # legs and strikes the inspect pose at each pot, so the inspect/home
+        # presets must be confirmed-safe poses on the real arm. Fire-and-forget — a missing /lupin/arm/preset service
         # never stalls a scan.
-        self.declare_parameter('arm_patrol_enabled', False)
+        self.declare_parameter('arm_patrol_enabled', True)
         self.declare_parameter('arm_preset_service', '/lupin/arm/preset')
         self.declare_parameter('arm_inspect_preset', 'inspect')
         self.declare_parameter('arm_travel_preset', 'home')
