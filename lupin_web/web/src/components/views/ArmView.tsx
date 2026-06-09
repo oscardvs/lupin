@@ -2,6 +2,7 @@ import { Activity, Camera, Compass, Grip, Home, Minus, Plus, Power, RotateCcw, S
 import { useCallback, useRef, useState } from 'react'
 
 import { RobotTwin } from '@/components/system/RobotTwin'
+import { ViewShell } from '@/components/system/ViewShell'
 import { ArmCalibrateDialog } from '@/components/widgets/ArmCalibrateDialog'
 import { PoseLibraryCard } from '@/components/widgets/PoseLibraryCard'
 import { SequenceRecorderCard } from '@/components/widgets/SequenceRecorderCard'
@@ -201,7 +202,7 @@ export function ArmView() {
   }, [callService])
 
   return (
-    <div className="flex w-full flex-col gap-3 p-3 sm:gap-4 sm:p-4">
+    <ViewShell intent="flow">
       {estopActive ? (
         <div className="reticle relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm border-2 border-destructive bg-destructive/10 px-3 py-2.5 text-sm sm:px-4 sm:py-3">
           <span className="reticle-bl" aria-hidden />
@@ -240,7 +241,7 @@ export function ArmView() {
       </div>
 
       {/* arm console controls — torque toggle / home / rate */}
-      <div className="reticle relative flex flex-col gap-3 rounded-sm border border-hairline bg-card/60 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5 sm:px-5 sm:py-4">
+      <div className="reticle relative flex flex-col gap-3 rounded-sm border border-hairline bg-ink-2 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5 sm:px-5 sm:py-4">
         <span className="reticle-bl" aria-hidden />
         <span className="reticle-br" aria-hidden />
 
@@ -353,7 +354,7 @@ export function ArmView() {
       {/* per-joint sliders */}
       <div
         className={cn(
-          'grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2',
+          'grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3',
           controlsBlocked && 'opacity-50',
         )}
       >
@@ -388,7 +389,7 @@ export function ArmView() {
       </div>
 
       <ArmCalibrateDialog open={calibOpen} onOpenChange={setCalibOpen} />
-    </div>
+    </ViewShell>
   )
 }
 

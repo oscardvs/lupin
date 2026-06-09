@@ -100,8 +100,10 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
   const playing = state.playing
 
   return (
-    <section className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <h3 className="mb-2 text-sm font-semibold tracking-wide text-white/80">Sequence Recorder</h3>
+    <section className="reticle relative rounded-sm border border-hairline bg-ink-2 p-3">
+      <span className="reticle-bl" aria-hidden />
+      <span className="reticle-br" aria-hidden />
+      <h3 className="mb-2 text-sm font-semibold tracking-wide text-foreground">Sequence Recorder</h3>
 
       {!recording && (
         <div className="mb-2 flex items-center gap-3 text-sm">
@@ -111,7 +113,7 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
           <label className="flex items-center gap-1">
             <input type="radio" checked={mode === 'kinesthetic'} onChange={() => setMode('kinesthetic')} /> Kinesthetic
           </label>
-          <label className="ml-auto flex items-center gap-1 text-xs text-white/60">
+          <label className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
             <input type="checkbox" checked={includeGripper} onChange={(e) => setIncludeGripper(e.target.checked)} /> gripper
           </label>
         </div>
@@ -119,12 +121,12 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
 
       {!recording ? (
         <button onClick={onRecord} disabled={disabled || playing || busy !== null}
-          className="mb-3 w-full rounded bg-rose-600/80 px-3 py-1.5 text-sm font-semibold disabled:opacity-40">
+          className="mb-3 w-full rounded-sm bg-destructive px-3 py-1.5 text-sm font-semibold text-destructive-foreground disabled:opacity-40">
           {busy ?? `● Record ${mode}`}
         </button>
       ) : (
-        <div className="mb-3 rounded bg-rose-950/40 p-2">
-          <div className="mb-2 text-sm text-rose-300">
+        <div className="mb-3 rounded-sm border border-destructive/40 bg-destructive/10 p-2">
+          <div className="mb-2 text-sm text-destructive">
             ● Recording {state.mode} — {state.elapsed_s.toFixed(1)}s · {state.n_waypoints} pts
             {/* Only claim the arm is limp once torque-off is actually confirmed. */}
             {state.mode === 'kinesthetic' &&
@@ -132,51 +134,51 @@ export function SequenceRecorderCard({ disabled }: { disabled: boolean }) {
           </div>
           <div className="flex gap-2">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name…"
-              className="flex-1 rounded bg-white/5 px-2 py-1 text-sm outline-none" />
+              className="flex-1 rounded-sm border border-hairline bg-ink-3 px-2 py-1 text-sm outline-none focus:border-primary/50" />
             <button onClick={onSave} disabled={busy !== null}
-              className="rounded bg-emerald-600/80 px-3 py-1 text-sm disabled:opacity-40">Stop &amp; Save</button>
+              className="rounded-sm bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-40">Stop &amp; Save</button>
             <button onClick={onCancel} disabled={busy !== null}
-              className="rounded bg-white/10 px-3 py-1 text-sm disabled:opacity-40">Cancel</button>
+              className="rounded-sm border border-hairline bg-ink-3 px-3 py-1 text-sm hover:bg-ink-4 disabled:opacity-40">Cancel</button>
           </div>
-          {busy && <div className="mt-1 text-xs text-white/50">{busy}</div>}
+          {busy && <div className="mt-1 text-xs text-muted-foreground">{busy}</div>}
         </div>
       )}
 
-      <div className="mb-2 flex items-center gap-2 text-xs text-white/60">
+      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <span>Speed {speed.toFixed(2)}×</span>
         <input type="range" min={0.25} max={2} step={0.05} value={speed}
           onChange={(e) => setSpeed(parseFloat(e.target.value))} className="flex-1" />
         {playing && <button onClick={onStop} disabled={busy !== null}
-          className="rounded bg-amber-600/70 px-2 py-0.5 text-xs disabled:opacity-40">Stop</button>}
+          className="rounded-sm border border-warning/50 bg-warning/15 px-2 py-0.5 text-xs text-warning disabled:opacity-40">Stop</button>}
       </div>
 
-      {seqs.length === 0 && <div className="text-xs text-white/30">no sequences yet</div>}
+      {seqs.length === 0 && <div className="text-xs text-muted-foreground">no sequences yet</div>}
       <ul className="flex flex-col gap-1">
         {seqs.map((s) => (
           <li key={s.name} className="flex items-center gap-2 text-sm">
             <span className="flex-1 truncate">
-              {s.name} <span className="text-white/40">· {s.mode} · {s.duration_s.toFixed(1)}s · {s.n_waypoints}pt</span>
+              {s.name} <span className="text-muted-foreground">· {s.mode} · {s.duration_s.toFixed(1)}s · {s.n_waypoints}pt</span>
             </span>
             <button onClick={() => onPlay(s.name)} disabled={disabled || recording || playing || busy !== null}
-              className="rounded bg-sky-600/70 px-2 py-0.5 text-xs disabled:opacity-40">Play</button>
-            <button onClick={() => onDelete(s.name)} className="rounded bg-rose-600/60 px-2 py-0.5 text-xs">Del</button>
+              className="rounded-sm bg-primary px-2 py-0.5 text-xs text-primary-foreground disabled:opacity-40">Play</button>
+            <button onClick={() => onDelete(s.name)} className="rounded-sm border border-destructive/40 bg-destructive/15 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/25">Del</button>
           </li>
         ))}
       </ul>
 
-      {error && <div className="mt-2 text-xs text-rose-400">{error}</div>}
+      {error && <div className="mt-2 text-xs text-destructive">{error}</div>}
 
       {confirming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="w-80 rounded-lg border border-white/10 bg-zinc-900 p-4">
-            <h4 className="mb-2 text-sm font-semibold text-rose-300">Support the arm</h4>
-            <p className="mb-4 text-sm text-white/70">
+          <div className="glass-strong w-80 rounded-sm border border-hairline p-4">
+            <h4 className="mb-2 text-sm font-semibold text-destructive">Support the arm</h4>
+            <p className="mb-4 text-sm text-muted-foreground">
               Torque will be disabled and the arm will go limp. Hold it before you continue,
               then hand-guide it through the motion. (Same as the calibration flow.)
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirming(false)} className="rounded bg-white/10 px-3 py-1 text-sm">Cancel</button>
-              <button onClick={doStart} className="rounded bg-rose-600 px-3 py-1 text-sm font-semibold">Disable torque & record</button>
+              <button onClick={() => setConfirming(false)} className="rounded-sm border border-hairline bg-ink-3 px-3 py-1 text-sm hover:bg-ink-4">Cancel</button>
+              <button onClick={doStart} className="rounded-sm bg-destructive px-3 py-1 text-sm font-semibold text-destructive-foreground">Disable torque & record</button>
             </div>
           </div>
         </div>
