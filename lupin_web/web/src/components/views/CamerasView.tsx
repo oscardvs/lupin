@@ -208,8 +208,18 @@ export function CamerasView() {
             </div>
           </div>
 
+          {/* `data-[state=active]:flex` (not a bare `flex`) so only the active
+              panel is laid out. A bare `display:flex` overrides the `[hidden]`
+              attribute Radix sets on inactive panels, leaving all N camera
+              panels stacked as flex-1 siblings — they'd split the column height
+              ~N ways (clamped to min-h), shrinking the active frame and shifting
+              it vertically by tab index. */}
           {cameras.map((c) => (
-            <TabsContent key={c.topic} value={c.topic} className="m-0 flex min-h-0 flex-1">
+            <TabsContent
+              key={c.topic}
+              value={c.topic}
+              className="m-0 min-h-0 flex-1 data-[state=active]:flex"
+            >
               <CameraStream
                 label={c.label}
                 topic={c.topic}
