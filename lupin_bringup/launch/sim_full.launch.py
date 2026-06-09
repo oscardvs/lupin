@@ -287,9 +287,13 @@ def generate_launch_description() -> LaunchDescription:
     # /camera/camera_info with frame_id `camera_depth_optical_frame`; its
     # 60° HFOV gives K≈554. fallback_intrinsics is armed with that K in case
     # the plugin's CameraInfo ships a zero K (it hard-zeros Cx/Cy/focalLength).
-    # tag_size_m = 0.036 = the rendered tag plate (0.04, real 4 cm tag) × 0.9
-    # texture plane, so the PnP distance — and the broadcast tag→camera TF —
-    # comes out metric.
+    # tag_size_m must equal the *detectable black-border edge* OpenCV returns,
+    # NOT the plate size, or PnP mis-scales the range (it's linear in tag size).
+    # generate_greenhouse_world.py renders the tag36h11 texture on a plane of
+    # size*0.9 = 0.04*0.9 = 0.036 m, and the 10x10 PNG spends its outer 1-cell
+    # ring on the white quiet zone, so the black square is only 8/10 of the
+    # plane: 0.036 * 0.8 = 0.0288 m. (The old 0.036 ignored the 0.8 factor and
+    # localised every tag at 0.036/0.0288 = 1.25x its true range.)
     tag_annotator = Node(
         package='lupin_perception', executable='tag_annotator',
         name='tag_annotator',
@@ -298,7 +302,7 @@ def generate_launch_description() -> LaunchDescription:
             'image_topic': '/camera/image_raw',
             'camera_info_topic': '/camera/camera_info',
             'detections_topic': '/camera/tag_detections_json',
-            'tag_size_m': 0.036,
+            'tag_size_m': 0.0288,
             'tf_frame_prefix': 'tag_',
             'image_qos': 'reliable',
             'fallback_intrinsics': [554.254691191187, 554.254691191187, 320.5, 240.5],

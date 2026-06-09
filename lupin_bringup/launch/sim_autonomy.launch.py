@@ -76,6 +76,9 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # Perception: ArUco tag detector (body cam) + aggregator + sim flower detector.
+    # tag_size_m = detectable black-border edge of the rendered tag36h11:
+    # texture plane 0.04*0.9 = 0.036 m, minus the 10x10 PNG's 1-cell white quiet
+    # zone (black square = 8/10 of plane) -> 0.036*0.8 = 0.0288 m. See sim_full.
     tag_annotator = Node(
         package='lupin_perception', executable='tag_annotator', name='tag_annotator',
         parameters=[{
@@ -83,7 +86,7 @@ def generate_launch_description() -> LaunchDescription:
             'image_topic': '/camera/image_raw',
             'camera_info_topic': '/camera/camera_info',
             'detections_topic': '/camera/tag_detections_json',
-            'tag_size_m': 0.036,
+            'tag_size_m': 0.0288,
             'tf_frame_prefix': 'tag_',
             'image_qos': 'reliable',
             'fallback_intrinsics': [554.254691191187, 554.254691191187, 320.5, 240.5],
