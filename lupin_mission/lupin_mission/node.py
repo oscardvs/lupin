@@ -20,6 +20,7 @@ the orchestrator after either fires.
 
 from __future__ import annotations
 
+import functools
 import math
 import time
 import uuid
@@ -392,6 +393,11 @@ class MissionOrchestratorNode(Node):
         # the monitoring loop. /mission/start can override per-request.
         self.declare_parameter('discovery_goal', 5)
         self.declare_parameter('discovered_tags_topic', '/perception/discovered_tags')
+        # Front-load the first climate reading the moment a tag is discovered
+        # (see _maybe_seed_climate). Leans on the bridge being a tag-keyed,
+        # position-independent oracle — a sim/demo shortcut. Default on; the
+        # launch arg shadows this on hardware.
+        self.declare_parameter('seed_climate_on_discovery', True)
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('base_frame', 'base_link')
         # Frontier exploration tuning (see frontier.select_frontier_goal).
@@ -489,6 +495,9 @@ class MissionOrchestratorNode(Node):
         self._discovered_tags_topic = str(
             self.get_parameter('discovered_tags_topic').value
         )
+        self._seed_climate_on_discovery = bool(
+            self.get_parameter('seed_climate_on_discovery').value
+        )
         self._map_topic = str(self.get_parameter('map_topic').value)
         self._base_frame = str(self.get_parameter('base_frame').value)
         self._frontier_free_thresh = int(self.get_parameter('frontier_free_thresh').value)
@@ -575,6 +584,15 @@ class MissionOrchestratorNode(Node):
         # Discovered tags keyed by id → lupin_msgs/DiscoveredTag, fed by the
         # /perception/discovered_tags subscription.
         self._discovered: dict = {}
+        # Climate seeded at discovery time: tag_ids already given a one-shot
+        # bridge read (so each is seeded at most once) + the in-flight seed
+        # futures (kept referenced so they aren't GC'd mid-call, dropped on
+        # completion). See _maybe_seed_climate.
+        self._seeded_tag_ids: set = set()
+        self._seed_futures: set = set()
+        # Set in destroy_node so a seed callback landing during teardown bails
+        # out instead of touching a half-destroyed node.
+        self._shutting_down: bool = False
         self._active_discovery_goal: int = 0
         self._latest_map: Optional[OccupancyGrid] = None
         self._exploring_started_at: float = self._monotonic()
@@ -1146,6 +1164,111 @@ class MissionOrchestratorNode(Node):
             self._mission.update_discovered(
                 {tid: t.pose_in_map for tid, t in self._discovered.items()}
             )
+        # Front-load the first climate reading for any newly-seen tag so the
+        # twin/HMI fill climate in as the robot explores; the MONITORING scan
+        # still refreshes it (and adds flower data) later.
+        self._maybe_seed_climate()
+
+    # ─── discovery-time climate seeding ────────────────────────────────
+    def _maybe_seed_climate(self) -> None:
+        """Fire a one-shot climate read for every newly-discovered tag.
+
+        The greenhouse bridge is a position-INDEPENDENT oracle keyed by tag_id
+        (hardware runs it with require_visual_confirmation=false — the robot
+        need not be at the tag to read it), so the instant perception discovers
+        a tag we can already fetch its temp/hum/CO2/light/soil and publish it as
+        a KIND_TAG_READING. The twin/HMI then fill in climate immediately as the
+        robot explores, instead of waiting for the MONITORING scan.
+
+        ORACLE CAVEAT: leaning on the bridge as a tag-keyed oracle is a sim/demo
+        shortcut, NOT realistic sensing — a real climate sensor would require
+        the robot to be physically at the plant. This only front-loads the first
+        reading; the MONITORING scan still runs and refreshes it. The
+        flower/anomaly path stays camera/arm-dependent in MONITORING and is
+        untouched here.
+
+        Non-blocking: each new tag fires an async GetTagReading so frontier nav
+        never stalls on the bridge.
+        """
+        if not self._seed_climate_on_discovery:
+            return
+        # Need an active mission for the observation's mission_id/source, and
+        # the bridge to be up to ask. If it isn't ready, skip quietly — the
+        # MONITORING scan reads the tag later. (The bridge is a boot dependency,
+        # so in practice it is always ready by the time we are EXPLORING.)
+        if self._mission is None or not self._bridge_client.service_is_ready():
+            return
+        for tag_id, tag in self._discovered.items():
+            if tag_id in self._seeded_tag_ids:
+                continue
+            # Mark BEFORE firing so a re-delivered latched feed (or a burst of
+            # discovery messages) can't double-fire a tag while its read is in
+            # flight: one attempt per tag. If it fails, MONITORING reads it later.
+            self._seeded_tag_ids.add(tag_id)
+            self._fire_climate_seed(tag_id, tag.pose_in_map)
+
+    def _fire_climate_seed(self, tag_id: str, tag_map_pose) -> None:
+        request = GetTagReading.Request()
+        request.tag_id = tag_id
+        future = self._bridge_client.call_async(request)
+        # Keep a reference (drop on completion) and capture the discovered pose
+        # now so the emitted obs pins the tag where perception saw it.
+        self._seed_futures.add(future)
+        future.add_done_callback(
+            functools.partial(
+                self._on_seed_response, tag_id=tag_id, tag_map_pose=tag_map_pose,
+            )
+        )
+        self.get_logger().info(
+            f'Seeding climate for newly-discovered tag {tag_id} (oracle bridge).'
+        )
+
+    def _on_seed_response(self, future, *, tag_id: str, tag_map_pose) -> None:
+        self._seed_futures.discard(future)
+        # Guard teardown (node may be destroyed mid-flight) and a mission that
+        # ended since we fired.
+        if self._shutting_down or self._mission is None:
+            return
+        try:
+            response = future.result()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.get_logger().warn(f'Climate seed for tag {tag_id} raised: {exc!r}')
+            return
+        if response.status != GetTagReading.Response.STATUS_OK:
+            # Bridge couldn't read it now; leave it for the MONITORING scan.
+            self.get_logger().debug(
+                f'Climate seed for tag {tag_id} returned status '
+                f'{response.status}; deferring to the MONITORING scan.'
+            )
+            return
+        self._emit_seed_observation(tag_id, response.reading, tag_map_pose)
+
+    def _emit_seed_observation(self, tag_id: str, reading, tag_map_pose) -> None:
+        """Publish a seeded reading as a KIND_TAG_READING / STATUS_OK obs.
+
+        Same shape + pose convention as _emit_observation_for so the twin/HMI
+        ingest it identically to a MONITORING reading (the twin keys on
+        tag_reading.tag_id): pinned at the tag's discovered map pose, stamped in
+        the configured frame, attributed to the active mission.
+        """
+        if self._mission is None:  # mission may have ended between fire + result
+            return
+        msg = make_tag_observation(
+            mission_id=self._mission.mission_id,
+            source=self._mission.name,
+            stamp=self.get_clock().now().to_msg(),
+            status=Observation.STATUS_OK,
+            tag_reading=reading,
+            frame_id=self._frame_id,
+            tag_map_pose=tag_map_pose,
+        )
+        self._obs_pub.publish(msg)
+
+    def destroy_node(self):
+        # Let in-flight seed callbacks (and any other late future) bail out
+        # rather than touch a half-torn-down node.
+        self._shutting_down = True
+        return super().destroy_node()
 
     def _robot_xy(self) -> Optional[tuple[float, float]]:
         """Live robot (x, y) in the map frame via TF.
