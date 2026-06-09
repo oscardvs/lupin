@@ -38,7 +38,10 @@ export function ViewShell({
         // without scroll). On phone it keeps a scroll safety-valve so a rare
         // overflow (e.g. stacked e-stop + mission banners) never clips a
         // primary control like STOP — it just scrolls instead.
-        intent === 'fit' ? 'overflow-y-auto sm:overflow-hidden' : 'overflow-y-auto',
+        // `flow` scrolls: children must keep their natural height (shrink-0) so
+        // the column overflows into the scrollbar instead of flex-squishing a
+        // low-min-height child (e.g. the 3D twin canvas) down to nothing.
+        intent === 'fit' ? 'overflow-y-auto sm:overflow-hidden' : 'overflow-y-auto [&>*]:shrink-0',
         className,
       )}
     >
