@@ -128,6 +128,30 @@ class BoxGeometry:
             self.place(1.0, 1.0),   # back-left   (+lateral, back)
         ]
 
+    def contains(self, x: float, y: float, margin_m: float = 0.0) -> bool:
+        """Is map point ``(x, y)`` inside this box (optionally inflated by
+        ``margin_m`` metres on every side)?
+
+        Exact inverse of :meth:`place`: project the point onto the box's own
+        lateral and normal axes to recover its ``(f, d)`` and test the unit
+        box bounds. Used by the aggregator's spatial membership gate to reject
+        blooms whose bearing points past the current bench. Returns False for a
+        degenerate (zero width/depth) box.
+        """
+        ox, oy = self.origin
+        nx, ny = self.normal
+        lx, ly = self.lateral
+        half_w = 0.5 * self.box.width
+        depth = self.box.depth
+        if half_w <= 0.0 or depth <= 0.0:
+            return False
+        vx, vy = x - ox, y - oy
+        f = (vx * lx + vy * ly) / half_w        # lateral fraction in [-1, 1]
+        d = -(vx * nx + vy * ny) / depth        # depth fraction in [0, 1]
+        mf = margin_m / half_w
+        md = margin_m / depth
+        return (-1.0 - mf) <= f <= (1.0 + mf) and (-md) <= d <= (1.0 + md)
+
 
 def tag_normal_xy(
     pose_in_map, robot_xy: Optional[Tuple[float, float]] = None,
@@ -203,6 +227,7 @@ def lateral_fraction(
     pan_center: float = 0.0,
     pan_half_span: float = 0.5,
     camera_half_fov: float = 0.5,
+    clamp: bool = True,
 ) -> float:
     """Lateral fraction ``f in [-1, 1]`` across the box from the arm pan
     angle (coarse cue, primary once the arm sweeps in Stream C) refined by the
@@ -213,12 +238,18 @@ def lateral_fraction(
     clamps to [-1, 1]. With a static pan (pre-Stream-C) ``f`` is driven by the
     image-x cue alone, scaled by ``camera_half_fov / (pan_half_span +
     camera_half_fov)``.
+
+    ``clamp=False`` returns the raw (unclamped) fraction so a caller can tell a
+    bloom that points *past* the bench end (``|f| > 1``) from one merely at the
+    edge — the spatial membership gate relies on this. ``bin_detections``
+    re-clamps for placement, so storing the unclamped value never moves a bloom.
     """
     bearing = (pan - pan_center) + bbox_cx_norm * camera_half_fov
     span = pan_half_span + camera_half_fov
     if span <= 0.0:
         return 0.0
-    return max(-1.0, min(1.0, bearing / span))
+    f = bearing / span
+    return max(-1.0, min(1.0, f)) if clamp else f
 
 
 def bin_detections(

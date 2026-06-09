@@ -169,6 +169,18 @@ class PerceptionAggregator(Node):
         # pan maps cleanly to lateral position once the sweep lands.
         self.declare_parameter('pan_half_span', 0.5)
         self.declare_parameter('camera_half_fov', 0.5)
+        # Spatial box-membership gate: drop YOLO blooms whose projected map
+        # position falls outside current_target's REGISTERED planter rectangle
+        # (a MapBox from the box_layout_publisher), so blooms from an adjacent
+        # bench / the over-reaching pan sweep are not misattributed. Default ON
+        # (hardware); a no-op in sim where blooms place in-bench. Engages only
+        # when a registered MapBox exists for the target — never the legacy
+        # tag-anchored fallback — so the temporal path is untouched. See
+        # docs/flower_tag_association_audit_2026-06-09.md.
+        self.declare_parameter('flower_box_gate', True)
+        # Metric slack on the rectangle so nominal-FOV error doesn't drop
+        # genuine edge-of-bench blooms.
+        self.declare_parameter('flower_box_gate_margin_m', 0.10)
 
         self._map_frame = str(self.get_parameter('map_frame').value)
         self._tf_prefix = str(self.get_parameter('tf_frame_prefix').value)
@@ -194,6 +206,9 @@ class PerceptionAggregator(Node):
         self._flower_depth_jitter = float(self.get_parameter('flower_depth_jitter_frac').value)
         self._pan_half_span = float(self.get_parameter('pan_half_span').value)
         self._camera_half_fov = float(self.get_parameter('camera_half_fov').value)
+        self._flower_box_gate = bool(self.get_parameter('flower_box_gate').value)
+        self._flower_box_gate_margin = float(
+            self.get_parameter('flower_box_gate_margin_m').value)
 
         # ── runtime state ──────────────────────────────────────────────
         self._registry: dict[str, _TagRecord] = {}
@@ -470,10 +485,15 @@ class PerceptionAggregator(Node):
                     bbox_cx_norm = max(-1.0, min(1.0, (cx / self._image_width - 0.5) * 2.0))
                 except (TypeError, ValueError):
                     bbox_cx_norm = 0.0
+            # Store the UNCLAMPED fraction so the spatial gate can tell a bloom
+            # that points past the bench end (|f| > 1) from one merely at the
+            # edge; bin_detections re-clamps for placement, so this never moves
+            # an in-box bloom.
             f = lateral_fraction(
                 self._shoulder_pan, bbox_cx_norm,
                 pan_half_span=self._pan_half_span,
                 camera_half_fov=self._camera_half_fov,
+                clamp=False,
             )
             frame_dets.append((f, name, conf, track_id))
         self._fuse_flower(now_mono, frame_dets)
@@ -525,13 +545,25 @@ class PerceptionAggregator(Node):
             self._scan_dets.clear()
         self._scan_dets.extend(frame_dets)
 
+        # Geometry for this tag: the registered planter rectangle (a MapBox from
+        # the box_layout_publisher) or the legacy tag-anchored box. The spatial
+        # membership gate runs ONLY against a registered MapBox — never the
+        # legacy single-quaternion fallback — so blooms pointing off the bench
+        # are dropped on hardware while the temporal path is untouched wherever
+        # no registered box exists yet.
+        geom = self._box_geometry_for(tag_id, rec)
+        if self._flower_box_gate and box is not None and geom is not None:
+            dets = self._gate_detections(geom, self._scan_dets)
+        else:
+            dets = list(self._scan_dets)
+
         # Dominant tulip species (best confidence) + bug flag for the summary.
         # Derive from the per-scan, tag-scoped accumulator (reset on tag change)
         # rather than the shared time window, so a 'bug' or species seen at the
         # previous pot can't bleed into this pot's summary within yolo_window_s.
         best_species, best_conf = '', 0.0
         anomaly = False
-        for _, name, conf, _ in self._scan_dets:
+        for _, name, conf, _ in dets:
             if name == self._anomaly_name:
                 anomaly = True
                 continue
@@ -539,17 +571,16 @@ class PerceptionAggregator(Node):
                 best_species, best_conf = name, conf
 
         flower_tracks = {
-            track_id for _, name, _, track_id in self._scan_dets
+            track_id for _, name, _, track_id in dets
             if name != self._anomaly_name and track_id is not None
         }
         bug_tracks = {
-            track_id for _, name, _, track_id in self._scan_dets
+            track_id for _, name, _, track_id in dets
             if name == self._anomaly_name and track_id is not None
         }
-        # Locate the blooms inside the box from the accumulated detections.
-        geom = self._box_geometry_for(tag_id, rec)
+        # Locate the blooms inside the box from the (gated) detections.
         flowers = bin_detections(
-            [(f, name, conf) for f, name, conf, _ in self._scan_dets], geom,
+            [(f, name, conf) for f, name, conf, _ in dets], geom,
             lateral_columns=self._lateral_columns,
             base_depth_frac=self._flower_base_depth,
             depth_jitter_frac=self._flower_depth_jitter,
@@ -589,6 +620,22 @@ class PerceptionAggregator(Node):
         if rec is not None and rec.pose is not None:
             return box_from_tag(rec.pose, self._box)
         return None
+
+    def _gate_detections(self, geom, dets):
+        """Drop per-scan detections whose projected bloom falls outside ``geom``
+        (the registered bench rectangle, inflated by ``flower_box_gate_margin_m``).
+
+        Uses the UNCLAMPED lateral fraction and the base scan depth, so a bearing
+        that points past the bench end is rejected rather than clamped onto the
+        current bench's edge column — the core of the misattribution fix. Each
+        ``det`` is ``(f, name, conf, track_id)``; the whole tuple is kept."""
+        margin = self._flower_box_gate_margin
+        kept = []
+        for det in dets:
+            x, y = geom.place(det[0], self._flower_base_depth)
+            if geom.contains(x, y, margin_m=margin):
+                kept.append(det)
+        return kept
 
     def _emit_flower_observation(self, target_id: str, rec: Optional[_TagRecord],
                                  box: Optional[MapBox], flowers, geom) -> None:
