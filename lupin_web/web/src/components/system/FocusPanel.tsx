@@ -68,7 +68,11 @@ export function FocusPanelProvider({ children }: { children: ReactNode }) {
                 </Dialog.Close>
               </div>
             </div>
-            <div className="relative min-h-0 flex-1 bg-ink-0">
+            {/* flex column so a `flex-1` child (e.g. the Map card) fills and is
+                BOUNDED to this body — a plain block let it overgrow its height
+                and spill past the dialog (clipped map). h-full children are
+                unaffected. */}
+            <div className="relative flex min-h-0 flex-1 flex-col bg-ink-0">
               {content ? content.render({ close }) : null}
             </div>
           </Dialog.Content>
