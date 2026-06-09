@@ -39,6 +39,7 @@ import json
 import math
 import time
 from collections import deque
+from pathlib import Path
 from typing import Optional
 
 import rclpy
@@ -76,7 +77,11 @@ from .box_geometry import (
     StandardBox,
     bin_detections,
     box_from_tag,
+    box_geometry_from_corners,
     lateral_fraction,
+    nearest_table_rect,
+    solve_rigid_2d,
+    table_rect_corners,
 )
 
 
@@ -159,6 +164,11 @@ class PerceptionAggregator(Node):
         self.declare_parameter('box_height', 0.30)
         self.declare_parameter('tag_mount_height', 0.10)
         self.declare_parameter('tag_lateral_offset', 0.0)
+        # Greenhouse layout (the course tag_locations.json) — gives the REAL
+        # planter rectangles + tag (x,y). Empty -> resolve from the bundled
+        # greenhouse_sim package. Demo launches pass the committed snapshot so
+        # perception, mission and the SDF world all agree on the coords.
+        self.declare_parameter('tag_locations_file', '')
         self.declare_parameter('flower_base_depth_frac', 0.5)
         self.declare_parameter('flower_depth_jitter_frac', 0.18)
         # Half the arm pan-sweep amplitude (rad); matches Stream C's sweep so
@@ -190,6 +200,8 @@ class PerceptionAggregator(Node):
         self._flower_depth_jitter = float(self.get_parameter('flower_depth_jitter_frac').value)
         self._pan_half_span = float(self.get_parameter('pan_half_span').value)
         self._camera_half_fov = float(self.get_parameter('camera_half_fov').value)
+        # Real planter rectangles + tag coords (or empty -> legacy box fallback).
+        self._load_layout(str(self.get_parameter('tag_locations_file').value))
 
         # ── runtime state ──────────────────────────────────────────────
         self._registry: dict[str, _TagRecord] = {}
@@ -283,6 +295,44 @@ class PerceptionAggregator(Node):
     @staticmethod
     def _monotonic() -> float:
         return time.monotonic()
+
+    # ─── greenhouse layout ──────────────────────────────────────────────
+    def _load_layout(self, path: str) -> None:
+        """Load the planter table rectangles + tag (x, y) from tag_locations.json.
+
+        ``path`` (the committed snapshot passed by the demo launches) wins;
+        otherwise the bundled ``greenhouse_sim`` package is used. Failure is
+        non-fatal — we log once and fall back to the legacy tag-anchored
+        StandardBox, so the node still runs without the layout (bare fixtures,
+        package not installed). Mirrors ``lupin_mission.tag_locations`` but kept
+        local so lupin_perception needs no dependency on lupin_mission.
+        """
+        self._tables: dict = {}
+        self._tag_json_xy: dict[str, tuple[float, float]] = {}
+        try:
+            if path:
+                data = json.loads(Path(path).expanduser().read_text())
+            else:
+                from importlib.resources import files
+                cfg = files('greenhouse_sim').joinpath('configs/tag_locations.json')
+                data = json.loads(cfg.read_text())
+        except Exception as exc:  # noqa: BLE001 — any load failure → legacy box
+            self.get_logger().warn(
+                f'planter-box layout unavailable ({exc}); boxes fall back to the '
+                'tag-anchored standard size.'
+            )
+            return
+        self._tables = data.get('tables', {}) or {}
+        for tid, t in (data.get('tags', {}) or {}).items():
+            try:
+                self._tag_json_xy[str(tid)] = (float(t['x']), float(t['y']))
+            except (KeyError, TypeError, ValueError):
+                continue
+        self.get_logger().info(
+            f'planter-box layout loaded — {len(self._tables)} tables, '
+            f'{len(self._tag_json_xy)} tag coords '
+            f'(source: {path or "greenhouse_sim package"}).'
+        )
 
     # ─── tag detections → discovery registry ────────────────────────────
     def _on_tag_detections(self, msg: String) -> None:
@@ -442,6 +492,46 @@ class PerceptionAggregator(Node):
         nearest = min(self._last_frame, key=lambda t: t[1] if t[1] > 0 else math.inf)
         return nearest[0] if nearest[0] in self._registry else None
 
+    def _layout_transform(self):
+        """Rigid JSON→map transform fit from discovered tags' (json_xy, map_xy).
+
+        Built from tags that are discovered (committed pose, ≥ min_sightings)
+        AND present in the JSON. Identity until ≥ 2 such tags exist — correct
+        where the map frame already coincides with the layout (sim); on hardware
+        the boxes snap into the registered orientation once a second tag is seen.
+        """
+        src: list[tuple[float, float]] = []
+        dst: list[tuple[float, float]] = []
+        for rec in self._registry.values():
+            if rec.pose is None or rec.sightings < self._min_sightings:
+                continue
+            j = self._tag_json_xy.get(rec.tag_id)
+            if j is None:
+                continue
+            src.append(j)
+            dst.append((rec.pose.position.x, rec.pose.position.y))
+        return solve_rigid_2d(src, dst)
+
+    def _box_geom_for(self, rec: '_TagRecord'):
+        """Box geometry for a tag: the REAL table rectangle from the layout,
+        registered into the map frame. Falls back to the legacy tag-anchored
+        StandardBox when the layout/table is unavailable or degenerate."""
+        if rec.pose is None:
+            return None
+        j = self._tag_json_xy.get(rec.tag_id)
+        if j is not None and self._tables:
+            rect = nearest_table_rect(j, self._tables)
+            if rect is not None:
+                tf = self._layout_transform()
+                corners = [tf.apply(x, y) for (x, y) in table_rect_corners(rect)]
+                geom = box_geometry_from_corners(
+                    corners, toward=(rec.pose.position.x, rec.pose.position.y),
+                )
+                if geom is not None:
+                    return geom
+        # Legacy: box hung off the tag pose (None if the tag normal is degenerate).
+        return box_from_tag(rec.pose, self._box)
+
     def _fuse_flower(self, now_mono: float,
                      frame_dets: list[tuple[float, str, float]]) -> None:
         # Prune the time window used for the dominant-species summary.
@@ -475,7 +565,8 @@ class PerceptionAggregator(Node):
                 best_species, best_conf = name, conf
 
         # Locate the blooms inside the box from the accumulated detections.
-        geom = box_from_tag(rec.pose, self._box) if rec.pose is not None else None
+        # geom is the registered real planter rectangle (or the legacy tag box).
+        geom = self._box_geom_for(rec)
         flowers = bin_detections(
             self._scan_dets, geom,
             lateral_columns=self._lateral_columns,

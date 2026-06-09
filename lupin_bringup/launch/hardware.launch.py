@@ -526,7 +526,11 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             os.path.join(pkg_perception, 'launch', 'perception_aggregator.launch.py'),
         ),
-        launch_arguments=[('use_sim_time', 'false')],
+        launch_arguments=[
+            ('use_sim_time', 'false'),
+            # Real planter rectangles for the HMI box overlay + bloom placement.
+            ('tag_locations_file', tag_locations),
+        ],
         condition=IfCondition(LaunchConfiguration('perception')),
     )
 

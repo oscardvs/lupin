@@ -210,3 +210,60 @@ def test_bug_sets_anomaly_on_localized_flower(node):
                   if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
     assert flower_obs
     assert any(fp.anomaly for fp in flower_obs[-1].flower.flowers)
+
+
+# ── known-layout box footprint (from tag_locations.json) ────────────────────
+# Tags 6 and 29 both sit on Table1 = {x0:1.5, y0:7.3, x1:2.6, y1:7.55} in the
+# bundled greenhouse_sim layout the node auto-loads.
+_TABLE1_CORNERS = {(1.5, 7.3), (2.6, 7.3), (2.6, 7.55), (1.5, 7.55)}
+_TAG_JSON = {'6': (1.5, 7.3), '29': (2.4, 7.3)}
+
+
+def _pose_at(x, y):
+    # Forward-facing (90° about Y) so the LEGACY box_from_tag path would build a
+    # (wrong) 0.80×0.40 box here — the assertions below pin the real rectangle.
+    p = Pose()
+    p.position.x, p.position.y = float(x), float(y)
+    p.orientation.y = 0.70710678
+    p.orientation.w = 0.70710678
+    return p
+
+
+def test_box_footprint_is_the_real_table_rectangle(node):
+    # Map frame == JSON frame: each tag localises to its JSON (x, y).
+    node._lookup_tag_pose = lambda tag_id: _pose_at(*_TAG_JSON[tag_id])
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8), (29, 0.8)))
+    _scanning(node, '6')
+    node._on_yolo_detections(_yolo((0, 0.9)))
+
+    flower_obs = [o for o in node.emitted if o.kind == Observation.KIND_FLOWER]
+    assert flower_obs, 'expected a KIND_FLOWER Observation'
+    pts = flower_obs[-1].flower.box_footprint.points
+    assert len(pts) == 4
+    got = {(round(p.x, 4), round(p.y, 4)) for p in pts}
+    assert got == _TABLE1_CORNERS  # the real bench, not a 0.80×0.40 synthesised box
+
+
+def test_box_footprint_follows_a_registered_layout(node):
+    # Map frame = JSON rotated +90° then translated by (10, -5). Registration
+    # must recover it from the two tag correspondences and place the box there.
+    tx, ty = 10.0, -5.0
+
+    def to_map(x, y):
+        return (-y + tx, x + ty)  # +90° rotation: (x, y) -> (-y, x)
+
+    node._lookup_tag_pose = lambda tag_id: _pose_at(*to_map(*_TAG_JSON[tag_id]))
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8), (29, 0.8)))
+    _scanning(node, '6')
+    node._on_yolo_detections(_yolo((0, 0.9)))
+
+    flower_obs = [o for o in node.emitted if o.kind == Observation.KIND_FLOWER]
+    assert flower_obs
+    pts = flower_obs[-1].flower.box_footprint.points
+    got = sorted((round(p.x, 4), round(p.y, 4)) for p in pts)
+    want = sorted((round(mx, 4), round(my, 4))
+                  for (jx, jy) in _TABLE1_CORNERS
+                  for (mx, my) in [to_map(jx, jy)])
+    assert got == want

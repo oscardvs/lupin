@@ -102,6 +102,8 @@ def generate_launch_description() -> LaunchDescription:
             'tf_frame_prefix': 'tag_',
             'min_sightings': 3,
             'max_tag_distance_m': 2.5,
+            # Real planter rectangles for the HMI box overlay + bloom placement.
+            'tag_locations_file': widened_tag_locations,
         }],
         output='screen',
     )

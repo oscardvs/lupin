@@ -24,6 +24,10 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument('tf_frame_prefix', default_value='tag_'),
         DeclareLaunchArgument('min_sightings', default_value='3'),
         DeclareLaunchArgument('max_tag_distance_m', default_value='2.5'),
+        DeclareLaunchArgument(
+            'tag_locations_file', default_value='',
+            description='tag_locations.json with the real planter rectangles + '
+                        'tag coords (empty -> bundled greenhouse_sim package).'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
     ]
 
@@ -43,6 +47,7 @@ def generate_launch_description() -> LaunchDescription:
             'tf_frame_prefix': LaunchConfiguration('tf_frame_prefix'),
             'min_sightings': LaunchConfiguration('min_sightings'),
             'max_tag_distance_m': LaunchConfiguration('max_tag_distance_m'),
+            'tag_locations_file': LaunchConfiguration('tag_locations_file'),
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }],
     )
