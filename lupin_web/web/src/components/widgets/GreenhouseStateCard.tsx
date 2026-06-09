@@ -130,7 +130,7 @@ function Table({
   nowSec: number
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="max-h-[40vh] overflow-auto">
       <table className="w-full border-collapse text-[12px]">
         <thead>
           <tr className="border-b border-hairline text-left text-muted-foreground">
@@ -262,7 +262,7 @@ function Th({
   return (
     <th
       aria-sort={ariaSort}
-      className={cn('px-2 py-1.5 align-bottom', className)}
+      className={cn('sticky top-0 z-10 bg-ink-2 px-2 py-1.5 align-bottom', className)}
     >
       <button
         type="button"

@@ -1,16 +1,24 @@
-import { useEffect, useRef } from 'react'
+import { RotateCcw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
+import { useFocusPanel } from '@/components/system/FocusPanel'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ExpandButton } from '@/components/ui/ExpandButton'
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
 import { useAnimationLoop } from '@/lib/throttle'
 import { cn } from '@/lib/utils'
 import { ROS_TYPE, type LaserScan } from '@/types/ros'
 
-export function LidarCanvas({ className }: { className?: string } = {}) {
+export function LidarCanvas({ className, interactive = false }: { className?: string; interactive?: boolean } = {}) {
   const [{ scanTopic }] = useSettings()
+  const focus = useFocusPanel()
   const ref = useTopic<LaserScan>(scanTopic, ROS_TYPE.LaserScan)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  // Display range (metres) the radar is scaled to. Wheel-zoom in the maximized
+  // variant clamps it to 1–12 m; the rAF loop reads the ref each frame.
+  const rangeRef = useRef(6)
+  const [displayRange, setDisplayRange] = useState(6)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -44,7 +52,8 @@ export function LidarCanvas({ className }: { className?: string } = {}) {
 
     const cx = w / 2
     const cy = h / 2
-    const maxRange = scan?.range_max && scan.range_max > 0 ? Math.min(scan.range_max, 6) : 6
+    const cap = rangeRef.current
+    const maxRange = scan?.range_max && scan.range_max > 0 ? Math.min(scan.range_max, cap) : cap
     const radius = Math.min(w, h) / 2 - 16
     const pxPerM = radius / maxRange
 
@@ -100,20 +109,52 @@ export function LidarCanvas({ className }: { className?: string } = {}) {
     ctx.fill()
   })
 
+  const onLidarWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const next = Math.min(12, Math.max(1, rangeRef.current * Math.exp(e.deltaY * 0.0015)))
+    rangeRef.current = next
+    setDisplayRange(Math.round(next))
+  }
+  const resetRange = () => { rangeRef.current = 6; setDisplayRange(6) }
+  const openMaximized = () =>
+    focus.open({
+      title: 'Lidar',
+      subtitle: 'scroll to change range',
+      render: () => <LidarCanvas interactive className="h-full w-full rounded-none border-0" />,
+    })
+
   return (
     <Card className={cn('flex flex-col', className)}>
       <CardHeader>
         <CardTitle>
           Lidar
-          <span className="tag tag-accent ml-auto">PNL-LDR-01</span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="tag tag-accent">PNL-LDR-01</span>
+            {!interactive && <ExpandButton onClick={openMaximized} className="h-7 w-7" label="Maximize lidar" />}
+          </div>
         </CardTitle>
         <CardDescription>{scanTopic}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">
         <div className="relative w-full flex-1 min-h-[180px] overflow-hidden rounded-sm border border-hairline bg-ink-1 sm:min-h-[260px]">
-          <canvas ref={canvasRef} className="h-full w-full" />
+          <canvas
+            ref={canvasRef}
+            onWheel={interactive ? onLidarWheel : undefined}
+            className={cn('h-full w-full', interactive && 'cursor-zoom-in')}
+          />
           <span className="tag absolute left-2 top-2">N · forward</span>
-          <span className="tag absolute right-2 bottom-2 tabular-nums">scale · 6m</span>
+          <span className="tag absolute right-2 bottom-2 tabular-nums">scale · {displayRange}m</span>
+          {interactive && (
+            <button
+              type="button"
+              onClick={resetRange}
+              aria-label="Reset range"
+              title="Reset range"
+              className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-hairline bg-ink-2/80 text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:bg-ink-3 hover:text-foreground"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </CardContent>
     </Card>

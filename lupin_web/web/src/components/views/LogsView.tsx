@@ -1,8 +1,10 @@
 import { Pause, Play, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { useFocusPanel } from '@/components/system/FocusPanel'
 import { ViewShell } from '@/components/system/ViewShell'
 import { Button } from '@/components/ui/button'
+import { ExpandButton } from '@/components/ui/ExpandButton'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
@@ -25,7 +27,8 @@ const levelClass: Record<RosoutLevel, string> = {
 
 const levelOrder: RosoutLevel[] = [10, 20, 30, 40, 50]
 
-export function LogsView() {
+export function LogsView({ embedded = false }: { embedded?: boolean } = {}) {
+  const focus = useFocusPanel()
   const [{ rosoutTopic }] = useSettings()
   // Monotonic id per ingested line → stable React keys (array index recycles
   // DOM rows on the fast rosout stream, causing colour/text flicker).
@@ -70,8 +73,8 @@ export function LogsView() {
     bufferRef.current = []
   }, [])
 
-  return (
-    <ViewShell intent="fit">
+  const content = (
+    <>
       <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={String(minLevel)} onValueChange={(v) => setMinLevel(Number(v) as RosoutLevel)}>
@@ -113,6 +116,12 @@ export function LogsView() {
             <Trash2 className="h-3.5 w-3.5 sm:mr-2" />
             <span className="hidden sm:inline">Clear</span>
           </Button>
+          {!embedded && (
+            <ExpandButton
+              onClick={() => focus.open({ title: 'Logs', subtitle: rosoutTopic, render: () => <LogsView embedded /> })}
+              label="Maximize logs"
+            />
+          )}
         </div>
       </div>
 
@@ -153,6 +162,9 @@ export function LogsView() {
       <div className="shrink-0 text-[11px] text-muted-foreground">
         {visible.length} / {bufferRef.current.length} rows · capped at {MAX_ROWS} · topic <span className="font-mono">{rosoutTopic}</span>
       </div>
-    </ViewShell>
+    </>
   )
+
+  if (embedded) return <div className="flex h-full min-h-0 flex-col gap-3 p-4">{content}</div>
+  return <ViewShell intent="fit">{content}</ViewShell>
 }

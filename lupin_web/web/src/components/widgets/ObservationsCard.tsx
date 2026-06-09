@@ -88,7 +88,7 @@ function Empty() {
 
 function Table({ rows }: { rows: Observation[] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="max-h-[40vh] overflow-auto">
       <table className="w-full border-collapse text-[12px]">
         <thead>
           <tr className="border-b border-hairline text-left text-muted-foreground">
@@ -180,7 +180,7 @@ function StatusPill({
 
 function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <th className={cn('px-2 py-1.5 align-bottom', className)}>
+    <th className={cn('sticky top-0 z-10 bg-ink-2 px-2 py-1.5 align-bottom', className)}>
       <span className="tag">{children}</span>
     </th>
   )
