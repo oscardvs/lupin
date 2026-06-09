@@ -276,8 +276,10 @@ def generate_launch_description():
 
         # 4. light_strip_bridge — lets the HMI LightControl card change the
         # robot's status strip. It serves the manual-override services
-        # (/lupin/leds/set, /lupin/leds/auto) the card calls and mirrors
-        # /mission/state onto the strip in auto mode. Co-located here so the
+        # (/lupin/leds/set, /lupin/leds/auto) the card calls, mirrors
+        # /mission/state onto the strip in auto mode, and — when no mission
+        # owns it — shows live activity (green-blink driving, orange-blink arm,
+        # blue standby, red e-stop). Co-located here so the
         # operator who launches the laptop HMI also gets LED control without a
         # separate launch; the bridge is just a client of the robot's MIRTE LED
         # service (/io/leds/leds/set_color) reached over DDS — hence the same
@@ -299,6 +301,14 @@ def generate_launch_description():
                 # HMI palette shows true colours. See reference_mirte_ledstrip
                 # and the matching param in lupin_bringup/onboard.launch.py.
                 'color_order': 'BRG',
+                # Activity layer (see 2026-06-08-led-mode-indication spec):
+                # live driving/arm/standby/e-stop indication when no mission
+                # owns the strip. Defaults are already correct for hardware;
+                # set explicitly for parity with onboard.launch.py.
+                'estop_topic': '/e_stop_state',
+                'drive_topic': '/mirte_base_controller/cmd_vel',
+                'joint_states_topic': '/joint_states',
+                'blink_hz': 1.0,
             }],
             output='screen',
             condition=IfCondition(spawn_leds),
