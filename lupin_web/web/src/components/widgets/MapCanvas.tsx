@@ -13,6 +13,7 @@ import {
   rampCssColor,
   SENSOR_RAMPS,
 } from '@/lib/heatmap'
+import { frontFaceCoverage } from '@/lib/box-coverage'
 import { tagHealthState } from '@/lib/tulip-health'
 import { useMapPose, useTopic, usePublisher, useService } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
@@ -833,9 +834,15 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
     // species reads at a glance.
     if (layers.flowers) {
       for (const t of tagsRef.current) {
-        // Box footprint rectangle (faint), from the localized corners.
+        // Box footprint rectangle, styled by staged lidar confidence: how much
+        // of the FRONT face (corners[0]→[1]) the occupancy grid corroborates.
+        // Faint dashed "predicted" → solid "confirmed".
         const corners = t.box_footprint?.points ?? []
         if (corners.length >= 3) {
+          const cov = frontFaceCoverage(corners, mapRef.current)
+          const conf = Math.max(0, Math.min(1, (cov - 0.1) / 0.5)) // 0 at ≤0.1, 1 at ≥0.6
+          const strokeA = 0.18 + (0.5 - 0.18) * conf
+          const fillA = 0.1 * conf
           ctx.save()
           ctx.beginPath()
           corners.forEach((p, i) => {
@@ -844,11 +851,13 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
             else ctx.lineTo(c.x, c.y)
           })
           ctx.closePath()
-          ctx.fillStyle = 'hsla(140, 35%, 50%, 0.06)'
-          ctx.lineWidth = 1
-          ctx.strokeStyle = 'hsla(140, 35%, 62%, 0.35)'
+          ctx.fillStyle = `hsla(140, 35%, 50%, ${fillA.toFixed(3)})`
+          ctx.lineWidth = conf >= 0.999 ? 1.5 : 1
+          ctx.strokeStyle = `hsla(140, 38%, 62%, ${strokeA.toFixed(3)})`
+          if (conf < 1) ctx.setLineDash([4, 3])
           ctx.fill()
           ctx.stroke()
+          ctx.setLineDash([])
           ctx.restore()
         }
         // Species-coloured filled dots at each localized bloom (NOT t.pose).
