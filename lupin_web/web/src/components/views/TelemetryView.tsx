@@ -16,10 +16,13 @@ export function TelemetryView() {
         </span>
         <span className="tag">live channels &amp; mission readings</span>
       </div>
-      {/* On lg the grid fills the viewport as two sensor rows + an Observations
-          footer; every card is h-full so the right rail stretches to the 2-row
+      {/* On lg the two sensor rows are `auto` (content-height) so each card track
+          matches its tallest tile exactly — content can never overflow a 1fr
+          track that's shorter than it and bleed over the row below. The
+          Observations footer takes the flexible remainder (min 0) and scrolls
+          internally. Cards stay h-full so the right rail stretches to the 2-row
           Lidar baseline (no void). Phone goes 2-up to halve the stack height. */}
-      <div className="grid min-h-0 w-full flex-1 grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+      <div className="grid min-h-0 w-full flex-1 grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:grid-rows-[auto_auto_minmax(0,1fr)]">
         <LidarCanvas className="col-span-2 lg:col-span-5 lg:row-span-2" />
         <ImuCard className="col-span-2 sm:col-span-1 lg:col-span-4 lg:h-full" />
         <OdometryCard className="lg:col-span-3 lg:h-full" />

@@ -67,7 +67,7 @@ export function ObservationsCard({ className }: ObservationsCardProps) {
             : `${sorted.length} station${sorted.length === 1 ? '' : 's'} · latest per tag`}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-1">
+      <CardContent className="flex-1 min-h-0">
         {sorted.length === 0 ? <Empty /> : <Table rows={sorted} />}
       </CardContent>
     </Card>
@@ -88,7 +88,7 @@ function Empty() {
 
 function Table({ rows }: { rows: Observation[] }) {
   return (
-    <div className="max-h-[40vh] overflow-auto">
+    <div className="max-h-full overflow-auto">
       <table className="w-full border-collapse text-[12px]">
         <thead>
           <tr className="border-b border-hairline text-left text-muted-foreground">
