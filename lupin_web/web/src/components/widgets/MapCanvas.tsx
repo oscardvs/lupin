@@ -1,9 +1,11 @@
 import {
-  Check, Crosshair, Eraser, Eye, EyeOff, Loader2, Target,
+  Check, Crosshair, Eraser, Eye, EyeOff, Loader2, Minus, Plus, RotateCcw, Target,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { useFocusPanel } from '@/components/system/FocusPanel'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ExpandButton } from '@/components/ui/ExpandButton'
 import { HEALTH_COLORS, healthLabel, speciesColor, speciesLabel } from '@/lib/flowers'
 import {
   paintFieldToCanvas,
@@ -34,7 +36,20 @@ import {
  * current Nav2 plan. Click to set a goal — drag while clicking to set the
  * goal heading; releasing publishes a PoseStamped on `/goal_pose`.
  */
-export function MapCanvas() {
+export function MapCanvas({ interactive = false }: { interactive?: boolean } = {}) {
+  const focus = useFocusPanel()
+  // Maximized inspection: a view-scale multiplier on top of the fit scale and a
+  // canvas-pixel pan offset, folded into the single projection. Identity inline
+  // (so goal-setting is untouched); only the interactive/maximized variant zooms.
+  const viewScaleRef = useRef(1)
+  const viewOffsetRef = useRef({ x: 0, y: 0 })
+  const mapPointers = useRef(new Map<number, { x: number; y: number }>())
+  const mapGesture = useRef<{
+    mode: 'pan' | 'pinch' | null
+    sx?: number; sy?: number; ox?: number; oy?: number
+    startDist?: number; startScale?: number; midX?: number; midY?: number
+  }>({ mode: null })
+  const mapRect = useRef<DOMRect | null>(null)
   const [{ mapTopic, planTopic, goalPoseTopic, mapFrame, baseFrame, polarityInvertHmi }] = useSettings()
   const mapRef = useTopic<OccupancyGrid>(mapTopic, ROS_TYPE.OccupancyGrid)
   const planRef = useTopic<Path>(planTopic, ROS_TYPE.Path)
@@ -203,9 +218,10 @@ export function MapCanvas() {
     const sinR = Math.sin(rot)
     const rmw = Math.abs(cosR) * mw + Math.abs(sinR) * mh
     const rmh = Math.abs(sinR) * mw + Math.abs(cosR) * mh
-    const s = Math.max(0.0001, Math.min(w / rmw, h / rmh) * 0.95)
-    const cx = w / 2
-    const cy = h / 2
+    const sFit = Math.max(0.0001, Math.min(w / rmw, h / rmh) * 0.95)
+    const s = sFit * viewScaleRef.current
+    const cx = w / 2 + viewOffsetRef.current.x
+    const cy = h / 2 + viewOffsetRef.current.y
     const ox = map.info.origin.position.x + mw / 2
     const oy = map.info.origin.position.y + mh / 2
     // worldToCanvas: rotate (world - mapCenter) by `rot` CCW, scale, then flip Y
@@ -364,6 +380,94 @@ export function MapCanvas() {
     const yaw = dx * dx + dy * dy < 1e-4 ? (pose?.yaw ?? 0) : Math.atan2(dy, dx)
     setPendingGoal({ x: cur.from.x, y: cur.from.y, yaw })
   }
+
+  // ---- Maximized inspection handlers: cursor-anchored wheel zoom + drag pan.
+  // The rAF draw loop reads the refs each frame, so no state bump is needed.
+  const onZoomWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const w = rect.width
+    const h = rect.height
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    const cxBefore = w / 2 + viewOffsetRef.current.x
+    const cyBefore = h / 2 + viewOffsetRef.current.y
+    const target = Math.min(8, Math.max(1, viewScaleRef.current * Math.exp(-e.deltaY * 0.0015)))
+    const k = target / viewScaleRef.current
+    viewScaleRef.current = target
+    if (target <= 1.001) {
+      viewScaleRef.current = 1
+      viewOffsetRef.current = { x: 0, y: 0 }
+    } else {
+      viewOffsetRef.current = { x: mx - k * (mx - cxBefore) - w / 2, y: my - k * (my - cyBefore) - h / 2 }
+    }
+  }
+  const clampMapScale = (s: number) => Math.min(8, Math.max(1, s))
+  const startMapGesture = () => {
+    const pts = [...mapPointers.current.values()]
+    if (pts.length === 1) {
+      mapGesture.current = { mode: 'pan', sx: pts[0].x, sy: pts[0].y, ox: viewOffsetRef.current.x, oy: viewOffsetRef.current.y }
+    } else if (pts.length >= 2) {
+      const [a, b] = pts
+      mapGesture.current = {
+        mode: 'pinch', startDist: Math.hypot(b.x - a.x, b.y - a.y) || 1, startScale: viewScaleRef.current,
+        midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2, ox: viewOffsetRef.current.x, oy: viewOffsetRef.current.y,
+      }
+    } else {
+      mapGesture.current = { mode: null }
+    }
+  }
+  const applyMapZoom = (nextScale: number, fromScale: number, fromOx: number, fromOy: number, cx: number, cy: number, rect: DOMRect) => {
+    const ns = clampMapScale(nextScale)
+    const px = cx - rect.left
+    const py = cy - rect.top
+    const cxBefore = rect.width / 2 + fromOx
+    const cyBefore = rect.height / 2 + fromOy
+    const k = ns / fromScale
+    viewScaleRef.current = ns
+    if (ns <= 1.001) {
+      viewScaleRef.current = 1
+      viewOffsetRef.current = { x: 0, y: 0 }
+    } else {
+      viewOffsetRef.current = { x: px - k * (px - cxBefore) - rect.width / 2, y: py - k * (py - cyBefore) - rect.height / 2 }
+    }
+  }
+  const onPanDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* */ }
+    mapRect.current = e.currentTarget.getBoundingClientRect()
+    mapPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    startMapGesture()
+  }
+  const onPanMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!mapPointers.current.has(e.pointerId)) return
+    mapPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const g = mapGesture.current
+    if (g.mode === 'pan') {
+      viewOffsetRef.current = { x: g.ox! + (e.clientX - g.sx!), y: g.oy! + (e.clientY - g.sy!) }
+    } else if (g.mode === 'pinch') {
+      const pts = [...mapPointers.current.values()]
+      if (pts.length < 2) return
+      const [a, b] = pts
+      const dist = Math.hypot(b.x - a.x, b.y - a.y)
+      const rect = mapRect.current ?? e.currentTarget.getBoundingClientRect()
+      applyMapZoom(g.startScale! * (dist / g.startDist!), g.startScale!, g.ox!, g.oy!, g.midX!, g.midY!, rect)
+    }
+  }
+  const onPanUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    mapPointers.current.delete(e.pointerId)
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* */ }
+    startMapGesture()
+  }
+  const zoomByCenter = (factor: number) => {
+    viewScaleRef.current = Math.min(8, Math.max(1, viewScaleRef.current * factor))
+    if (viewScaleRef.current === 1) viewOffsetRef.current = { x: 0, y: 0 }
+  }
+  const resetView = () => {
+    viewScaleRef.current = 1
+    viewOffsetRef.current = { x: 0, y: 0 }
+  }
+  const openMaximized = () =>
+    focus.open({ title: 'Map / Nav', subtitle: 'wheel zoom · drag pan', render: () => <MapCanvas interactive /> })
 
   const confirmPendingGoal = () => {
     const g = pendingGoal
@@ -739,7 +843,7 @@ export function MapCanvas() {
   })()
 
   return (
-    <Card className="flex flex-1 flex-col">
+    <Card className="flex min-h-0 w-full flex-1 flex-col">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>Map · navigation</span>
@@ -750,6 +854,12 @@ export function MapCanvas() {
             <LayerToggles value={layers} onChange={setLayers} />
             <span className="h-3 w-px bg-hairline" aria-hidden />
             <EraseMapButton />
+            {!interactive && (
+              <>
+                <span className="h-3 w-px bg-hairline" aria-hidden />
+                <ExpandButton onClick={openMaximized} className="h-7 w-7" label="Maximize map" />
+              </>
+            )}
           </div>
         </CardTitle>
         <CardDescription className="flex items-center gap-2">
@@ -764,17 +874,41 @@ export function MapCanvas() {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 min-h-[28rem] flex-col">
-        <div className="relative flex-1 overflow-hidden rounded-sm border border-hairline bg-background/60">
+      <CardContent className="flex min-h-0 flex-1 flex-col">
+        <div className="relative flex-1 overflow-hidden rounded-sm border border-hairline bg-ink-1">
           <canvas
             ref={canvasRef}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            onPointerLeave={onPointerLeave}
-            className="h-full w-full cursor-crosshair touch-none"
+            onPointerDown={interactive ? onPanDown : onPointerDown}
+            onPointerMove={interactive ? onPanMove : onPointerMove}
+            onPointerUp={interactive ? onPanUp : onPointerUp}
+            onPointerCancel={interactive ? onPanUp : onPointerUp}
+            onPointerLeave={interactive ? onPanUp : onPointerLeave}
+            onWheel={interactive ? onZoomWheel : undefined}
+            className={cn(
+              'h-full w-full touch-none',
+              interactive ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair',
+            )}
           />
+          {interactive && (
+            <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1">
+              {[
+                { k: 'out', label: 'Zoom out', icon: <Minus className="h-4 w-4" />, on: () => zoomByCenter(1 / 1.4) },
+                { k: 'in', label: 'Zoom in', icon: <Plus className="h-4 w-4" />, on: () => zoomByCenter(1.4) },
+                { k: 'fit', label: 'Fit', icon: <RotateCcw className="h-4 w-4" />, on: resetView },
+              ].map((b) => (
+                <button
+                  key={b.k}
+                  type="button"
+                  onClick={b.on}
+                  aria-label={b.label}
+                  title={b.label}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-hairline bg-ink-2/80 text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:bg-ink-3 hover:text-foreground"
+                >
+                  {b.icon}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-2">
             <span className="tag">frame · {mapFrame}</span>
           </div>

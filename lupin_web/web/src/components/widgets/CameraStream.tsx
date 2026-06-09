@@ -272,12 +272,15 @@
 //     </div>
 //   )
 // }
-import { Camera, Maximize2, Minimize2, RefreshCcw } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Camera, Minus, Plus, RefreshCcw, RotateCcw } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
+import { useFocusPanel } from '@/components/system/FocusPanel'
 import { Button } from '@/components/ui/button'
+import { ExpandButton } from '@/components/ui/ExpandButton'
 import { isMockMode } from '@/lib/settings'
 import { cn } from '@/lib/utils'
+import { toCss, useZoomPan } from '@/lib/zoompan'
 
 import { useTopic } from '@/lib/ros'
 import { StdMsgsString, TagDetection } from '@/types/ros'
@@ -287,19 +290,40 @@ interface CameraStreamProps {
   baseUrl: string
   className?: string
   label?: string
-  // --- NEW: We tell the video player whether to show boxes from the outside! ---
-  showBoxes?: boolean 
+  /** When true, render the AprilTag overlay boxes. */
+  showBoxes?: boolean
+  /** When true, enable wheel/drag zoom-pan + show zoom controls (maximized variant). */
+  interactive?: boolean
 }
 
-export function CameraStream({ topic, baseUrl, className, label, showBoxes = false }: CameraStreamProps) {
+/** Small instrument-chrome icon button used for the stream's overlay controls. */
+function StreamIconButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-hairline bg-ink-0/70 text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:bg-ink-3 hover:text-foreground"
+    >
+      {children}
+    </button>
+  )
+}
+
+export function CameraStream({ topic, baseUrl, className, label, showBoxes = false, interactive = false }: CameraStreamProps) {
   const mock = isMockMode()
+  const focus = useFocusPanel()
+  const { transform, bind, zoomBy, reset } = useZoomPan(1, 6)
   const [errored, setErrored] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [fps, setFps] = useState<number | null>(null)
-  const [fullscreen, setFullscreen] = useState(false)
+  // Overlay canvas size derived from the real frame so AprilTag corners (in
+  // stream pixel coords) stay registered at any resolution — not hardcoded.
+  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 640, h: 480 })
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  
+
   const tagMessage = useTopic<StdMsgsString>(
     '/camera/tag_detections_json',
     'std_msgs/String'
@@ -320,7 +344,11 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
 
   const url = `${baseUrl.replace(/\/$/, '')}/stream?topic=${topic.replace(/ /g, '%20')}&type=mjpeg`
 
-  const onLoad = () => {
+  const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget
+    if (img.naturalWidth && (img.naturalWidth !== dims.w || img.naturalHeight !== dims.h)) {
+      setDims({ w: img.naturalWidth, h: img.naturalHeight })
+    }
     const now = performance.now()
     frameTimes.current.push(now)
     while (frameTimes.current.length > 30) frameTimes.current.shift()
@@ -331,20 +359,23 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
     }
   }
 
-  const toggleFullscreen = async () => {
-    const el = wrapRef.current
-    if (!el) return
-    try {
-      if (!document.fullscreenElement) {
-        await el.requestFullscreen()
-        setFullscreen(true)
-      } else {
-        await document.exitFullscreen()
-        setFullscreen(false)
-      }
-    } catch {
-    }
-  }
+  // Open the same stream maximized in the shared in-app FocusPanel (stays in the
+  // app shell so E-stop / Take-Control remain visible — unlike native fullscreen).
+  const openMaximized = () =>
+    focus.open({
+      title: label ? `Camera · ${label}` : 'Camera',
+      subtitle: topic,
+      render: () => (
+        <CameraStream
+          topic={topic}
+          baseUrl={baseUrl}
+          label={label}
+          showBoxes={showBoxes}
+          interactive
+          className="h-full w-full rounded-none border-0"
+        />
+      ),
+    })
 
 // --- The High-Performance Render Loop ---
   useEffect(() => {
@@ -428,61 +459,66 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
     <div
       ref={wrapRef}
       className={cn(
-        'relative flex flex-col overflow-hidden rounded-md border bg-black',
-        fullscreen && 'h-screen w-screen',
+        'edge-light relative flex flex-col overflow-hidden rounded-sm border border-hairline bg-ink-0',
         className,
       )}
     >
-      <div className="absolute left-2 top-2 z-10 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1 text-xs text-white">
-        <Camera className="h-3.5 w-3.5" />
-        {label ? <span className="font-semibold">{label}</span> : null}
-        <span className="font-mono opacity-80">{topic}</span>
-        {fps != null ? <span className="font-mono opacity-80">{fps} fps</span> : null}
+      <div className="absolute left-2 top-2 z-10 flex items-center gap-2 rounded-sm border border-hairline bg-ink-0/70 px-2 py-1 text-xs backdrop-blur-sm">
+        <Camera className="h-3.5 w-3.5 text-primary" />
+        {label ? <span className="font-semibold text-foreground">{label}</span> : null}
+        <span className="font-mono text-muted-foreground">{topic}</span>
+        {fps != null ? <span className="ticker text-muted-foreground">{fps} fps</span> : null}
       </div>
-      <div className="absolute right-2 top-2 z-10 flex gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setReloadKey((k) => k + 1)}
-          aria-label="Reload"
-          className="h-8 w-8 bg-black/60 text-white hover:bg-black/80"
-        >
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
+        <StreamIconButton onClick={() => setReloadKey((k) => k + 1)} label="Reload">
           <RefreshCcw className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleFullscreen}
-          aria-label="Toggle fullscreen"
-          className="h-8 w-8 bg-black/60 text-white hover:bg-black/80"
-        >
-          {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-        </Button>
+        </StreamIconButton>
+        {interactive ? (
+          <>
+            <StreamIconButton onClick={() => zoomBy(1 / 1.4)} label="Zoom out"><Minus className="h-4 w-4" /></StreamIconButton>
+            <StreamIconButton onClick={() => zoomBy(1.4)} label="Zoom in"><Plus className="h-4 w-4" /></StreamIconButton>
+            <StreamIconButton onClick={reset} label="Reset view"><RotateCcw className="h-4 w-4" /></StreamIconButton>
+          </>
+        ) : (
+          <ExpandButton onClick={openMaximized} />
+        )}
       </div>
 
-      <div className="grid flex-1 place-items-center">
+      <div className="grid flex-1 place-items-center overflow-hidden">
         {mock ? (
           <MockCamera />
         ) : errored ? (
           <NoStream topic={topic} url={url} onRetry={() => setReloadKey((k) => k + 1)} />
         ) : (
-          /* Using Grid to stack them perfectly without breaking Aspect Ratio! */
-          <div className="grid h-full w-full place-items-center">
-            <img
-              key={reloadKey}
-              src={url}
-              alt={`Stream ${topic}`}
-              onError={() => setErrored(true)}
-              onLoad={onLoad}
-              className="col-start-1 row-start-1 h-full w-full object-contain"
-            />
-            {/* Resolution set to exactly match your Gazebo camera matrix */}
-            <canvas
-              ref={canvasRef}
-              width={640}
-              height={480}
-              className="col-start-1 row-start-1 h-full w-full object-contain pointer-events-none"
-            />
+          <div
+            className={cn(
+              'relative grid h-full w-full place-items-center',
+              interactive && 'cursor-grab touch-none active:cursor-grabbing',
+            )}
+            {...(interactive ? bind : {})}
+          >
+            {/* img + overlay-canvas share one transformed box so AprilTag boxes
+                stay registered while zooming/panning. */}
+            <div
+              className="grid h-full w-full place-items-center"
+              style={interactive ? { transform: toCss(transform), transformOrigin: 'center', willChange: 'transform' } : undefined}
+            >
+              <img
+                key={reloadKey}
+                src={url}
+                alt={`Stream ${topic}`}
+                onError={() => setErrored(true)}
+                onLoad={onLoad}
+                draggable={false}
+                className="col-start-1 row-start-1 h-full w-full select-none object-contain"
+              />
+              <canvas
+                ref={canvasRef}
+                width={dims.w}
+                height={dims.h}
+                className="col-start-1 row-start-1 h-full w-full object-contain pointer-events-none"
+              />
+            </div>
           </div>
         )}
       </div>

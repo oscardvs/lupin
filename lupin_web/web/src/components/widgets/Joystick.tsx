@@ -86,7 +86,7 @@ export function Joystick({
   }, [color, size])
 
   return (
-    <div className={cn('reticle relative flex flex-col items-center gap-4 rounded-sm border border-hairline bg-card/40 px-4 pb-3 pt-3 sm:gap-3 sm:pb-4 sm:pt-4', className)}>
+    <div className={cn('reticle relative flex flex-col items-center gap-4 rounded-sm border border-hairline bg-ink-3 px-4 pb-3 pt-3 sm:gap-3 sm:pb-4 sm:pt-4', className)}>
       <span className="reticle-bl" aria-hidden />
       <span className="reticle-br" aria-hidden />
 

@@ -18,7 +18,7 @@ export function SystemCard({ className }: { className?: string } = {}) {
       </CardHeader>
       <CardContent className="grid grid-cols-3 gap-2 text-center">
         {(['cpu', 'ram', 'temp'] as const).map((k) => (
-          <div key={k} className="rounded-sm border border-dashed border-hairline bg-background/30 px-2 py-3">
+          <div key={k} className="rounded-sm border border-dashed border-hairline bg-ink-2 px-2 py-3">
             <div className="tag">{k}</div>
             <div className="ticker text-muted-foreground mt-1">—</div>
           </div>

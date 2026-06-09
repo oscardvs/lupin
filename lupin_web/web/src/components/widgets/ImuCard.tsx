@@ -32,7 +32,7 @@ export function ImuCard({ className }: { className?: string } = {}) {
           {(['roll', 'pitch', 'yaw'] as const).map((k) => {
             const v = euler ? euler[k] * RAD2DEG : 0
             return (
-              <div key={k} className="rounded-sm border border-hairline bg-background/40 px-2 py-2">
+              <div key={k} className="rounded-sm border border-hairline bg-ink-3 px-2 py-2">
                 <div className="tag">{k}</div>
                 <div className="ticker text-base mt-1">
                   {imu ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}°` : '—'}
@@ -60,7 +60,7 @@ function Bar({ label, value, max }: { label: string; value: number; max: number 
   return (
     <div className="flex items-center gap-3">
       <span className="w-6 font-mono text-[11px] text-primary">{label}</span>
-      <div className="relative h-[3px] flex-1 rounded-full bg-muted/60">
+      <div className="relative h-[5px] flex-1 rounded-full bg-ink-3">
         <div className="absolute inset-y-0 left-1/2 w-px bg-hairline" />
         <div
           className={cn('absolute inset-y-0 rounded-full', positive ? 'bg-primary' : 'bg-warning')}

@@ -28,5 +28,9 @@ export const useIsSm = () => useMediaQuery('(min-width: 640px)')
 export const useIsMd = () => useMediaQuery('(min-width: 768px)')
 /** Tailwind lg: breakpoint. */
 export const useIsLg = () => useMediaQuery('(min-width: 1024px)')
+/** Tailwind xl: breakpoint — large desktop; drives density up-scaling. */
+export const useIsXl = () => useMediaQuery('(min-width: 1280px)')
+/** Phone-portrait tier — below Tailwind sm (e.g. iPhone 12 Pro Max = 428w). */
+export const useIsPhone = () => useMediaQuery('(max-width: 639px)')
 /** Coarse pointer (touch). */
 export const useIsTouch = () => useMediaQuery('(pointer: coarse)')

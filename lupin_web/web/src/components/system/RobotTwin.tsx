@@ -12,12 +12,14 @@
  * Guardrails: small canvas, dpr ≤1.5, AA off, lights-only (offline-safe), pause
  * on tab-hidden, reduced-motion drops auto-rotate/parallax, "STALE" on silence.
  */
-import { ContactShadows } from '@react-three/drei'
+import { ContactShadows, OrbitControls } from '@react-three/drei'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 
+import { useFocusPanel } from '@/components/system/FocusPanel'
+import { ExpandButton } from '@/components/ui/ExpandButton'
 import { damp, prefersReducedMotion } from '@/lib/motion'
 import { useTopic } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
@@ -273,13 +275,28 @@ function Scene({
   jointRef,
   poseRef,
   reduced,
+  controllable = false,
 }: {
   jointRef: React.MutableRefObject<JointState | null>
   poseRef: React.MutableRefObject<Odometry | null>
   reduced: boolean
+  controllable?: boolean
 }) {
   return (
     <>
+      {/* Orbit/zoom/pan only in the maximized variant — the inline twin stays a
+          fixed cinematic framing. */}
+      {controllable && (
+        <OrbitControls
+          makeDefault
+          enablePan
+          enableZoom
+          enableDamping={!reduced}
+          target={[0, 0.18, 0]}
+          minDistance={0.25}
+          maxDistance={1.8}
+        />
+      )}
       <ambientLight intensity={0.55} />
       <directionalLight position={[3, 5, 2]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} />
       <pointLight position={[-2, 1.6, -1]} intensity={16} color="#38bdf8" />
@@ -293,7 +310,8 @@ function Scene({
   )
 }
 
-export function RobotTwin({ className }: { className?: string }) {
+export function RobotTwin({ className, controllable = false }: { className?: string; controllable?: boolean }) {
+  const focus = useFocusPanel()
   const [{ jointStatesTopic, odomTopic }] = useSettings()
   const [reduced] = useState(prefersReducedMotion)
   const [hidden, setHidden] = useState(false)
@@ -325,7 +343,7 @@ export function RobotTwin({ className }: { className?: string }) {
         camera={{ position: [0.34, 0.34, 0.46], fov: 40 }}
         gl={{ antialias: false, alpha: true, powerPreference: 'low-power' }}
       >
-        <Scene jointRef={jointRef} poseRef={poseRef} reduced={reduced} />
+        <Scene jointRef={jointRef} poseRef={poseRef} reduced={reduced} controllable={controllable} />
       </Canvas>
 
       <div className="reticle pointer-events-none absolute inset-0">
@@ -336,6 +354,20 @@ export function RobotTwin({ className }: { className?: string }) {
         <span className="tag tag-strong">digital twin</span>
         <span className="tag tag-accent">MDL-MIRTE-01</span>
       </div>
+      {!controllable && (
+        <div className="absolute right-3 top-3">
+          <ExpandButton
+            label="Maximize twin"
+            onClick={() =>
+              focus.open({
+                title: 'Digital Twin',
+                subtitle: 'drag orbit · scroll zoom',
+                render: () => <RobotTwin controllable className="h-full w-full" />,
+              })
+            }
+          />
+        </div>
+      )}
       <div className="pointer-events-none absolute bottom-3 right-3">
         <span className={cn('tag', stale ? 'text-warning' : 'tag-accent')}>{stale ? '○ stale' : '● live'}</span>
       </div>

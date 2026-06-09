@@ -6,6 +6,7 @@ import { SettingsDrawer } from '@/components/SettingsDrawer'
 import { TopBar } from '@/components/TopBar'
 import { AuroraBackground, type AuroraTone } from '@/components/system/AuroraBackground'
 import { BootSequence } from '@/components/system/BootSequence'
+import { FocusPanelProvider } from '@/components/system/FocusPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ArmView } from '@/components/views/ArmView'
@@ -38,7 +39,9 @@ export default function App() {
       <TooltipProvider delayDuration={200}>
         <RosProvider>
           <EStopProvider>
-            <Shell />
+            <FocusPanelProvider>
+              <Shell />
+            </FocusPanelProvider>
           </EStopProvider>
         </RosProvider>
       </TooltipProvider>
@@ -94,7 +97,7 @@ function Shell() {
                 <TabsTrigger
                   key={id}
                   value={id}
-                  className="gap-2 px-2.5 sm:px-3"
+                  className="group gap-2 px-2.5 sm:px-3"
                   aria-label={label}
                 >
                   {tab === id ? (
@@ -108,7 +111,9 @@ function Shell() {
                     {code}
                   </span>
                   <Icon className="h-[14px] w-[14px] shrink-0" />
-                  <span className="hidden sm:inline">{label}</span>
+                  {/* Keep the ACTIVE tab worded even on phone (others stay icon-only)
+                      so there's always one text anchor in the strip. */}
+                  <span className="hidden group-data-[state=active]:inline sm:inline">{label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -129,7 +134,7 @@ function Shell() {
               value={id}
               className="m-0 flex-1 min-h-0 overflow-y-auto"
             >
-              <motion.div variants={viewSwap} initial="hidden" animate="show" className="min-h-full">
+              <motion.div variants={viewSwap} initial="hidden" animate="show" className="h-full min-h-0">
                 <View />
               </motion.div>
             </TabsContent>

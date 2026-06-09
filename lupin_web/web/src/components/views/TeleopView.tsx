@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Joystick, type StickValue } from '@/components/widgets/Joystick'
 import { TwistReadout } from '@/components/widgets/TwistReadout'
+import { ViewShell } from '@/components/system/ViewShell'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { ESTOP_REASON_LABELS, useCmdVel, useEStop } from '@/lib/estop'
@@ -11,7 +12,7 @@ import {
   useMissionServices,
   useMissionState,
 } from '@/lib/mission'
-import { useIsSm } from '@/lib/responsive'
+import { useIsLg, useIsSm, useIsXl } from '@/lib/responsive'
 import { useSettings } from '@/lib/settings'
 import { useThrottledRender } from '@/lib/throttle'
 import { cn } from '@/lib/utils'
@@ -39,7 +40,11 @@ export function TeleopView() {
   const [missionBusy, setMissionBusy] = useState<'pause' | 'resume' | null>(null)
   const [missionErr, setMissionErr] = useState<string | null>(null)
   const isSm = useIsSm()
-  const stickSize = isSm ? 196 : 148
+  const isLg = useIsLg()
+  const isXl = useIsXl()
+  // Sticks grow with the viewport so the console fills desktop instead of
+  // floating in a void; phone keeps two ~150px dials side-by-side in one row.
+  const stickSize = isXl ? 240 : isLg ? 208 : isSm ? 184 : 150
 
   const leftRef = useRef<StickValue>({ x: 0, y: 0, active: false })
   const rightRef = useRef<StickValue>({ x: 0, y: 0, active: false })
@@ -119,7 +124,7 @@ export function TeleopView() {
   }
 
   return (
-    <div className="flex w-full flex-col gap-3 p-3 sm:gap-4 sm:p-4">
+    <ViewShell intent="fit">
       {estopActive ? (
         <div className="reticle relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm border-2 border-destructive bg-destructive/10 px-3 py-2.5 text-sm sm:px-4 sm:py-3">
           <span className="reticle-bl" aria-hidden />
@@ -167,10 +172,11 @@ export function TeleopView() {
         />
       )}
 
-      {/* primary console region — two stick stations + readout HUD */}
+      {/* primary console region — two stick stations + readout HUD. Flexes to
+          fill the viewport so desktop has no void; opaque ink tile, not glass. */}
       <div
         className={cn(
-          'reticle relative rounded-sm border border-hairline bg-card/35 p-3 sm:p-6 scanline',
+          'reticle relative flex min-h-0 flex-1 flex-col rounded-sm border border-hairline bg-ink-2 p-3 sm:p-5 scanline',
           (estopActive || missionLocked) && 'pointer-events-none opacity-50',
         )}
       >
@@ -187,15 +193,17 @@ export function TeleopView() {
           </span>
         </div>
 
-        {/* Three direct flex children: stick-1, stick-2, readout */}
-        <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:justify-around sm:gap-6">
+        {/* The two dials share a baseline; the readout is the OUTPUT column.
+            On phone the dials sit 2-up and the readout spans the row below.
+            content-center fills the panel height instead of leaving a void. */}
+        <div className="grid min-h-0 flex-1 grid-cols-2 content-center items-center gap-4 lg:grid-cols-[1fr_1fr_minmax(13rem,17rem)] lg:gap-6">
           <Joystick
             label="Linear · vX / vY"
             hint="↑ forward · ↔ strafe"
             size={stickSize}
             axisTags={['+X', '−Y', '−X', '+Y']}
             serial="STK-01"
-            className="shrink-0"
+            className="justify-self-center"
             onChange={(v) => {
               leftRef.current = v
             }}
@@ -206,24 +214,24 @@ export function TeleopView() {
             size={stickSize}
             axisTags={['—', 'ccw', '—', 'cw']}
             serial="STK-02"
-            className="shrink-0"
+            className="justify-self-center"
             onChange={(v) => {
               rightRef.current = v
             }}
           />
           <TwistReadout
             value={lastSent}
-            className="w-full max-w-xs shrink-0 sm:w-56"
+            className="col-span-2 w-full self-center lg:col-span-1"
           />
         </div>
       </div>
 
-      {/* secondary controls — speed governor + STOP */}
-      <div className="reticle relative flex flex-col gap-3 rounded-sm border border-hairline bg-card/60 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5 sm:px-5 sm:py-4">
+      {/* secondary controls — speed governor + STOP (one row, opaque tile) */}
+      <div className="reticle relative flex shrink-0 flex-row flex-wrap items-center gap-3 rounded-sm border border-hairline bg-ink-2 p-3 sm:gap-5 sm:px-5 sm:py-4">
         <span className="reticle-bl" aria-hidden />
         <span className="reticle-br" aria-hidden />
 
-        <div className="flex flex-1 items-center gap-3">
+        <div className="flex flex-1 items-center gap-3 min-w-0">
           <span className="flex items-center gap-1.5 shrink-0">
             <Gauge className="h-3.5 w-3.5 text-primary" />
             <span className="tag tag-strong">governor</span>
@@ -247,14 +255,14 @@ export function TeleopView() {
           size="lg"
           onClick={() => estopTrigger('user')}
           disabled={blocked}
-          className="w-full sm:w-auto sm:px-6"
+          className="w-auto shrink-0 sm:px-6"
         >
           <Square className="mr-2 h-4 w-4 fill-current" />
           STOP
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <Activity className="h-3 w-3 text-primary/80" />
         <span className="tag">tx</span>
         <span className="font-mono text-foreground/80">{cmdVelTopic}</span>
@@ -264,7 +272,7 @@ export function TeleopView() {
           {missionLocked ? 'gated · mission active' : 'while stick · active'}
         </span>
       </div>
-    </div>
+    </ViewShell>
   )
 }
 
