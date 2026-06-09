@@ -175,6 +175,18 @@ class PerceptionAggregator(Node):
         # pan maps cleanly to lateral position once the sweep lands.
         self.declare_parameter('pan_half_span', 0.5)
         self.declare_parameter('camera_half_fov', 0.5)
+        # Spatial box-membership gate: drop YOLO blooms whose projected map
+        # position falls outside the tag's REGISTERED planter rectangle, so
+        # blooms from an adjacent bench / the over-reaching pan sweep are not
+        # misattributed to current_target. Default ON (hardware); a no-op in sim
+        # where blooms place in-bench. Only engages with a registered layout box
+        # (>= 2 tags fit) — never the legacy box or an unregistered/identity
+        # layout, so the temporal fallback is untouched. See
+        # docs/flower_tag_association_audit_2026-06-09.md.
+        self.declare_parameter('flower_box_gate', True)
+        # Metric slack on the rectangle so nominal-FOV error doesn't drop
+        # genuine edge-of-bench blooms.
+        self.declare_parameter('flower_box_gate_margin_m', 0.10)
 
         self._map_frame = str(self.get_parameter('map_frame').value)
         self._tf_prefix = str(self.get_parameter('tf_frame_prefix').value)
@@ -200,6 +212,9 @@ class PerceptionAggregator(Node):
         self._flower_depth_jitter = float(self.get_parameter('flower_depth_jitter_frac').value)
         self._pan_half_span = float(self.get_parameter('pan_half_span').value)
         self._camera_half_fov = float(self.get_parameter('camera_half_fov').value)
+        self._flower_box_gate = bool(self.get_parameter('flower_box_gate').value)
+        self._flower_box_gate_margin = float(
+            self.get_parameter('flower_box_gate_margin_m').value)
         # Real planter rectangles + tag coords (or empty -> legacy box fallback).
         self._load_layout(str(self.get_parameter('tag_locations_file').value))
 
@@ -461,10 +476,15 @@ class PerceptionAggregator(Node):
                     bbox_cx_norm = max(-1.0, min(1.0, (cx / self._image_width - 0.5) * 2.0))
                 except (TypeError, ValueError):
                     bbox_cx_norm = 0.0
+            # Store the UNCLAMPED fraction so the spatial gate can tell a bloom
+            # that points past the bench end (|f| > 1) from one merely at the
+            # edge; bin_detections re-clamps for placement, so this never moves
+            # an in-box bloom.
             f = lateral_fraction(
                 self._shoulder_pan, bbox_cx_norm,
                 pan_half_span=self._pan_half_span,
                 camera_half_fov=self._camera_half_fov,
+                clamp=False,
             )
             frame_dets.append((f, name, conf))
         self._fuse_flower(now_mono, frame_dets)
@@ -512,25 +532,57 @@ class PerceptionAggregator(Node):
             dst.append((rec.pose.position.x, rec.pose.position.y))
         return solve_rigid_2d(src, dst)
 
-    def _box_geom_for(self, rec: '_TagRecord'):
-        """Box geometry for a tag: the REAL table rectangle from the layout,
-        registered into the map frame. Falls back to the legacy tag-anchored
-        StandardBox when the layout/table is unavailable or degenerate."""
+    def _registered_layout_active(self) -> bool:
+        """True iff a real JSON→map fit exists: ≥ 2 discovered tags (committed
+        pose, ≥ min_sightings) are present in the layout JSON. Below that the
+        transform is identity/unregistered, so the spatial gate stays off and
+        the temporal path is preserved (mirrors :meth:`_layout_transform`'s
+        correspondence set)."""
+        if not self._tables:
+            return False
+        n = 0
+        for rec in self._registry.values():
+            if rec.pose is None or rec.sightings < self._min_sightings:
+                continue
+            if rec.tag_id in self._tag_json_xy:
+                n += 1
+                if n >= 2:
+                    return True
+        return False
+
+    def _layout_box_geom(self, rec: '_TagRecord'):
+        """The REAL table rectangle from the layout, registered into the map
+        frame, or None when the layout/table is unavailable or degenerate (the
+        caller then falls back to the legacy tag-anchored box)."""
         if rec.pose is None:
             return None
         j = self._tag_json_xy.get(rec.tag_id)
-        if j is not None and self._tables:
-            rect = nearest_table_rect(j, self._tables)
-            if rect is not None:
-                tf = self._layout_transform()
-                corners = [tf.apply(x, y) for (x, y) in table_rect_corners(rect)]
-                geom = box_geometry_from_corners(
-                    corners, toward=(rec.pose.position.x, rec.pose.position.y),
-                )
-                if geom is not None:
-                    return geom
-        # Legacy: box hung off the tag pose (None if the tag normal is degenerate).
-        return box_from_tag(rec.pose, self._box)
+        if j is None or not self._tables:
+            return None
+        rect = nearest_table_rect(j, self._tables)
+        if rect is None:
+            return None
+        tf = self._layout_transform()
+        corners = [tf.apply(x, y) for (x, y) in table_rect_corners(rect)]
+        return box_geometry_from_corners(
+            corners, toward=(rec.pose.position.x, rec.pose.position.y),
+        )
+
+    def _gate_detections(self, geom, dets):
+        """Drop per-scan detections whose projected bloom falls outside ``geom``
+        (the registered bench rectangle, inflated by ``flower_box_gate_margin_m``).
+
+        Uses the UNCLAMPED lateral fraction and the base scan depth, so a bearing
+        that points past the bench end is rejected rather than clamped onto the
+        current bench's edge column — the core of the misattribution fix."""
+        margin = self._flower_box_gate_margin
+        kept = []
+        for det in dets:
+            f = det[0]
+            x, y = geom.place(f, self._flower_base_depth)
+            if geom.contains(x, y, margin_m=margin):
+                kept.append(det)
+        return kept
 
     def _fuse_flower(self, now_mono: float,
                      frame_dets: list[tuple[float, str, float]]) -> None:
@@ -551,24 +603,36 @@ class PerceptionAggregator(Node):
             self._scan_dets.clear()
         self._scan_dets.extend(frame_dets)
 
+        # Geometry for this tag: the registered real planter rectangle (layout)
+        # or the legacy tag-anchored box. The spatial membership gate runs ONLY
+        # against a registered layout box (≥ 2 tags fit) — never the legacy
+        # single-quaternion box or an unregistered/identity layout — so blooms
+        # pointing off the bench are dropped on hardware while the temporal path
+        # is untouched everywhere geometry is unavailable.
+        layout_geom = self._layout_box_geom(rec)
+        geom = layout_geom if layout_geom is not None else box_from_tag(rec.pose, self._box)
+        if (self._flower_box_gate and layout_geom is not None
+                and self._registered_layout_active()):
+            dets = self._gate_detections(layout_geom, self._scan_dets)
+        else:
+            dets = list(self._scan_dets)
+
         # Dominant tulip species (best confidence) + bug flag for the summary.
         # Derive from the per-scan, tag-scoped accumulator (reset on tag change)
         # rather than the shared time window, so a 'bug' or species seen at the
         # previous pot can't bleed into this pot's summary within yolo_window_s.
         best_species, best_conf = '', 0.0
         anomaly = False
-        for _, name, conf in self._scan_dets:
+        for _, name, conf in dets:
             if name == self._anomaly_name:
                 anomaly = True
                 continue
             if conf > best_conf:
                 best_species, best_conf = name, conf
 
-        # Locate the blooms inside the box from the accumulated detections.
-        # geom is the registered real planter rectangle (or the legacy tag box).
-        geom = self._box_geom_for(rec)
+        # Locate the blooms inside the box from the (gated) detections.
         flowers = bin_detections(
-            self._scan_dets, geom,
+            dets, geom,
             lateral_columns=self._lateral_columns,
             base_depth_frac=self._flower_base_depth,
             depth_jitter_frac=self._flower_depth_jitter,

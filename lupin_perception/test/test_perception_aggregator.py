@@ -245,6 +245,76 @@ def test_box_footprint_is_the_real_table_rectangle(node):
     assert got == _TABLE1_CORNERS  # the real bench, not a 0.80×0.40 synthesised box
 
 
+# ── spatial box-membership gate (fix/flower-tag-association) ────────────────
+# With two layout tags (6 & 29 on Table1) registered, the gate projects each
+# detection into the bench rectangle and drops the ones whose bearing points
+# off the bench, instead of clamping them onto current_target's edge column.
+
+
+def test_flower_outside_box_is_not_attributed(node):
+    # (i) A bloom whose pan/bearing points past the bench end must NOT be
+    # attributed to current_target — it is dropped, not clamped onto the edge.
+    node._lookup_tag_pose = lambda tag_id: _pose_at(*_TAG_JSON[tag_id])
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8), (29, 0.8)))  # 2 tags -> registered
+    _scanning(node, '6')
+    _joints(node, 1.6)  # pan well past the ±0.5 sweep -> off-bench bearing
+    node._on_yolo_detections(_yolo_cx((0, 0.95, 320)))  # centred bbox, tulip_red
+    rec = node._registry['6']
+    assert rec.species == ''
+    assert rec.anomaly is False
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs == []
+
+
+def test_in_box_flower_still_attaches_species_and_anomaly(node):
+    # (ii) With the gate active, an in-bench bloom still attaches species AND
+    # the bug anomaly flag and emits a located flower.
+    node._lookup_tag_pose = lambda tag_id: _pose_at(*_TAG_JSON[tag_id])
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8), (29, 0.8)))
+    _scanning(node, '6')
+    _joints(node, 0.0)
+    node._on_yolo_detections(_yolo_cx((0, 0.92, 320), (3, 0.8, 320)))  # red + bug, centre
+    rec = node._registry['6']
+    assert rec.species == 'tulip_red'
+    assert rec.anomaly is True
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs
+    assert any(fp.anomaly for fp in flower_obs[-1].flower.flowers)
+
+
+def test_single_tag_fallback_keeps_temporal_attribution(node):
+    # (iii) Only ONE layout tag registered -> no JSON->map fit (identity /
+    # < 2 tags) -> gate disabled, temporal path preserved: even the off-bench
+    # bearing is still attributed, exactly as before this change.
+    node._lookup_tag_pose = lambda tag_id: _pose_at(*_TAG_JSON['6'])
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8)))  # single tag
+    _scanning(node, '6')
+    _joints(node, 1.6)  # would be dropped if the gate were active
+    node._on_yolo_detections(_yolo_cx((0, 0.95, 320)))
+    assert node._registry['6'].species == 'tulip_red'
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs
+
+
+def test_box_gate_param_off_restores_temporal_path(node):
+    # The gate is behind a parameter (default ON). With it off, an off-bench
+    # bearing is attributed again even with two tags registered.
+    node._flower_box_gate = False
+    node._lookup_tag_pose = lambda tag_id: _pose_at(*_TAG_JSON[tag_id])
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8), (29, 0.8)))
+    _scanning(node, '6')
+    _joints(node, 1.6)
+    node._on_yolo_detections(_yolo_cx((0, 0.95, 320)))
+    assert node._registry['6'].species == 'tulip_red'
+
+
 def test_box_footprint_follows_a_registered_layout(node):
     # Map frame = JSON rotated +90° then translated by (10, -5). Registration
     # must recover it from the two tag correspondences and place the box there.

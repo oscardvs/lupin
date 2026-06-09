@@ -161,3 +161,52 @@ def test_bin_detections_deterministic_depth_jitter():
     a = bin_detections(dets, geom)
     b = bin_detections(dets, geom)
     assert [(f.x, f.y) for f in a] == [(f.x, f.y) for f in b]  # no RNG
+
+
+# ── lateral_fraction clamp flag ─────────────────────────────────────────────
+# The aggregator stores the UNCLAMPED fraction so an over-reach bearing (a bloom
+# pointing past the bench end) survives to the spatial gate instead of being
+# squashed to the box edge. bin_detections re-clamps for placement.
+
+
+def test_lateral_fraction_unclamped_preserves_overreach():
+    # pan well past the sweep -> bearing/span = 1.6. Default clamps to 1.0;
+    # clamp=False keeps 1.6 so the gate can see it is off the bench.
+    assert lateral_fraction(1.6, 0.0) == pytest.approx(1.0, abs=1e-6)
+    assert lateral_fraction(1.6, 0.0, clamp=False) == pytest.approx(1.6, abs=1e-6)
+    assert lateral_fraction(-1.6, 0.0, clamp=False) == pytest.approx(-1.6, abs=1e-6)
+
+
+# ── BoxGeometry.contains — spatial membership test ──────────────────────────
+
+
+def test_contains_interior_point():
+    geom = box_from_tag(FACING_X, BOX)
+    # Box centre (f=0, d=0.5) is inside.
+    x, y = geom.place(0.0, 0.5)
+    assert geom.contains(x, y) is True
+
+
+def test_contains_rejects_point_past_bench_end():
+    geom = box_from_tag(FACING_X, BOX)
+    # f=1.5 -> 0.5*half_w (0.20 m) beyond the +lateral edge: outside.
+    x, y = geom.place(1.5, 0.5)
+    assert geom.contains(x, y) is False
+    # A small margin does not rescue a point that is 0.20 m out.
+    assert geom.contains(x, y, margin_m=0.10) is False
+
+
+def test_contains_margin_admits_near_edge_point():
+    geom = box_from_tag(FACING_X, BOX)
+    # f=1.1 -> 0.04 m beyond the edge (half_w=0.40): outside at margin 0,
+    # inside with a 0.10 m margin.
+    x, y = geom.place(1.1, 0.5)
+    assert geom.contains(x, y) is False
+    assert geom.contains(x, y, margin_m=0.10) is True
+
+
+def test_contains_rejects_point_behind_back_face():
+    geom = box_from_tag(FACING_X, BOX)
+    # d=1.6 -> past the back face (depth=0.40): outside.
+    x, y = geom.place(0.0, 1.6)
+    assert geom.contains(x, y) is False

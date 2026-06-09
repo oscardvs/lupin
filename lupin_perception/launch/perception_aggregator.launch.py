@@ -28,6 +28,17 @@ def generate_launch_description() -> LaunchDescription:
             'tag_locations_file', default_value='',
             description='tag_locations.json with the real planter rectangles + '
                         'tag coords (empty -> bundled greenhouse_sim package).'),
+        DeclareLaunchArgument(
+            'flower_box_gate', default_value='true',
+            description='Drop YOLO blooms whose projected map position falls '
+                        "outside the tag's registered planter rectangle, so an "
+                        'adjacent bench / over-reaching pan sweep is not '
+                        'misattributed to current_target. No-op until >= 2 tags '
+                        'register and a no-op in sim (blooms place in-bench).'),
+        DeclareLaunchArgument(
+            'flower_box_gate_margin_m', default_value='0.10',
+            description='Metric slack on the rectangle for the gate above, so '
+                        'nominal-FOV error does not drop edge-of-bench blooms.'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
     ]
 
@@ -48,6 +59,8 @@ def generate_launch_description() -> LaunchDescription:
             'min_sightings': LaunchConfiguration('min_sightings'),
             'max_tag_distance_m': LaunchConfiguration('max_tag_distance_m'),
             'tag_locations_file': LaunchConfiguration('tag_locations_file'),
+            'flower_box_gate': LaunchConfiguration('flower_box_gate'),
+            'flower_box_gate_margin_m': LaunchConfiguration('flower_box_gate_margin_m'),
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }],
     )
