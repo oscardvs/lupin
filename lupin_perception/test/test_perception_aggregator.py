@@ -242,3 +242,86 @@ def test_counts_unique_tracked_flowers_and_bugs_per_base(node):
     assert rec.bug_count == 1
     assert node.emitted[-1].flower.flower_count == 2
     assert node.emitted[-1].flower.bug_count == 1
+
+
+# ── spatial box-membership gate (fix/flower-tag-association) ─────────────────
+# When the aggregator holds a registered MapBox for current_target (from the
+# box_layout_publisher producer), the gate projects each detection into the
+# bench rectangle and drops the ones whose bearing points off the bench,
+# instead of clamping them onto current_target's edge column.
+
+
+def _box_geom_msg(*boxes):
+    # each box: (id, x, y, yaw, width, depth)
+    return String(data=json.dumps([
+        {'id': i, 'x': x, 'y': y, 'yaw': yaw, 'width': w, 'depth': d}
+        for (i, x, y, yaw, w, d) in boxes
+    ]))
+
+
+# Registered 1.10 x 0.25 m bench for tag 6, normal +x (yaw 0).
+_BENCH6 = ('6', 2.05, 7.4, 0.0, 1.10, 0.25)
+
+
+def test_flower_outside_box_is_not_attributed(node):
+    # (i) A bloom whose pan/bearing points past the bench end must NOT be
+    # attributed to current_target — it is dropped, not clamped onto the edge.
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8)))
+    node._on_box_geometry(_box_geom_msg(_BENCH6))  # registered box -> gate active
+    _scanning(node, '6')
+    _joints(node, 1.6)  # pan well past the ±0.5 sweep -> off-bench bearing
+    node._on_yolo_detections(_yolo_cx((0, 0.95, 320)))  # centred bbox, tulip_red
+    rec = node._registry['6']
+    assert rec.species == ''
+    assert rec.anomaly is False
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs == []
+
+
+def test_in_box_flower_still_attaches_species_and_anomaly(node):
+    # (ii) With the gate active, an in-bench bloom still attaches species AND
+    # the bug anomaly flag and emits a located flower.
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8)))
+    node._on_box_geometry(_box_geom_msg(_BENCH6))
+    _scanning(node, '6')
+    _joints(node, 0.0)
+    node._on_yolo_detections(_yolo_cx((0, 0.92, 320), (3, 0.8, 320)))  # red + bug, centre
+    rec = node._registry['6']
+    assert rec.species == 'tulip_red'
+    assert rec.anomaly is True
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs
+    assert any(fp.anomaly for fp in flower_obs[-1].flower.flowers)
+
+
+def test_no_registered_box_keeps_temporal_attribution(node):
+    # (iii) No registered MapBox (the producer hasn't fit the layout yet) ->
+    # gate disabled, legacy/temporal path preserved: even the off-bench bearing
+    # is still attributed, exactly as before this change.
+    node._lookup_tag_pose = lambda tag_id: _forward_facing_pose()
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((8, 1.0)))  # no box for tag 8
+    _scanning(node, '8')
+    _joints(node, 1.6)  # would be dropped if the gate were active
+    node._on_yolo_detections(_yolo_cx((0, 0.95, 320)))
+    assert node._registry['8'].species == 'tulip_red'
+    flower_obs = [o for o in node.emitted
+                  if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
+    assert flower_obs
+
+
+def test_box_gate_param_off_restores_temporal_path(node):
+    # The gate is behind a parameter (default ON). With it off, an off-bench
+    # bearing is attributed again even with a registered box present.
+    node._flower_box_gate = False
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((6, 0.8)))
+    node._on_box_geometry(_box_geom_msg(_BENCH6))
+    _scanning(node, '6')
+    _joints(node, 1.6)
+    node._on_yolo_detections(_yolo_cx((0, 0.95, 320)))
+    assert node._registry['6'].species == 'tulip_red'
