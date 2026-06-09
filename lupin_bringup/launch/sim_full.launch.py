@@ -93,7 +93,6 @@ def generate_launch_description() -> LaunchDescription:
     pkg_web = get_package_share_directory('lupin_web')
     pkg_hmi = get_package_share_directory('lupin_hmi')
     pkg_rosbridge = get_package_share_directory('rosbridge_server')
-    pkg_slam = get_package_share_directory('slam_toolbox')
     pkg_perception = get_package_share_directory('lupin_perception')
     
     # The Gazebo ROS plugins look for models in GAZEBO_MODEL_PATH, which doesn't
@@ -198,9 +197,14 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # ── 2b. slam_toolbox starts after /scan is up ──────────────────────
+    # Via the shared _slam_core (NOT the upstream slam_toolbox online_async
+    # launch): it pins respawn=True and brings up slam_reset_node, so the HMI
+    # "Erase map" button
+    # (/lupin/nav/clear_map) works in sim exactly as on hardware — it SIGTERMs
+    # slam_toolbox and respawn brings it back with an empty pose graph.
     slam_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_slam, 'launch', 'online_async_launch.py'),
+            os.path.join(pkg_nav, 'launch', '_slam_core.launch.py'),
         ),
         launch_arguments=[
             ('use_sim_time', 'true'),

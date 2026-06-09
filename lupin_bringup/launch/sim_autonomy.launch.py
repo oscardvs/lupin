@@ -34,7 +34,6 @@ def generate_launch_description() -> LaunchDescription:
     pkg_nav = get_package_share_directory('lupin_navigation')
     pkg_mission = get_package_share_directory('lupin_mission')
     pkg_twin = get_package_share_directory('lupin_twin')
-    pkg_slam = get_package_share_directory('slam_toolbox')
 
     args = [
         DeclareLaunchArgument('dependency_timeout_s', default_value='120.0'),
@@ -43,10 +42,13 @@ def generate_launch_description() -> LaunchDescription:
     widened_tag_locations = os.path.join(pkg_bringup, 'config', 'tag_locations_widened.json')
     approach_overrides = os.path.join(pkg_bringup, 'config', 'approach_overrides.yaml')
 
-    # SLAM — subscribes /scan, owns /map + map→odom.
+    # SLAM — subscribes /scan, owns /map + map→odom. Via the shared _slam_core
+    # (NOT upstream online_async) so respawn=True + slam_reset_node come up too:
+    # the HMI "Erase map" button (/lupin/nav/clear_map) then works in sim just
+    # as it does on hardware.
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_slam, 'launch', 'online_async_launch.py'),
+            os.path.join(pkg_nav, 'launch', '_slam_core.launch.py'),
         ),
         launch_arguments=[
             ('use_sim_time', 'true'),
