@@ -30,7 +30,7 @@ def generate_launch_description() -> LaunchDescription:
     pkg_rosbridge = get_package_share_directory('rosbridge_server')
 
     args = [
-        DeclareLaunchArgument('web_port', default_value='8090'),
+        DeclareLaunchArgument('web_port', default_value='8092'),
         DeclareLaunchArgument('rviz', default_value='true'),
     ]
 

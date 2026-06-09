@@ -162,7 +162,13 @@ pest land as markers on the twin / HMI Map.
 | **Lidar in HMI** | HMI Lidar view | Scan paints; planters show as obstacles |
 | **Map + Nav2 goal** | HMI Map view, click a destination | Robot plans + drives, routes **around** planters |
 | **Mission** | HMI **Explore & monitor** = 4 | State walks PREPARE→EXPLORING→MONITORING |
-| **Flower → map** | Let the mission inspect a tagged pot | Species-coloured marker on the Map |
+| **Flower → map** | Let the mission inspect a tagged pot | Marker appears on the Map (colour unreliable in the 1.0.8 layout — see §7) |
+| **Battery divert** | mid-mission: `ros2 param set /sim_battery_publisher override_percentage 0.15` | State → RETURNING, robot docks + pauses; recover with `0.9` then `/mission/resume` |
+| **E-stop** | `timeout 4 ros2 topic pub --qos-reliability reliable -r 20 /e_stop_state std_msgs/msg/Bool '{data: true}'` then `false` | Robot halts + pauses; release + `/mission/resume` continues |
+
+> The e-stop and battery have **no sim publisher of their own** — you drive them by
+> hand as above (e-stop needs a ≥4 s reliable-QoS publisher or it loses the discovery
+> race against the orchestrator's subscriber).
 
 ---
 
@@ -170,9 +176,15 @@ pest land as markers on the twin / HMI Map.
 
 - **Drive is teleport, not rolling wheels** — the base slides under `planar_move`. The
   one accepted sim-only difference; everything upstream matches hardware.
-- **`FAULT` is terminal.** `/mission/abort` will NOT clear it
-  (`"no active mission to abort (state=FAULT)"`). To recover: **Ctrl-C T2 and relaunch
-  `sim_autonomy`** (restarts the orchestrator), then start the mission again.
+- **`FAULT` recovers with `/mission/reset`** — it is NOT terminal. `/mission/abort` still
+  won't clear it, but `ros2 service call /mission/reset std_srvs/srv/Trigger {}` fires the
+  `recover` transition (FAULT→READY) without restarting the orchestrator; then start the
+  mission again. (Relaunching T2 also works but is heavier.)
+- **Flower colour reads as uniform `tulip_white`** in the current 1.0.8 layout: the gripper
+  cam frames the planter wall, not the blossoms, so `sim_flower_detector` sees a desaturated
+  frame. The marker still appears but species/pest is unreliable; the mission FSM is
+  unaffected (species is display-only per `docs/CONTRACTS.md`). Fix = re-aim the `inspect`
+  arm preset / gripper-cam mount and verify against `/sim_flower/overlay`.
 - **3 controllers, not 5** (see §2). Expected.
 - **Planters in the costmap:** the planter bodies are 0.14 m so the ~0.107 m lidar
   plane sees them and Nav2 routes around them. **Do NOT regenerate `greenhouse.world`**
@@ -199,7 +211,11 @@ Then redo §2 onwards.
 - **HMI URL:** http://localhost:8090
 - **Drive topic (sim):** `/cmd_vel` → `gazebo_ros_planar_move` (hardware: `/mirte_base_controller/cmd_vel`)
 - **Odom:** `planar_move` publishes `/odom`, relayed to `/mirte_base_controller/odom` (hardware-identical topic) + `odom→base_link` TF
-- **Mission:** start `/mission/start` (`lupin_msgs/srv/StartMission`) or HMI **Explore & monitor**; state on `/mission/state`; `/mission/abort|pause|resume|skip_current`
+- **Mission:** start `/mission/start` (`lupin_msgs/srv/StartMission`) or HMI **Explore & monitor**; state on `/mission/state`; `/mission/abort|pause|resume|skip_current|dock|reset`
 - **Clean script:** `lupin_bringup/scripts/sim-clean.sh`
 - **Vendor sim edits:** `lupin_bringup/scripts/apply-sim-vendor-edits.sh`
 - **Deeper runbook:** `lupin/docs/sim_full_mission_runbook.md`
+- **All-in-one `sim_full.launch.py`** (the quick-demo path the deeper runbook uses): on
+  `main` its twist_mux is mis-wired to a dead topic, so the robot won't drive — fixed in
+  MR !42. Until that merges, use this 3-terminal split (unaffected: `sim_robot`'s mux is
+  correct). Full root-cause + validation: `lupin/docs/superpowers/2026-06-08-mission-debug.md`.
