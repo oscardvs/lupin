@@ -75,6 +75,38 @@ def test_far_tag_not_pose_committed(node):
     assert _discovered_ids(node) == set()
 
 
+def _captured_landmark_tfs(node):
+    """Capture the TransformStampeds the landmark broadcaster would send."""
+    sent = []
+    node._landmark_broadcaster.sendTransform = sent.append  # type: ignore[method-assign]
+    node._publish_landmark_tfs()
+    out = []
+    for item in sent:  # sendTransform takes either one TF or a list
+        out.extend(item if isinstance(item, list) else [item])
+    return out
+
+
+def test_discovered_tag_gets_persistent_map_tf(node):
+    # Symptom B fix: once a tag is discovered, the aggregator re-broadcasts its
+    # best-sighting pose as a STABLE map-anchored frame (tag_<id>_map), so RViz
+    # keeps showing it after the ephemeral camera-relative tag_<id> ages out.
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((5, 0.8)))
+    by_child = {t.child_frame_id: t for t in _captured_landmark_tfs(node)}
+    assert 'tag_5_map' in by_child
+    t = by_child['tag_5_map']
+    assert t.header.frame_id == 'map'          # map-anchored, not camera-relative
+    assert t.transform.translation.x == pytest.approx(1.0)
+    assert t.transform.translation.y == pytest.approx(2.0)
+
+
+def test_undiscovered_tag_has_no_persistent_tf(node):
+    # Below min_sightings the tag is a candidate only — no persistent frame yet,
+    # so a single noisy detection can't pin a bad landmark on the map.
+    node._on_tag_detections(_tag_frame((5, 0.8)))
+    assert _captured_landmark_tfs(node) == []
+
+
 def _scan(node, tag_id):
     ms = MissionState()
     ms.lifecycle_state = 'MONITORING'

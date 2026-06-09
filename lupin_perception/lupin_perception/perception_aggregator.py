@@ -42,7 +42,7 @@ from collections import deque
 from typing import Optional
 
 import rclpy
-from geometry_msgs.msg import Point, Point32, Polygon, Pose
+from geometry_msgs.msg import Point, Point32, Polygon, Pose, TransformStamped
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import (
@@ -59,6 +59,7 @@ from tf2_ros import (
     ConnectivityException,
     ExtrapolationException,
     LookupException,
+    TransformBroadcaster,
     TransformListener,
 )
 
@@ -143,6 +144,13 @@ class PerceptionAggregator(Node):
         self.declare_parameter('max_tag_distance_m', 2.5)
         # A registry entry is "fresh" (confirmable / live) within this window.
         self.declare_parameter('freshness_s', 5.0)
+        # Persistent landmark TF: re-broadcast each discovered tag as a stable
+        # map-anchored frame (tag_<id>_map). The detector's tag_<id> TF is
+        # camera-relative and only sent while the tag is in view, so RViz greys
+        # it out (Frame Timeout) once the tag leaves the FOV. This keeps the
+        # discovered tag visible — anchored to map so it never drifts.
+        self.declare_parameter('landmark_tf', True)
+        self.declare_parameter('landmark_tf_rate_hz', 5.0)
         # YOLO detections older than this are dropped from the fusion window.
         self.declare_parameter('yolo_window_s', 2.0)
         # Minimum YOLO confidence to consider a flower/anomaly detection.
@@ -196,6 +204,8 @@ class PerceptionAggregator(Node):
         self._min_sightings = int(self.get_parameter('min_sightings').value)
         self._max_dist = float(self.get_parameter('max_tag_distance_m').value)
         self._freshness_s = float(self.get_parameter('freshness_s').value)
+        self._landmark_tf = bool(self.get_parameter('landmark_tf').value)
+        landmark_rate = float(self.get_parameter('landmark_tf_rate_hz').value)
         self._yolo_window_s = float(self.get_parameter('yolo_window_s').value)
         self._yolo_min_conf = float(self.get_parameter('yolo_min_confidence').value)
         self._class_names = [str(n) for n in self.get_parameter('flower_class_names').value]
@@ -245,6 +255,9 @@ class PerceptionAggregator(Node):
         # ── TF ──────────────────────────────────────────────────────────
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
+        # Persistent map-anchored landmark frames for discovered tags. Always
+        # constructed (cheap); only the re-broadcast timer is gated on the param.
+        self._landmark_broadcaster = TransformBroadcaster(self)
 
         # ── QoS ───────────────────────────────────────────────────────
         # Latched snapshot, like /twin/state and /mission/state, so a late
@@ -307,11 +320,16 @@ class PerceptionAggregator(Node):
         self._publish_timer = self.create_timer(
             1.0 / max(publish_rate, 0.2), self._publish_discovered,
         )
+        if self._landmark_tf:
+            self._landmark_timer = self.create_timer(
+                1.0 / max(landmark_rate, 0.2), self._publish_landmark_tfs,
+            )
 
         self.get_logger().info(
             f'perception_aggregator online — map_frame="{self._map_frame}", '
             f'min_sightings={self._min_sightings}, '
-            f'classes={self._class_names} (anomaly="{self._anomaly_name}")'
+            f'classes={self._class_names} (anomaly="{self._anomaly_name}"), '
+            f'landmark_tf={self._landmark_tf} (persistent {self._tf_prefix}<id>_map frames)'
         )
 
     # ─── time helper ───────────────────────────────────────────────────
@@ -393,6 +411,44 @@ class PerceptionAggregator(Node):
         pose.position.x, pose.position.y, pose.position.z = t.x, t.y, t.z
         pose.orientation = r
         return pose
+
+    def _publish_landmark_tfs(self) -> None:
+        """Re-broadcast each discovered tag as a stable map-anchored frame.
+
+        The detector's ``tag_<id>`` TF is camera-relative and only published
+        while the tag is in view, so RViz greys it out (Frame Timeout) and drops
+        it once the tag leaves the FOV. This emits a persistent ``tag_<id>_map``
+        frame at the tag's best-sighting map pose — parented to ``map`` so it
+        never drifts as the robot moves, and re-stamped every tick so RViz never
+        ages it out. Only discovered tags (>= min_sightings, pose committed) are
+        published, so a single noisy frame can't pin a bad landmark.
+        """
+        now = self.get_clock().now().to_msg()
+        transforms = []
+        for tag_id, rec in self._registry.items():
+            if rec.pose is None or rec.sightings < self._min_sightings:
+                continue
+            t = TransformStamped()
+            t.header.stamp = now
+            t.header.frame_id = self._map_frame
+            t.child_frame_id = f'{self._tf_prefix}{tag_id}_map'
+            p = rec.pose
+            t.transform.translation.x = p.position.x
+            t.transform.translation.y = p.position.y
+            t.transform.translation.z = p.position.z
+            q = p.orientation
+            # A discovered pose comes from a valid map->tag lookup, but guard the
+            # degenerate all-zero quaternion so tf2 never logs an invalid TF.
+            if q.x == 0.0 and q.y == 0.0 and q.z == 0.0 and q.w == 0.0:
+                t.transform.rotation.w = 1.0
+            else:
+                t.transform.rotation.x = q.x
+                t.transform.rotation.y = q.y
+                t.transform.rotation.z = q.z
+                t.transform.rotation.w = q.w
+            transforms.append(t)
+        if transforms:
+            self._landmark_broadcaster.sendTransform(transforms)
 
     def _record_tag(self, tag_id: str, pose: Pose, dist: float,
                     now_mono: float) -> None:
