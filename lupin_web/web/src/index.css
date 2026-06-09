@@ -146,22 +146,8 @@
     background-attachment: fixed;
   }
 
-  /* Layered grid texture — drifts very slowly so the surface feels alive. */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background-image:
-      linear-gradient(hsla(120, 8%, 30%, 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, hsla(120, 8%, 30%, 0.08) 1px, transparent 1px);
-    background-size: 56px 56px;
-    background-position: -1px -1px;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
-    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
-    animation: grid-drift 60s linear infinite;
-  }
+  /* (Removed the body::before grid — the AuroraBackground now owns the single
+     grid texture, so base surfaces aren't double-textured behind opaque tiles.) */
 
   #root {
     position: relative;

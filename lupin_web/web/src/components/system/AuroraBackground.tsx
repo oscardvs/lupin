@@ -260,11 +260,12 @@ export function AuroraBackground({ tone = 'idle' }: { tone?: AuroraTone }) {
       {/* Deterministic contrast floor: a fixed dark scrim so text legibility is
           computed against a KNOWN luminance, never the live shader's brightest
           pixel. Everything above this is guaranteed-dark base. */}
-      <div className="absolute inset-0" style={{ backgroundColor: 'hsl(var(--ink-1) / 0.4)' }} />
+      <div className="absolute inset-0" style={{ backgroundColor: 'hsl(var(--ink-1) / 0.62)' }} />
 
-      {/* Drifting hex grid + floor vignette over the colour field. */}
+      {/* Drifting hex grid + floor vignette over the colour field. Kept subtle
+          now that base tiles are opaque — only the inter-panel gaps show it. */}
       <div
-        className="absolute inset-0 bg-grid opacity-[0.5]"
+        className="absolute inset-0 bg-grid opacity-[0.32]"
         style={{
           maskImage: 'radial-gradient(ellipse 85% 65% at 50% 32%, #000 25%, transparent 82%)',
           WebkitMaskImage: 'radial-gradient(ellipse 85% 65% at 50% 32%, #000 25%, transparent 82%)',
