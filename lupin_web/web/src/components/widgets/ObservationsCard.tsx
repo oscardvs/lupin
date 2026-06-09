@@ -76,7 +76,7 @@ export function ObservationsCard({ className }: ObservationsCardProps) {
 
 function Empty() {
   return (
-    <div className="flex h-full min-h-[6rem] flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-hairline bg-background/30 px-4 py-6 text-center text-muted-foreground">
+    <div className="flex h-full min-h-[6rem] flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-hairline bg-ink-2 px-4 py-6 text-center text-muted-foreground">
       <Inbox className="h-5 w-5 opacity-60" />
       <div className="text-[12px]">No observations yet</div>
       <div className="text-[10px] opacity-80">
@@ -143,7 +143,7 @@ function ReadingsList({ readings }: { readings: SensorReading[] }) {
       {readings.map((r) => (
         <span
           key={r.name}
-          className="inline-flex items-center gap-1 rounded-sm border border-hairline bg-background/40 px-1.5 py-0.5 font-mono text-[11px]"
+          className="inline-flex items-center gap-1 rounded-sm border border-hairline bg-ink-3 px-1.5 py-0.5 font-mono text-[11px]"
           title={`${r.name}: ${r.value}`}
         >
           {r.name === 'temperature' && <Thermometer className="h-3 w-3 opacity-60" />}
@@ -170,7 +170,7 @@ function StatusPill({
         tone === 'ok' && 'border-primary/40 bg-primary/10 text-primary',
         tone === 'warn' && 'border-warning/40 bg-warning/10 text-warning',
         tone === 'err' && 'border-destructive/50 bg-destructive/10 text-destructive-foreground',
-        tone === 'muted' && 'border-hairline bg-background/40 text-muted-foreground',
+        tone === 'muted' && 'border-hairline bg-ink-3 text-muted-foreground',
       )}
     >
       {children}

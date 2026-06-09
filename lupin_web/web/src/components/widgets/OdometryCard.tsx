@@ -47,7 +47,7 @@ function Cell({
   digits?: number
 }) {
   return (
-    <div className="rounded-sm border border-hairline bg-background/40 px-2 py-1.5">
+    <div className="rounded-sm border border-hairline bg-ink-3 px-2 py-1.5">
       <div className="flex items-baseline justify-between">
         <span className="tag tag-accent">{label}</span>
         <span className="tag">{unit}</span>

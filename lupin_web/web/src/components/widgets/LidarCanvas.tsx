@@ -110,7 +110,7 @@ export function LidarCanvas({ className }: { className?: string } = {}) {
         <CardDescription>{scanTopic}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">
-        <div className="relative w-full flex-1 min-h-[260px] overflow-hidden rounded-sm border border-hairline bg-background/60">
+        <div className="relative w-full flex-1 min-h-[180px] overflow-hidden rounded-sm border border-hairline bg-ink-1 sm:min-h-[260px]">
           <canvas ref={canvasRef} className="h-full w-full" />
           <span className="tag absolute left-2 top-2">N · forward</span>
           <span className="tag absolute right-2 bottom-2 tabular-nums">scale · 6m</span>
