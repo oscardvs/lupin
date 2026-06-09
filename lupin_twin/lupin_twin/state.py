@@ -35,6 +35,8 @@ class TwinFlower:
     species: str
     confidence: float
     anomaly: bool
+    z: float = 0.0
+    height_m: float = 0.0
 
 
 @dataclass
@@ -69,6 +71,8 @@ class TagBuffer:
     species: str = ''
     species_confidence: float = 0.0
     anomaly: bool = False
+    flower_count: int = 0
+    bug_count: int = 0
     # Localized blooms inside this tag's box + the box footprint as map (x, y)
     # corners. Latest-wins per monitoring sweep. Empty until a flower scan
     # localizes blooms (box_geometry in perception_aggregator).
@@ -108,6 +112,8 @@ class FlowerUpdate:
     species: str
     species_confidence: float
     anomaly: bool
+    flower_count: int = 0
+    bug_count: int = 0
     flowers: list[TwinFlower] = field(default_factory=list)
     box_footprint: list[tuple[float, float]] = field(default_factory=list)
     pose_x: Optional[float] = None
@@ -185,6 +191,8 @@ class TwinStateStore:
         buf.species = upd.species
         buf.species_confidence = upd.species_confidence
         buf.anomaly = upd.anomaly
+        buf.flower_count = max(0, int(upd.flower_count))
+        buf.bug_count = max(0, int(upd.bug_count))
         buf.flowers = list(upd.flowers)
         buf.box_footprint = list(upd.box_footprint)
         if not buf.has_pose() and upd.pose_x is not None and upd.pose_y is not None:

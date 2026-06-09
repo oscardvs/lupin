@@ -283,7 +283,7 @@ import { cn } from '@/lib/utils'
 import { toCss, useZoomPan } from '@/lib/zoompan'
 
 import { useTopic } from '@/lib/ros'
-import { StdMsgsString, TagDetection } from '@/types/ros'
+import { StdMsgsString, TagDetection, YoloDetection } from '@/types/ros'
 
 interface CameraStreamProps {
   topic: string
@@ -292,6 +292,8 @@ interface CameraStreamProps {
   label?: string
   /** When true, render the AprilTag overlay boxes. */
   showBoxes?: boolean
+  /** When true, render YOLO detections from /yolo/detections. */
+  showYoloBoxes?: boolean
   /** When true, enable wheel/drag zoom-pan + show zoom controls (maximized variant). */
   interactive?: boolean
 }
@@ -311,7 +313,15 @@ function StreamIconButton({ onClick, label, children }: { onClick: () => void; l
   )
 }
 
-export function CameraStream({ topic, baseUrl, className, label, showBoxes = false, interactive = false }: CameraStreamProps) {
+export function CameraStream({
+  topic,
+  baseUrl,
+  className,
+  label,
+  showBoxes = false,
+  showYoloBoxes = false,
+  interactive = false,
+}: CameraStreamProps) {
   const mock = isMockMode()
   const focus = useFocusPanel()
   const { transform, bind, zoomBy, reset } = useZoomPan(1, 6)
@@ -326,6 +336,10 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
 
   const tagMessage = useTopic<StdMsgsString>(
     '/camera/tag_detections_json',
+    'std_msgs/String'
+  )
+  const yoloMessage = useTopic<StdMsgsString>(
+    '/yolo/detections',
     'std_msgs/String'
   )
 
@@ -371,6 +385,7 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
           baseUrl={baseUrl}
           label={label}
           showBoxes={showBoxes}
+          showYoloBoxes={showYoloBoxes}
           interactive
           className="h-full w-full rounded-none border-0"
         />
@@ -379,7 +394,7 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
 
 // --- The High-Performance Render Loop ---
   useEffect(() => {
-    if (!showBoxes) {
+    if (!showBoxes && !showYoloBoxes) {
       const canvas = canvasRef.current
       if (canvas) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
       return
@@ -394,58 +409,101 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
       if (!ctx) return
 
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      const currentData = tagMessage.current?.data
 
-      if (currentData) {
-        try {
-          const detections: TagDetection[] = JSON.parse(currentData)
+      if (showBoxes) {
+        const currentData = tagMessage.current?.data
+        if (currentData) {
+          try {
+            const detections: TagDetection[] = JSON.parse(currentData)
           
-          ctx.lineWidth = 2 // Thinner box lines
-          ctx.font = "bold 10px monospace" // Scaled down to ~0.6
-          ctx.textBaseline = "top"
+            ctx.lineWidth = 2 // Thinner box lines
+            ctx.font = "bold 10px monospace" // Scaled down to ~0.6
+            ctx.textBaseline = "top"
 
-          detections.forEach(tag => {
-            // NEW: Put a safety net INSIDE the loop. 
-            // If one tag fails, the others still draw perfectly!
-            try {
-              // 1. Draw the Green Box
-              ctx.beginPath()
-              ctx.moveTo(tag.corners[0][0], tag.corners[0][1])
-              ctx.lineTo(tag.corners[1][0], tag.corners[1][1])
-              ctx.lineTo(tag.corners[2][0], tag.corners[2][1])
-              ctx.lineTo(tag.corners[3][0], tag.corners[3][1])
-              ctx.closePath()
-              ctx.strokeStyle = "#00FF00"
-              ctx.stroke()
+            detections.forEach(tag => {
+              // NEW: Put a safety net INSIDE the loop.
+              // If one tag fails, the others still draw perfectly!
+              try {
+                // 1. Draw the Green Box
+                ctx.beginPath()
+                ctx.moveTo(tag.corners[0][0], tag.corners[0][1])
+                ctx.lineTo(tag.corners[1][0], tag.corners[1][1])
+                ctx.lineTo(tag.corners[2][0], tag.corners[2][1])
+                ctx.lineTo(tag.corners[3][0], tag.corners[3][1])
+                ctx.closePath()
+                ctx.strokeStyle = "#00FF00"
+                ctx.stroke()
 
-              // 2. Format the Text Safely (Force it to be a Number so it never crashes)
-              const safeDist = Number(tag.dist) || 0
-              const text = `ID: ${tag.id} | ${safeDist.toFixed(2)}m`
-              
-              // 3. Calculate Safe Positions
-              const textX = tag.corners[0][0]
-              let textY = tag.corners[0][1] - 16 // Try to put it 25px above the tag
-              
-              // If the tag is too close to the top of the video, push the text BELOW the tag!
-              if (textY < 0) {
-                textY = tag.corners[0][1] + 6
+                // 2. Format the Text Safely (Force it to be a Number so it never crashes)
+                const safeDist = Number(tag.dist) || 0
+                const text = `ID: ${tag.id} | ${safeDist.toFixed(2)}m`
+
+                // 3. Calculate Safe Positions
+                const textX = tag.corners[0][0]
+                let textY = tag.corners[0][1] - 16 // Try to put it 25px above the tag
+
+                // If the tag is too close to the top of the video, push the text BELOW the tag!
+                if (textY < 0) {
+                  textY = tag.corners[0][1] + 6
+                }
+
+                // 4. Draw the dark background block
+                ctx.fillStyle = "rgba(0, 0, 0, 0.8)"
+                const textMetrics = ctx.measureText(text)
+                ctx.fillRect(textX - 4, textY - 4, textMetrics.width + 8, 24)
+
+                // 5. Draw the Red text
+                ctx.fillStyle = "#FF3333"
+                ctx.fillText(text, textX, textY)
+              } catch (innerErr) {
+                // Silently ignore a corrupted tag, but keep the loop alive!
               }
+            })
+          } catch (err) {
+            // Ignore JSON parse errors from incomplete packets
+          }
+        }
+      }
 
-              // 4. Draw the dark background block
-              ctx.fillStyle = "rgba(0, 0, 0, 0.8)"
-              const textMetrics = ctx.measureText(text)
-              ctx.fillRect(textX - 4, textY - 4, textMetrics.width + 8, 24)
+      if (showYoloBoxes) {
+        const currentData = yoloMessage.current?.data
+        if (currentData) {
+          try {
+            const detections: YoloDetection[] = JSON.parse(currentData)
 
-              // 5. Draw the Red text
-              ctx.fillStyle = "#FF3333"
-              ctx.fillText(text, textX, textY)
-              
-            } catch (innerErr) {
-              // Silently ignore a corrupted tag, but keep the loop alive!
-            }
-          })
-        } catch (err) {
-          // Ignore JSON parse errors from incomplete packets
+            ctx.lineWidth = 2
+            ctx.font = "bold 11px monospace"
+            ctx.textBaseline = "top"
+
+            detections.forEach(det => {
+              try {
+                if (!Array.isArray(det.bbox_xyxy) || det.bbox_xyxy.length !== 4) return
+                const [x1, y1, x2, y2] = det.bbox_xyxy.map(Number)
+                if (![x1, y1, x2, y2].every(Number.isFinite)) return
+
+                const w = Math.max(0, x2 - x1)
+                const h = Math.max(0, y2 - y1)
+                const name = det.class_name || `class ${det.class}`
+                const conf = Number(det.confidence) || 0
+                const track = det.track_id == null ? '' : ` #${det.track_id}`
+                const text = `${name}${track} ${(conf * 100).toFixed(0)}%`
+
+                ctx.strokeStyle = "#38BDF8"
+                ctx.strokeRect(x1, y1, w, h)
+
+                const textMetrics = ctx.measureText(text)
+                const textY = y1 < 20 ? y1 + 4 : y1 - 18
+                ctx.fillStyle = "rgba(0, 0, 0, 0.8)"
+                ctx.fillRect(x1 - 3, textY - 3, textMetrics.width + 8, 20)
+                ctx.fillStyle = "#E0F2FE"
+                ctx.fillText(text, x1 + 1, textY)
+              } catch {
+                // Keep one malformed detection from killing the overlay loop.
+              }
+            })
+          } catch {
+            // Ignore JSON parse errors from incomplete packets.
+          }
         }
       }
       animationId = requestAnimationFrame(renderLoop)
@@ -453,7 +511,7 @@ export function CameraStream({ topic, baseUrl, className, label, showBoxes = fal
 
     renderLoop()
     return () => cancelAnimationFrame(animationId)
-  }, [showBoxes, tagMessage])
+  }, [showBoxes, showYoloBoxes, tagMessage, yoloMessage])
 
   return (
     <div

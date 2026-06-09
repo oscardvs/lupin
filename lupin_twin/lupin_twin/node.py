@@ -310,6 +310,7 @@ class TwinNode(Node):
                 x=float(fp.position.x), y=float(fp.position.y),
                 species=fp.species, confidence=float(fp.confidence),
                 anomaly=bool(fp.anomaly),
+                z=float(fp.position.z), height_m=float(fp.height_m),
             )
             for fp in flower.flowers
         ]
@@ -320,6 +321,8 @@ class TwinNode(Node):
             species=flower.species,
             species_confidence=float(flower.confidence),
             anomaly=bool(flower.anomaly),
+            flower_count=int(flower.flower_count),
+            bug_count=int(flower.bug_count),
             flowers=flowers,
             box_footprint=footprint,
             pose_x=pose.position.x if has_pose else None,
@@ -398,11 +401,14 @@ class TwinNode(Node):
             entry.species = buf.species
             entry.species_confidence = float(buf.species_confidence)
             entry.anomaly = bool(buf.anomaly)
+            entry.flower_count = min(int(buf.flower_count), 65535)
+            entry.bug_count = min(int(buf.bug_count), 65535)
 
             # Localized blooms + box footprint (v2 redesign).
             for fl in buf.flowers:
                 fp = FlowerPoint()
-                fp.position = Point(x=float(fl.x), y=float(fl.y), z=0.0)
+                fp.position = Point(x=float(fl.x), y=float(fl.y), z=float(fl.z))
+                fp.height_m = float(fl.height_m)
                 fp.species = fl.species
                 fp.confidence = float(fl.confidence)
                 fp.anomaly = bool(fl.anomaly)

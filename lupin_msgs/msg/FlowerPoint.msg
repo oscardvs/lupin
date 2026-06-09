@@ -4,7 +4,11 @@
 # draw scattered, species-coloured dots inside the box rectangle instead of
 # stacking every flower on the tag pin.
 
-geometry_msgs/Point position   # map frame (z is 0 in v1 — 2-D placement)
+geometry_msgs/Point position   # map frame; z is estimated from tag/planter geometry
+
+# Estimated vertical extent of the bloom/stem from known planter geometry.
+# 0.0 when no height estimate was available.
+float32 height_m
 
 # YOLO class: "tulip_red" | "tulip_white" | "tulip_pink". May be "" when a
 # column held only the "bug" anomaly class (anomaly True, no tulip species).

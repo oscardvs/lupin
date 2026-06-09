@@ -15,6 +15,8 @@ from types import SimpleNamespace
 from lupin_perception.box_geometry import (
     StandardBox,
     FlowerPointData,
+    MapBox,
+    box_from_map_box,
     box_from_tag,
     bin_detections,
     lateral_fraction,
@@ -74,6 +76,19 @@ def test_footprint_four_corners():
     assert max(xs) == pytest.approx(2.0, abs=1e-6)
     assert min(ys) == pytest.approx(-0.40, abs=1e-6)
     assert max(ys) == pytest.approx(0.40, abs=1e-6)
+
+
+def test_map_box_geometry_uses_box_center_and_yaw():
+    geom = box_from_map_box(MapBox(
+        box_id='base_1', x=1.0, y=2.0, yaw=0.0,
+        width=0.80, depth=0.40, height=0.35,
+    ))
+    assert geom.normal == pytest.approx((1.0, 0.0), abs=1e-6)
+    # centre is (1,2), front face is +depth/2 along the normal.
+    assert geom.origin == pytest.approx((1.20, 2.0), abs=1e-6)
+    x, y = geom.place(0.0, 0.5)
+    assert x == pytest.approx(1.0, abs=1e-6)
+    assert y == pytest.approx(2.0, abs=1e-6)
 
 
 def test_lateral_offset_shifts_origin_along_lateral():

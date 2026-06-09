@@ -145,6 +145,8 @@ def test_record_flower_merges_species_onto_tag():
     assert buf.species == 'tulip_red'
     assert buf.species_confidence == pytest.approx(0.9)
     assert buf.anomaly is False
+    assert buf.flower_count == 0
+    assert buf.bug_count == 0
     # Sensor readings untouched by the flower update.
     assert buf.latest_readings['temperature'] == pytest.approx(21.0)
 
@@ -188,6 +190,19 @@ def test_record_flower_stores_flowers_and_footprint():
     assert len(buf.flowers) == 1
     assert buf.flowers[0].species == 'tulip_red'
     assert buf.box_footprint == [(2.0, 0.4), (2.0, -0.4), (1.6, -0.4), (1.6, 0.4)]
+
+
+def test_record_flower_stores_counts():
+    store = TwinStateStore()
+    upd = FlowerUpdate(
+        tag_id='1', monotonic_at=0.0, species='tulip_red',
+        species_confidence=0.9, anomaly=True,
+        flower_count=4, bug_count=2,
+    )
+    assert store.record_flower(upd) is True
+    buf = store.tag('1')
+    assert buf.flower_count == 4
+    assert buf.bug_count == 2
 
 
 def test_record_flower_latest_wins_for_flowers():

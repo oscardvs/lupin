@@ -1,15 +1,22 @@
-"""Tag-anchored planter-box geometry — pure, ROS-free, unit-testable.
+"""Planter-box geometry — pure, ROS-free, unit-testable.
 
-The AprilTag is a calibrated 3-D anchor and the greenhouse boxes are a
-standard size, so a box's footprint is a rigid transform of the tag pose and
-a detected bloom's map position is a deterministic function of where it sits
-in the box. This module owns that geometry (mirroring how
-``lupin_mission/approach.py`` isolates the approach-pose math): no rclpy, no
-geometry_msgs — the orchestrator/aggregator wrap the plain tuples in ROS
-types at the edge, and the unit tests drive it with SimpleNamespace poses.
+Each greenhouse base/box can be represented by a map-frame centre, yaw, width,
+depth, and height. A detected bloom's map position is then a deterministic
+function of where it sits in that box. This module owns that geometry
+(mirroring how ``lupin_mission/approach.py`` isolates the approach-pose math):
+no rclpy, no geometry_msgs — the orchestrator/aggregator wrap the plain tuples
+in ROS types at the edge, and the unit tests drive it with SimpleNamespace
+poses.
 
-Box frame from the tag pose
+Box frame from map geometry
 ---------------------------
+``n`` (normal) points out of the bed into the aisle/front face. ``l`` (lateral)
+is ``n`` rotated +90 deg in XY = ``(-n_y, n_x)``. ``origin`` is the centre of
+the front face. The box interior extends *opposite* ``n`` by ``depth`` and
+spans ``+/- width/2`` along ``l``.
+
+Compatibility: box frame from tag pose
+--------------------------------------
 ``n`` (normal) = the tag's local +Z axis projected onto the map XY plane —
 the SAME derivation as ``approach.compute_discovered_approach`` (``nx =
 2(qx*qz + qw*qy)``, ``ny = 2(qy*qz - qw*qx)``). It points out of the bed into
@@ -64,6 +71,23 @@ class FlowerPointData:
     species: str
     confidence: float
     anomaly: bool
+    z: float = 0.0
+    height_m: float = 0.0
+
+
+@dataclass(frozen=True)
+class MapBox:
+    """Map-derived planter box, typically produced by an OpenCV map pipeline.
+
+    ``x``/``y`` are the box centre in map frame. ``yaw`` is the outward normal
+    direction (front face / aisle side)."""
+    box_id: str
+    x: float
+    y: float
+    yaw: float
+    width: float
+    depth: float
+    height: float = 0.30
 
 
 class BoxGeometry:
@@ -153,6 +177,25 @@ def box_from_tag(
     return BoxGeometry(origin, (nx, ny), (lx, ly), box)
 
 
+def box_from_map_box(box: MapBox) -> BoxGeometry:
+    """Build a box frame from map-derived centre/dimensions.
+
+    ``MapBox.yaw`` is the outward normal direction. The stored centre is the
+    rectangle centre, so the front-face origin is half a depth along ``n``.
+    """
+    width = max(0.0, float(box.width))
+    depth = max(0.0, float(box.depth))
+    spec = StandardBox(width=width, depth=depth, height=max(0.0, float(box.height)))
+    nx = math.cos(float(box.yaw))
+    ny = math.sin(float(box.yaw))
+    lx, ly = (-ny, nx)
+    origin = (
+        float(box.x) + nx * depth * 0.5,
+        float(box.y) + ny * depth * 0.5,
+    )
+    return BoxGeometry(origin, (nx, ny), (lx, ly), spec)
+
+
 def lateral_fraction(
     pan: float,
     bbox_cx_norm: float,
@@ -222,5 +265,7 @@ def bin_detections(
         out.append(FlowerPointData(
             x=x, y=y, species=slot['species'],
             confidence=slot['conf'], anomaly=slot['anomaly'],
+            z=max(0.0, float(geom.box.height)),
+            height_m=max(0.0, float(geom.box.height)),
         ))
     return out

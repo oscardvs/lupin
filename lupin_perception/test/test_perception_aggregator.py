@@ -173,6 +173,19 @@ def _yolo_cx(*cls_conf_cx):
     ]))
 
 
+def _yolo_track(*track_cls_conf_cx):
+    # each arg: (track_id, class, confidence, bbox_centre_x_px)
+    return String(data=json.dumps([
+        {
+            'track_id': tid,
+            'class': c,
+            'confidence': f,
+            'bbox_xyxy': [cx - 5, 100, cx + 5, 140],
+        }
+        for (tid, c, f, cx) in track_cls_conf_cx
+    ]))
+
+
 def test_flowers_localized_inside_box_not_on_tag(node):
     node._lookup_tag_pose = lambda tag_id: _forward_facing_pose()
     # Discover tag 8 (>= min_sightings).
@@ -210,3 +223,22 @@ def test_bug_sets_anomaly_on_localized_flower(node):
                   if o.kind == Observation.KIND_FLOWER and o.flower.flowers]
     assert flower_obs
     assert any(fp.anomaly for fp in flower_obs[-1].flower.flowers)
+
+
+def test_counts_unique_tracked_flowers_and_bugs_per_base(node):
+    node._lookup_tag_pose = lambda tag_id: _forward_facing_pose()
+    for _ in range(3):
+        node._on_tag_detections(_tag_frame((8, 1.0)))
+    _scanning(node, '8')
+    _joints(node, 0.0)
+
+    # Same flower track appears across two frames, plus a second flower and one
+    # bug track. Counts should be by unique track_id, not raw frame detections.
+    node._on_yolo_detections(_yolo_track((101, 0, 0.90, 120), (201, 3, 0.80, 320)))
+    node._on_yolo_detections(_yolo_track((101, 0, 0.92, 125), (102, 1, 0.85, 520)))
+
+    rec = node._registry['8']
+    assert rec.flower_count == 2
+    assert rec.bug_count == 1
+    assert node.emitted[-1].flower.flower_count == 2
+    assert node.emitted[-1].flower.bug_count == 1

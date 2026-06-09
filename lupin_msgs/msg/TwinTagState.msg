@@ -54,6 +54,12 @@ float32 species_confidence
 # so it clears on the next clean monitoring pass.
 bool anomaly
 
+# Latest per-base counts from perception. `flower_count` counts distinct
+# non-bug flowers; `bug_count` counts distinct bug detections. With YOLO
+# tracking enabled these are unique track IDs.
+uint16 flower_count
+uint16 bug_count
+
 # ─── Localized blooms + box footprint (v2 redesign) ──────────────────────
 # Mirrors FlowerObservation: per-bloom map positions inside the box, plus the
 # box interior polygon. Latest-wins per monitoring sweep. Empty until a flower

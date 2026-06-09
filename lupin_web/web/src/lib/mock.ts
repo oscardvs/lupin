@@ -460,6 +460,8 @@ export function mockObservation(): Observation | null {
       species: '',
       confidence: 0,
       anomaly: false,
+      flower_count: 0,
+      bug_count: 0,
       flowers: [],
       box_footprint: { points: [] },
     },
@@ -588,6 +590,7 @@ function mockBox(seed: { x: number; y: number; species: string; anomaly: boolean
   const d = 0.4   // depth
   const fp = (fx: number, dy: number): FlowerPoint => ({
     position: { x: seed.x + fx, y: seed.y - dy, z: 0 },
+    height_m: 0,
     species: seed.species,
     confidence: 0.85,
     anomaly: seed.anomaly,
@@ -633,6 +636,8 @@ export function mockTwinState(): TwinState {
       species: seed.species,
       species_confidence: seed.species ? 0.82 + 0.1 * Math.sin(t * 0.1 + seed.phase) : 0,
       anomaly: seed.anomaly,
+      flower_count: seed.species ? 3 : 0,
+      bug_count: seed.anomaly ? 1 : 0,
       ...mockBox(seed),
     })
   }

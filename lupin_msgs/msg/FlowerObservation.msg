@@ -26,6 +26,13 @@ float32 confidence
 # tag_id the twin merges on; standalone anomalies still use KIND_ANOMALY.
 bool anomaly
 
+# Count of distinct non-bug flowers and bug detections associated with this
+# base/tag during the current scan. When YOLO tracking is enabled these are
+# unique track IDs; otherwise the perception aggregator falls back to the
+# localized detection bins.
+uint16 flower_count
+uint16 bug_count
+
 # ─── Localized blooms + box footprint (v2 redesign) ──────────────────────
 # The aggregator places each detected bloom inside the planter box via
 # tag-anchored geometry (box_geometry.py) + a lateral cue (arm pan +

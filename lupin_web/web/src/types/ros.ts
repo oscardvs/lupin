@@ -45,7 +45,7 @@ export interface Polygon {
   points: Point32[]
 }
 
-export interface Pose {
+export interface Pose { 
   position: Point
   orientation: Quaternion
 }
@@ -326,6 +326,9 @@ export interface TwinTagState {
   species_confidence: number
   /** True when the YOLO "bug" anomaly was seen at this tag. */
   anomaly: boolean
+  /** Distinct flowers and bugs counted for this base/tag on the latest scan. */
+  flower_count: number
+  bug_count: number
   /** Localized blooms inside this tag's box (map frame); [] until a scan
    * has localized them. Render these as the flower dots — NOT `pose`. */
   flowers: FlowerPoint[]
@@ -439,6 +442,7 @@ export type ObservationKind = (typeof OBSERVATION_KIND)[keyof typeof OBSERVATION
 /** lupin_msgs/FlowerPoint — one localized bloom inside a planter box. */
 export interface FlowerPoint {
   position: Point
+  height_m: number
   species: string
   confidence: number
   anomaly: boolean
@@ -452,6 +456,8 @@ export interface FlowerObservation {
   species: string
   confidence: number
   anomaly: boolean
+  flower_count: number
+  bug_count: number
   flowers: FlowerPoint[]
   box_footprint: Polygon
 }
@@ -524,4 +530,14 @@ export interface TagDetection {
   id: number
   corners: [[number, number], [number, number], [number, number], [number, number]]
   dist: number
+}
+
+/** One detection in the JSON payload published by
+ * `lupin_perception/yolo_detector_node` on `/yolo/detections`. */
+export interface YoloDetection {
+  track_id: number | null
+  class: number
+  class_name: string | null
+  confidence: number
+  bbox_xyxy: [number, number, number, number]
 }

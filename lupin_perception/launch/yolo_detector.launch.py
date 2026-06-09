@@ -1,4 +1,4 @@
-"""Launch the YOLO detector and an image viewer for annotated detections."""
+"""Launch the YOLO detector/tracker and an image viewer for annotated detections."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -13,17 +13,17 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             'image_topic',
             default_value='/gripper_camera/image_raw/compressed',
-            description='Compressed camera image stream to run YOLO detections on.',
+            description='Compressed camera image stream to run YOLO detections/tracking on.',
         ),
         DeclareLaunchArgument(
             'annotated_image_topic',
             default_value='/yolo/image_detections',
-            description='Annotated image topic with YOLO bounding boxes.',
+            description='Annotated image topic with YOLO bounding boxes and track IDs.',
         ),
         DeclareLaunchArgument(
             'detections_topic',
             default_value='/yolo/detections',
-            description='JSON detection metadata topic.',
+            description='JSON detection/tracking metadata topic.',
         ),
         DeclareLaunchArgument(
             'model_path',
@@ -45,6 +45,16 @@ def generate_launch_description() -> LaunchDescription:
             description='YOLO inference image size.',
         ),
         DeclareLaunchArgument(
+            'enable_tracking',
+            default_value='true',
+            description='Enable YOLO tracking instead of frame-by-frame detection.',
+        ),
+        DeclareLaunchArgument(
+            'tracker',
+            default_value='bytetrack.yaml',
+            description='Tracker config file. Common options: bytetrack.yaml or botsort.yaml.',
+        ),
+        DeclareLaunchArgument(
             'start_viewer',
             default_value='true',
             description='Open rqt_image_view on the annotated detections feed.',
@@ -60,6 +70,8 @@ def generate_launch_description() -> LaunchDescription:
             'model_path': LaunchConfiguration('model_path'),
             'conf': LaunchConfiguration('conf'),
             'imgsz': LaunchConfiguration('imgsz'),
+            'enable_tracking': LaunchConfiguration('enable_tracking'),
+            'tracker': LaunchConfiguration('tracker'),
         }],
         remappings=[
             ('/gripper_camera/image_raw/compressed', LaunchConfiguration('image_topic')),

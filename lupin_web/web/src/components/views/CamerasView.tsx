@@ -72,9 +72,16 @@ export function CamerasView() {
   const [showBoxes, setShowBoxes] = useState(
     () => sessionStorage.getItem('showAprilTags') === 'true',
   )
+  const [showYoloBoxes, setShowYoloBoxes] = useState(
+    () => sessionStorage.getItem('showYoloDetections') === 'true',
+  )
+
   useEffect(() => {
     sessionStorage.setItem('showAprilTags', String(showBoxes))
   }, [showBoxes])
+  useEffect(() => {
+    sessionStorage.setItem('showYoloDetections', String(showYoloBoxes))
+  }, [showYoloBoxes])
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
@@ -186,6 +193,19 @@ export function CamerasView() {
                 <span className="hidden sm:inline">Rescan</span>
               </Button>
             </div>
+            <div className="flex items-center space-x-2 rounded-md border border-border px-3 py-1.5">
+              <Switch
+                id="yolo-mode"
+                checked={showYoloBoxes}
+                onCheckedChange={setShowYoloBoxes}
+              />
+              <label
+                htmlFor="yolo-mode"
+                className="text-sm font-medium leading-none cursor-pointer text-muted-foreground"
+              >
+                Overlay YOLO
+              </label>
+            </div>
           </div>
 
           {cameras.map((c) => (
@@ -196,6 +216,7 @@ export function CamerasView() {
                 baseUrl={webVideoServerUrl}
                 className="min-h-[14rem] flex-1 sm:min-h-[20rem]"
                 showBoxes={showBoxes}
+                showYoloBoxes={showYoloBoxes && c.topic.includes('gripper_camera')}
               />
             </TabsContent>
           ))}
