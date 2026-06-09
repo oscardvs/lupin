@@ -580,9 +580,32 @@ run). No "Latched intrinsics" in 10 s → cameras aren't publishing; check
 > tag_camera_info_topic:=/gripper_camera/camera_info` — but that stream is
 > uncalibrated, so tag *distance/TF* will be rough (the overlay still draws).
 >
-> **Markers need a mission.** Flower/pest markers only pin once T9's SCANNING
-> phase attributes a YOLO reading to a tag — pointing the camera at a flower
-> alone won't place one. The green-box tag overlay works on its own.
+> **Flowers vs. heatmap without a mission.** After the 2026-06-09 passive-observe
+> change, flower/pest markers pin during teleop too (the aggregator attributes a
+> bloom to the nearest seen tag whenever no mission is active). The climate
+> **heatmap** still needs a reading source — add **T7.5** below for it. The
+> green-box tag overlay and tag *pins* work on their own regardless.
+
+### T7.5 — Passive observation (optional; fills the twin without a mission)
+
+When you want the digital twin to keep filling in during **teleop / manual SLAM**
+— flower/pest markers *and* the climate heatmap — without starting the autonomous
+mission, add this one terminal after T7:
+
+```bash
+ros2 launch lupin_bringup passive_observe.launch.py
+```
+
+**Brings up:** the `greenhouse_bridge` (climate oracle) + `passive_observer`, which
+polls the oracle once per discovered tag while the mission is idle and publishes
+`KIND_TAG_READING` on `/floranova/observations` → twin → `/twin/get_field` heatmap.
+Drive past the tags and watch the HMI twin/map fill: tag pins, per-tag readings,
+heatmap, and flower markers (point the gripper cam at blooms).
+
+> **Do NOT run T7.5 together with T9 (`mission_stack`).** Both launch
+> `greenhouse_bridge` (same node + service) and collide. T7.5 is for *no-mission*
+> sessions; T9 is for autonomous runs. `passive_observer` also auto-defers while a
+> mission is active, so when you switch to T9, stop T7.5 first.
 
 ### T8 — Xbox teleop
 
@@ -636,6 +659,9 @@ essentials:
 | **AprilTag overlay** | HMI Cameras, point Orbbec at a tag | Green box + ID + distance |
 | **E-stop** | HMI e-stop | Robot stops immediately |
 | **Map erase** | HMI menu → Erase map | `/map` clears, slam respawns blank |
+
+No-mission twin fill (**Flower→map**, **Climate heatmap**): add **T7.5**
+(`passive_observe.launch.py`) and teleop past the tags — no mission needed.
 
 Mission rows (need T7 full stack + T9): **Flower→map**, **Pest→map**,
 **explore→monitor**, **Voice drive** — see `DEMO_DAY.md §5`.
