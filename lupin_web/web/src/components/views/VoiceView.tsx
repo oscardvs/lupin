@@ -200,8 +200,13 @@ export function VoiceView() {
 
         <div className="grid min-h-0 flex-1 gap-5 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
           {/* ───────────────── controls column ───────────────── */}
-          <div className="flex flex-col items-center gap-4">
-            <div className="flex flex-col items-center gap-2">
+          {/* min-h-0 lets the column honour the (stretched) grid-row height on
+              short viewports; the orb + buttons stay shrink-0 and only the tool
+              timeline below compresses, so the column never overflows the tile
+              and paints over the footer (the `.reticle` tile is position:relative
+              and would otherwise stack above the static footer). */}
+          <div className="flex min-h-0 flex-col items-center gap-4">
+            <div className="flex shrink-0 flex-col items-center gap-2">
               <VoiceOrb
                 status={session.status}
                 getInputLevel={session.getInputLevel}
@@ -228,7 +233,7 @@ export function VoiceView() {
               </div>
             </div>
 
-            <div className="flex w-full flex-col gap-2">
+            <div className="flex w-full shrink-0 flex-col gap-2">
               {!sessionRunning ? (
                 <Button onClick={handleStart} className="w-full" size="lg">
                   <Power className="mr-2 h-4 w-4" />
@@ -271,14 +276,16 @@ export function VoiceView() {
               </div>
             </div>
 
-            {/* Tools timeline */}
-            <div className="w-full">
-              <div className="mb-1.5 flex items-baseline gap-2">
+            {/* Tools timeline — the flexible part of the column: keeps its 11rem
+                height when the viewport is tall enough, but compresses (and
+                scrolls internally) on short viewports so the column fits. */}
+            <div className="flex min-h-0 w-full flex-col">
+              <div className="mb-1.5 flex shrink-0 items-baseline gap-2">
                 <Wrench className="h-3 w-3 text-primary/80" />
                 <span className="tag tag-strong">tool calls</span>
                 <span className="ml-auto tag">{session.tools.length}</span>
               </div>
-              <ScrollArea className="h-44 rounded-sm border border-hairline bg-ink-1">
+              <ScrollArea className="h-44 min-h-0 rounded-sm border border-hairline bg-ink-1">
                 <div className="flex flex-col gap-1.5 p-2">
                   {session.tools.length === 0 ? (
                     <div className="px-1 py-2 text-[11px] text-muted-foreground">
@@ -343,7 +350,10 @@ export function VoiceView() {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      {/* relative z-10 keeps this status line above the position:relative console
+          tile, so any residual overflow on an extreme-short viewport can never
+          paint over the footer (the original layering bug). */}
+      <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <AlertCircle className="h-3 w-3 text-primary/80" />
         <span className="tag">model</span>
         <span className="font-mono text-foreground/80">{settings.geminiModel}</span>
