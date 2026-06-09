@@ -43,7 +43,13 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
   // (so goal-setting is untouched); only the interactive/maximized variant zooms.
   const viewScaleRef = useRef(1)
   const viewOffsetRef = useRef({ x: 0, y: 0 })
-  const panRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null)
+  const mapPointers = useRef(new Map<number, { x: number; y: number }>())
+  const mapGesture = useRef<{
+    mode: 'pan' | 'pinch' | null
+    sx?: number; sy?: number; ox?: number; oy?: number
+    startDist?: number; startScale?: number; midX?: number; midY?: number
+  }>({ mode: null })
+  const mapRect = useRef<DOMRect | null>(null)
   const [{ mapTopic, planTopic, goalPoseTopic, mapFrame, baseFrame, polarityInvertHmi }] = useSettings()
   const mapRef = useTopic<OccupancyGrid>(mapTopic, ROS_TYPE.OccupancyGrid)
   const planRef = useTopic<Path>(planTopic, ROS_TYPE.Path)
@@ -396,18 +402,61 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
       viewOffsetRef.current = { x: mx - k * (mx - cxBefore) - w / 2, y: my - k * (my - cyBefore) - h / 2 }
     }
   }
+  const clampMapScale = (s: number) => Math.min(8, Math.max(1, s))
+  const startMapGesture = () => {
+    const pts = [...mapPointers.current.values()]
+    if (pts.length === 1) {
+      mapGesture.current = { mode: 'pan', sx: pts[0].x, sy: pts[0].y, ox: viewOffsetRef.current.x, oy: viewOffsetRef.current.y }
+    } else if (pts.length >= 2) {
+      const [a, b] = pts
+      mapGesture.current = {
+        mode: 'pinch', startDist: Math.hypot(b.x - a.x, b.y - a.y) || 1, startScale: viewScaleRef.current,
+        midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2, ox: viewOffsetRef.current.x, oy: viewOffsetRef.current.y,
+      }
+    } else {
+      mapGesture.current = { mode: null }
+    }
+  }
+  const applyMapZoom = (nextScale: number, fromScale: number, fromOx: number, fromOy: number, cx: number, cy: number, rect: DOMRect) => {
+    const ns = clampMapScale(nextScale)
+    const px = cx - rect.left
+    const py = cy - rect.top
+    const cxBefore = rect.width / 2 + fromOx
+    const cyBefore = rect.height / 2 + fromOy
+    const k = ns / fromScale
+    viewScaleRef.current = ns
+    if (ns <= 1.001) {
+      viewScaleRef.current = 1
+      viewOffsetRef.current = { x: 0, y: 0 }
+    } else {
+      viewOffsetRef.current = { x: px - k * (px - cxBefore) - rect.width / 2, y: py - k * (py - cyBefore) - rect.height / 2 }
+    }
+  }
   const onPanDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* */ }
-    panRef.current = { px: e.clientX, py: e.clientY, ox: viewOffsetRef.current.x, oy: viewOffsetRef.current.y }
+    mapRect.current = e.currentTarget.getBoundingClientRect()
+    mapPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    startMapGesture()
   }
   const onPanMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const p = panRef.current
-    if (!p) return
-    viewOffsetRef.current = { x: p.ox + (e.clientX - p.px), y: p.oy + (e.clientY - p.py) }
+    if (!mapPointers.current.has(e.pointerId)) return
+    mapPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const g = mapGesture.current
+    if (g.mode === 'pan') {
+      viewOffsetRef.current = { x: g.ox! + (e.clientX - g.sx!), y: g.oy! + (e.clientY - g.sy!) }
+    } else if (g.mode === 'pinch') {
+      const pts = [...mapPointers.current.values()]
+      if (pts.length < 2) return
+      const [a, b] = pts
+      const dist = Math.hypot(b.x - a.x, b.y - a.y)
+      const rect = mapRect.current ?? e.currentTarget.getBoundingClientRect()
+      applyMapZoom(g.startScale! * (dist / g.startDist!), g.startScale!, g.ox!, g.oy!, g.midX!, g.midY!, rect)
+    }
   }
   const onPanUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    panRef.current = null
+    mapPointers.current.delete(e.pointerId)
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* */ }
+    startMapGesture()
   }
   const zoomByCenter = (factor: number) => {
     viewScaleRef.current = Math.min(8, Math.max(1, viewScaleRef.current * factor))
