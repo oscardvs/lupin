@@ -1,12 +1,22 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
+// v5: the focus-loss e-stop (estopAutoOnFocusLoss) now defaults false — the
+// operator wants the robot to keep running when the HMI tab is backgrounded
+// (an active Nav2 goal executes server-side), with topic streaming resuming
+// automatically on return. Any persisted `true` is dropped on migration (see
+// readStored) so existing installs pick up the new default; re-enable it in
+// Settings → Safety to restore the old auto-stop-on-blur behaviour.
 // v4: the Mirte-247264 drive inversion is fixed at the source (telemetrix
 // motor p1/p2 + encoder A/B pin-swap), so the HMI no longer compensates —
 // polarityInvertHmi defaults false and any persisted `true` is dropped on
-// migration (see readStored). v3 added voice-assistant fields; v2/v3 keys are
-// migrated forward (rosbridge URL, topic overrides, voice + Gemini key kept).
-const STORAGE_KEY = 'lupin-hmi-settings/v4'
-const LEGACY_STORAGE_KEYS = ['lupin-hmi-settings/v3', 'lupin-hmi-settings/v2']
+// migration too. v3 added voice-assistant fields; v2/v3/v4 keys are migrated
+// forward (rosbridge URL, topic overrides, voice + Gemini key kept).
+const STORAGE_KEY = 'lupin-hmi-settings/v5'
+const LEGACY_STORAGE_KEYS = [
+  'lupin-hmi-settings/v4',
+  'lupin-hmi-settings/v3',
+  'lupin-hmi-settings/v2',
+]
 
 export interface VoiceNamedLocation {
   x: number
@@ -79,10 +89,14 @@ export interface Settings {
   reduceTransparency: boolean
   debugPublish: boolean
   /**
-   * Auto-trigger E-stop on `visibilitychange` / window `blur`. Default true for
-   * the demo robot; disable during dev when alt-tabbing fires it constantly.
-   * The `beforeunload` and rosbridge-disconnect triggers remain active either
-   * way — those are real safety events, not focus changes.
+   * Auto-trigger E-stop on `visibilitychange` / window `blur`. Defaults FALSE
+   * (since v5): the operator wants the robot to keep running when the HMI tab
+   * is backgrounded — an active Nav2 goal executes server-side and topic
+   * streaming resumes automatically on return (ros.tsx reconnects a stale
+   * socket on visibility). Flip it on in Settings → Safety to restore the old
+   * auto-stop-on-blur behaviour. The `beforeunload` (page actually closing)
+   * and rosbridge-disconnect (sustained outage) triggers stay active either
+   * way — those are real safety events, not routine focus changes.
    */
   estopAutoOnFocusLoss: boolean
   /**
@@ -171,7 +185,7 @@ export const DEFAULT_SETTINGS: Settings = {
   surfaceContrast: 'normal',
   reduceTransparency: false,
   debugPublish: false,
-  estopAutoOnFocusLoss: true,
+  estopAutoOnFocusLoss: false,
   polarityInvertHmi: false,
 }
 
@@ -225,10 +239,15 @@ function readStored(): Partial<Settings> {
       const old = localStorage.getItem(legacy)
       if (old) {
         const parsed = JSON.parse(old) as Partial<Settings>
-        // v4 migration: drive inversion is now fixed at the source, so a
-        // persisted polarityInvertHmi (true on old hardware installs) must not
-        // carry forward — drop it so the v4 default (false) applies.
+        // Migrate forward from an older key (now including v4) but drop fields
+        // whose default has changed, so the new default wins over the stale
+        // stored value:
+        //  - polarityInvertHmi: drive inversion fixed at the source (v4).
+        //  - estopAutoOnFocusLoss: focus-loss e-stop now off by default (v5).
+        // Re-enabling either later persists under the current key (STORAGE_KEY)
+        // and is read back verbatim, so an explicit opt-in is preserved.
         delete parsed.polarityInvertHmi
+        delete parsed.estopAutoOnFocusLoss
         return parsed
       }
     }

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { isPongStale, shouldReconnectOnVisible } from '@/lib/connection-health'
 import { isMockMode, useSettings } from '@/lib/settings'
 import {
   mockBattery,
@@ -36,6 +37,18 @@ export interface PublishLogEntry {
 }
 
 const PUBLISH_LOG_CAP = 50
+
+// Latency-ping cadence + staleness thresholds for zombie-socket detection.
+const PING_INTERVAL_MS = 2000
+// A get_time ping that doesn't call back within this is a dead socket that
+// still looks 'connected' (the no-clean-close case) → force a fresh socket.
+const PING_TIMEOUT_MS = 4000
+// Backstop: no successful pong in this long → reconnect. Covers a ping timer
+// that was frozen while the tab was hidden and resumes on a dead socket.
+const PONG_STALE_MS = 8000
+// On tab return, reconnect if the last pong is older than this (a few ping
+// intervals) — the socket may have died silently while we were backgrounded.
+const VISIBLE_STALE_MS = 3000
 
 interface Subscription {
   topicName: string
@@ -201,6 +214,14 @@ export function RosProvider({ children }: { children: ReactNode }) {
   const subsRef = useRef<Map<string, Subscription>>(new Map())
   const publishersRef = useRef<Map<string, ROSLIB.Topic>>(new Map())
   const publishLogRef = useRef<PublishLogEntry[]>([])
+  // Tab-return / staleness machinery (see the connection + visibility effects
+  // below). forceReconnectRef is populated inside the connection effect so the
+  // ping watchdog + visibility handler can trigger a clean reconnect; statusRef
+  // and lastPongAtRef are read inside timers/handlers to dodge stale closures.
+  const forceReconnectRef = useRef<(() => void) | null>(null)
+  const lastPongAtRef = useRef<number>(0)
+  const statusRef = useRef(status)
+  statusRef.current = status
 
   const recordPublish = useCallback((topic: string, msg: unknown) => {
     const next = publishLogRef.current.slice(-(PUBLISH_LOG_CAP - 1))
@@ -222,6 +243,8 @@ export function RosProvider({ children }: { children: ReactNode }) {
     const MAX_BACKOFF = 5000
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let pingTimer: ReturnType<typeof setInterval> | null = null
+    // Bumped on every (re)connect; async handlers gen-guard against it (see connect).
+    let generation = 0
 
     // CONTRACTS: roslib.js exposes no QoS API, so every subscription here is
     // effectively VOLATILE while several Lupin publishers are TRANSIENT_LOCAL
@@ -256,50 +279,90 @@ export function RosProvider({ children }: { children: ReactNode }) {
       })
     }
 
-    const startLatencyPings = (ros: ROSLIB.Ros) => {
+    const clearReconnectTimer = () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    const clearPingTimer = () => {
+      if (pingTimer) clearInterval(pingTimer)
+      pingTimer = null
+    }
+
+    const startLatencyPings = (ros: ROSLIB.Ros, myGen: number) => {
       const svc = new ROSLIB.Service({
         ros,
         name: '/rosapi/get_time',
         serviceType: 'rosapi/GetTime',
       })
+      // Seed so a freshly-connected socket isn't judged stale on the first tick.
+      lastPongAtRef.current = Date.now()
       pingTimer = setInterval(() => {
+        if (cancelled || myGen !== generation) return
+        // Backstop: no pong in PONG_STALE_MS → the socket is a zombie (e.g. the
+        // ping timer was frozen while hidden and resumed on a dead socket).
+        if (isPongStale(lastPongAtRef.current, Date.now(), PONG_STALE_MS)) {
+          forceReconnect()
+          return
+        }
         const t0 = performance.now()
+        let settled = false
+        // Per-ping watchdog: a call that never calls back is a dead socket that
+        // still looks 'connected' — the primary "no clean close" signal.
+        const watchdog = setTimeout(() => {
+          if (settled || cancelled || myGen !== generation) return
+          settled = true
+          forceReconnect()
+        }, PING_TIMEOUT_MS)
         svc.callService(
           new ROSLIB.ServiceRequest({}),
           () => {
-            if (cancelled) return
+            if (settled || cancelled || myGen !== generation) return
+            settled = true
+            clearTimeout(watchdog)
+            lastPongAtRef.current = Date.now()
             setLatencyMs(Math.round(performance.now() - t0))
           },
-          () => undefined,
+          () => {
+            // Explicit failure — let the next staleness check / reconnect path
+            // handle it; just stop this attempt's watchdog double-firing.
+            if (settled) return
+            settled = true
+            clearTimeout(watchdog)
+          },
         )
-      }, 2000)
+      }, PING_INTERVAL_MS)
     }
 
     const connect = () => {
       if (cancelled) return
+      // Each (re)connect gets a fresh generation; async ROSLIB handlers capture
+      // theirs and no-op once superseded — so an old socket's late 'close'
+      // (notably the one forceReconnect triggers) can't flip status to 'closed'
+      // and trip the e-stop disconnect guard.
+      generation += 1
+      const myGen = generation
       setStatus('connecting')
       setLastError(null)
       const ros = new ROSLIB.Ros({ url: rosUrl })
       rosRef.current = ros
 
       ros.on('connection', () => {
-        if (cancelled) return
+        if (cancelled || myGen !== generation) return
         backoffMs = 500
         setStatus('connected')
         setupSubscriptionsFor(ros)
-        startLatencyPings(ros)
+        startLatencyPings(ros, myGen)
       })
       ros.on('error', (err: unknown) => {
-        if (cancelled) return
+        if (cancelled || myGen !== generation) return
         setStatus('error')
         setLastError(err instanceof Error ? err.message : String(err))
       })
       ros.on('close', () => {
-        if (cancelled) return
+        if (cancelled || myGen !== generation) return
         setStatus('closed')
         setLatencyMs(null)
-        if (pingTimer) clearInterval(pingTimer)
-        pingTimer = null
+        clearPingTimer()
         tearDownSubscriptions()
         publishersRef.current.clear()
         reconnectTimer = setTimeout(connect, backoffMs)
@@ -307,17 +370,72 @@ export function RosProvider({ children }: { children: ReactNode }) {
       })
     }
 
+    // Force a clean reconnect WITHOUT routing status through 'closed': bump the
+    // generation so the current instance's async handlers are neutralised, tear
+    // down, then connect() (which goes 'connecting' → 'connected'). The e-stop
+    // disconnect guard therefore sees connected→connecting→connected and never
+    // latches on an intentional reconnect. Used by the ping watchdog + the
+    // tab-return visibility handler. All subscriptions in subsRef rebind via
+    // connect()'s 'connection' → setupSubscriptionsFor.
+    const forceReconnect = () => {
+      if (cancelled) return
+      generation += 1 // neutralise the current instance's async handlers first
+      clearReconnectTimer()
+      clearPingTimer()
+      tearDownSubscriptions()
+      publishersRef.current.clear()
+      const old = rosRef.current
+      rosRef.current = null
+      setLatencyMs(null)
+      backoffMs = 500
+      try {
+        old?.close()
+      } catch {
+        /* already closing — handlers are gen-guarded anyway */
+      }
+      connect()
+    }
+    forceReconnectRef.current = forceReconnect
+
     connect()
     return () => {
       cancelled = true
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      if (pingTimer) clearInterval(pingTimer)
+      forceReconnectRef.current = null
+      clearReconnectTimer()
+      clearPingTimer()
       tearDownSubscriptions()
       publishersRef.current.clear()
       rosRef.current?.close()
       rosRef.current = null
     }
   }, [mock, rosUrl])
+
+  // Tab-return resilience: a backgrounded tab can drop the rosbridge socket
+  // WITHOUT a clean 'close' (NAT/proxy idle-timeout, wifi roam, tab freeze), so
+  // `status` stays 'connected' on a dead socket and subscriptions never rebind.
+  // On return, force a fresh socket if we're not cleanly connected or pongs went
+  // stale (hidden-tab timers are throttled, so lastPongAt lags). Browsers
+  // throttle/freeze hidden-tab timers — an active Nav2 goal keeps running
+  // server-side, but hidden manual teleop can't keep streaming cmd_vel; both
+  // resume immediately on return once the socket is fresh.
+  useEffect(() => {
+    if (mock) return
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      if (
+        shouldReconnectOnVisible(
+          statusRef.current,
+          lastPongAtRef.current,
+          Date.now(),
+          VISIBLE_STALE_MS,
+        )
+      ) {
+        forceReconnectRef.current?.()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [mock])
 
   const subscribe = useCallback(
     <T,>(topicName: string, msgType: string, cb: (msg: T) => void) => {

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { createDisconnectGuard, type DisconnectGuard } from '@/lib/connection-health'
 import { invertTwist } from '@/lib/polarity'
 import { useRos, usePublisher, useService } from '@/lib/ros'
 import { useSettings } from '@/lib/settings'
@@ -60,6 +61,13 @@ const EStopContext = createContext<EStopValue>({
 // call is in flight to Nav2 over rosbridge.
 const ESTOP_HEARTBEAT_HZ = 20
 
+// Grace window before a rosbridge disconnect latches the e-stop. A forced
+// reconnect (tab return, NAT idle blip) re-establishes well within this; only a
+// SUSTAINED outage past it latches. 5s is long enough to mask an intentional
+// reconnect plus the WebSocket handshake, short enough that a real dropout
+// still stops an autonomous robot promptly. See createDisconnectGuard.
+const DISCONNECT_GRACE_MS = 5000
+
 export function EStopProvider({ children }: { children: ReactNode }) {
   const [{ cmdVelTopic, cmdVelType, estopAutoOnFocusLoss, polarityInvertHmi }] = useSettings()
   const { status } = useRos()
@@ -83,7 +91,6 @@ export function EStopProvider({ children }: { children: ReactNode }) {
 
   const [active, setActive] = useState<boolean>(true)
   const [reason, setReason] = useState<EStopReason | null>('startup')
-  const wasConnected = useRef(false)
 
   const trigger = useCallback((r: EStopReason) => {
     setActive(true)
@@ -122,15 +129,26 @@ export function EStopProvider({ children }: { children: ReactNode }) {
     }
   }, [trigger, estopAutoOnFocusLoss])
 
-  // rosbridge connection drop → trigger. Only fire after we have a successful
-  // connection at least once, so initial connecting state doesn't auto-trigger.
+  // rosbridge connection drop → e-stop, but DEBOUNCED. A brief/intentional
+  // reconnect (the forced reconnect on tab return, a NAT idle blip) must not
+  // latch — only a sustained outage should. The guard starts a grace timer on
+  // the first disconnect, ignores intermediate 'connecting' flaps, and cancels
+  // if we reconnect within DISCONNECT_GRACE_MS; it never fires before the first
+  // successful connection. onLatch reads the latest trigger via a ref to avoid
+  // a stale closure. See connection-health.ts.
+  const triggerRef = useRef(trigger)
+  triggerRef.current = trigger
+  const disconnectGuardRef = useRef<DisconnectGuard | null>(null)
+  if (disconnectGuardRef.current == null) {
+    disconnectGuardRef.current = createDisconnectGuard({
+      graceMs: DISCONNECT_GRACE_MS,
+      onLatch: () => triggerRef.current('rosbridge-disconnect'),
+    })
+  }
   useEffect(() => {
-    if (status === 'connected') {
-      wasConnected.current = true
-    } else if (wasConnected.current && status !== 'connecting') {
-      trigger('rosbridge-disconnect')
-    }
-  }, [status, trigger])
+    disconnectGuardRef.current?.onStatus(status)
+  }, [status])
+  useEffect(() => () => disconnectGuardRef.current?.dispose(), [])
 
   // Heartbeat: while active, publish zero Twist at 10 Hz.
   useEffect(() => {
