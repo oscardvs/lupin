@@ -129,7 +129,7 @@ function Shell() {
               value={id}
               className="m-0 flex-1 min-h-0 overflow-y-auto"
             >
-              <motion.div variants={viewSwap} initial="hidden" animate="show" className="min-h-full">
+              <motion.div variants={viewSwap} initial="hidden" animate="show" className="h-full min-h-0">
                 <View />
               </motion.div>
             </TabsContent>
