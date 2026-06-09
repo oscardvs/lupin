@@ -22,6 +22,7 @@ persistence, no anomaly detection. Each is a clean follow-up.
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
@@ -38,7 +39,7 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 from geometry_msgs.msg import Point, Point32, Polygon
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 
 from lupin_msgs.msg import (
     DiscoveredTags,
@@ -64,6 +65,7 @@ from .state import (
     TwinFlower,
     TwinObservation,
     TwinStateStore,
+    box_footprint_corners,
 )
 
 
@@ -114,6 +116,7 @@ class TwinNode(Node):
         # Discovery feed (ExplorationMission): pin tags as perception finds them,
         # before any bridge scan, so the operator map fills in during exploration.
         self.declare_parameter('discovered_tags_topic', '/perception/discovered_tags')
+        self.declare_parameter('box_geometry_topic', '/perception/box_geometry_json')
 
         # IDW tuning — defaults from the brief; operator-tunable per launch.
         self.declare_parameter('idw_power', DEFAULT_POWER)
@@ -134,6 +137,9 @@ class TwinNode(Node):
         self._buffer_len = int(self.get_parameter('buffer_len').value)
         self._discovered_tags_topic = str(
             self.get_parameter('discovered_tags_topic').value
+        )
+        self._box_geometry_topic = str(
+            self.get_parameter('box_geometry_topic').value
         )
         self._idw_power = float(self.get_parameter('idw_power').value)
         self._idw_falloff_radius = float(
@@ -174,6 +180,17 @@ class TwinNode(Node):
             DiscoveredTags,
             self._discovered_tags_topic,
             self._on_discovered_tags,
+            obs_qos,
+            callback_group=self._cb_group,
+        )
+        # Live planter-box geometry from box_layout_publisher: set per-tag
+        # box_footprint for ALL registered benches, authoritative over the flower
+        # path, so the overlay tracks registration/snap updates instead of freezing
+        # at the last flower-summary change.
+        self._box_geom_sub = self.create_subscription(
+            String,
+            self._box_geometry_topic,
+            self._on_box_geometry,
             obs_qos,
             callback_group=self._cb_group,
         )
@@ -363,6 +380,36 @@ class TwinNode(Node):
                 pose_qw=p.orientation.w if p.orientation.w != 0.0 else 1.0,
                 readings=[],
             ))
+
+    def _on_box_geometry(self, msg: String) -> None:
+        """Set per-tag box footprints from box_layout_publisher's snapped boxes.
+
+        Accepts ``[{id,x,y,yaw,width,depth,height}, …]`` or ``{"boxes": [...]}``
+        (same shape the aggregator parses)."""
+        try:
+            payload = json.loads(msg.data)
+        except (ValueError, TypeError):
+            self.get_logger().warn(
+                'box_geometry_json not parseable', throttle_duration_sec=10.0,
+            )
+            return
+        boxes = payload.get('boxes') if isinstance(payload, dict) else payload
+        if not isinstance(boxes, list):
+            return
+        for item in boxes:
+            if not isinstance(item, dict):
+                continue
+            box_id = str(item.get('id', item.get('box_id', '')))
+            if not box_id or box_id == 'None':
+                continue
+            try:
+                corners = box_footprint_corners(
+                    float(item['x']), float(item['y']), float(item.get('yaw', 0.0)),
+                    float(item['width']), float(item['depth']),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            self._store.record_box(box_id, corners)
 
     # ─── periodic state publish ────────────────────────────────────────
 
