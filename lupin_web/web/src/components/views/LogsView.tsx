@@ -1,9 +1,9 @@
 import { Pause, Play, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { ViewShell } from '@/components/system/ViewShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -27,7 +27,10 @@ const levelOrder: RosoutLevel[] = [10, 20, 30, 40, 50]
 
 export function LogsView() {
   const [{ rosoutTopic }] = useSettings()
-  const bufferRef = useRef<Log[]>([])
+  // Monotonic id per ingested line → stable React keys (array index recycles
+  // DOM rows on the fast rosout stream, causing colour/text flicker).
+  const bufferRef = useRef<(Log & { _id: number })[]>([])
+  const idRef = useRef(0)
   const [paused, setPaused] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const [minLevel, setMinLevel] = useState<RosoutLevel>(20)
@@ -39,7 +42,7 @@ export function LogsView() {
     onMessage: (msg) => {
       seenNodes.current.add(msg.name)
       if (paused) return
-      bufferRef.current.push(msg)
+      bufferRef.current.push({ ...msg, _id: idRef.current++ })
       if (bufferRef.current.length > MAX_ROWS) {
         bufferRef.current.splice(0, bufferRef.current.length - MAX_ROWS)
       }
@@ -68,8 +71,8 @@ export function LogsView() {
   }, [])
 
   return (
-    <div className="flex min-h-full w-full flex-col gap-3 p-3 sm:p-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+    <ViewShell intent="fit">
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={String(minLevel)} onValueChange={(v) => setMinLevel(Number(v) as RosoutLevel)}>
             <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
@@ -113,40 +116,43 @@ export function LogsView() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1 rounded-sm border border-hairline bg-card font-mono text-xs">
-        <div ref={scrollViewportRef} className="max-h-[60vh] overflow-y-auto">
-          {visible.length === 0 ? (
-            <div className="p-4 text-muted-foreground">No log lines match the current filter.</div>
-          ) : (
-            <div className="divide-y divide-border/50">
-              {visible.map((l, i) => (
-                <div
-                  key={i}
-                  className="grid gap-x-2 gap-y-0.5 px-3 py-1.5 sm:grid-cols-[auto_auto_auto_1fr]"
-                >
-                  <span className="hidden text-muted-foreground tabular-nums sm:inline">
+      {/* Single flex-fill scroller — the stream owns the overflow and grows to
+          the bottom of the column (no dead Radix wrapper, no 60vh void). */}
+      <div
+        ref={scrollViewportRef}
+        className="edge-light min-h-0 flex-1 overflow-y-auto rounded-sm border border-hairline bg-ink-3 font-mono text-xs"
+      >
+        {visible.length === 0 ? (
+          <div className="p-4 text-muted-foreground">No log lines match the current filter.</div>
+        ) : (
+          <div className="divide-y divide-hairline">
+            {visible.map((l) => (
+              <div
+                key={l._id}
+                className="grid gap-x-2 gap-y-0.5 px-3 py-1.5 sm:grid-cols-[auto_auto_auto_1fr]"
+              >
+                <span className="hidden text-muted-foreground tabular-nums sm:inline">
+                  {new Date(l.stamp.sec * 1000).toLocaleTimeString()}
+                </span>
+                <div className="flex items-center gap-2 sm:contents">
+                  <span className="text-[10px] text-muted-foreground tabular-nums sm:hidden">
                     {new Date(l.stamp.sec * 1000).toLocaleTimeString()}
                   </span>
-                  <div className="flex items-center gap-2 sm:contents">
-                    <span className="text-[10px] text-muted-foreground tabular-nums sm:hidden">
-                      {new Date(l.stamp.sec * 1000).toLocaleTimeString()}
-                    </span>
-                    <span className={cn('text-[10px] uppercase tracking-wider sm:w-12', levelClass[l.level])}>
-                      {ROSOUT_LEVEL_NAMES[l.level]}
-                    </span>
-                    <span className="truncate text-sky-300">{l.name}</span>
-                  </div>
-                  <span className={cn('break-words', levelClass[l.level])}>{l.msg}</span>
+                  <span className={cn('text-[10px] uppercase tracking-wider sm:w-12', levelClass[l.level])}>
+                    {ROSOUT_LEVEL_NAMES[l.level]}
+                  </span>
+                  <span className="truncate text-sky-300">{l.name}</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </ScrollArea>
+                <span className={cn('break-words', levelClass[l.level])}>{l.msg}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-      <div className="text-[11px] text-muted-foreground">
+      <div className="shrink-0 text-[11px] text-muted-foreground">
         {visible.length} / {bufferRef.current.length} rows · capped at {MAX_ROWS} · topic <span className="font-mono">{rosoutTopic}</span>
       </div>
-    </div>
+    </ViewShell>
   )
 }
