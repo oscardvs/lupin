@@ -50,6 +50,11 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
     startDist?: number; startScale?: number; midX?: number; midY?: number
   }>({ mode: null })
   const mapRect = useRef<DOMRect | null>(null)
+  // Maximized-only: which gesture the active pointer(s) own. A single
+  // primary-button drag stays a goal drag (same as the inline map); pan needs
+  // a modifier (right/middle button or held Space) or a second finger (pinch).
+  const activeGestureRef = useRef<'goal' | 'pan' | 'pinch' | null>(null)
+  const spaceHeldRef = useRef(false)
   const [{ mapTopic, planTopic, goalPoseTopic, mapFrame, baseFrame, polarityInvertHmi }] = useSettings()
   const mapRef = useTopic<OccupancyGrid>(mapTopic, ROS_TYPE.OccupancyGrid)
   const planRef = useTopic<Path>(planTopic, ROS_TYPE.Path)
@@ -305,6 +310,26 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
     return bmp
   }, [mapRef])
 
+  // Maximized-only: track Space as a pan modifier so a left-drag can stay a
+  // goal drag while Space+drag pans. Ignored while typing in a field.
+  useEffect(() => {
+    if (!interactive) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return
+      const el = document.activeElement as HTMLElement | null
+      const tag = el?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return
+      spaceHeldRef.current = e.type === 'keydown'
+      if (e.type === 'keydown') e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKey)
+    }
+  }, [interactive])
+
   /* ----- Pointer interaction → goal_pose --- */
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const proj = projection()
@@ -432,11 +457,33 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
       viewOffsetRef.current = { x: px - k * (px - cxBefore) - rect.width / 2, y: py - k * (py - cyBefore) - rect.height / 2 }
     }
   }
-  const onPanDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* */ }
-    mapRect.current = e.currentTarget.getBoundingClientRect()
+  // --- Maximized pointer router: goal-setting + hover by default; pan on a
+  // right/middle-button or Space drag; pinch (two fingers) zooms. A single
+  // primary-button drag stays a goal drag, identical to the inline map.
+  const onInteractiveDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     mapPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    startMapGesture()
+    mapRect.current = e.currentTarget.getBoundingClientRect()
+    if (mapPointers.current.size >= 2) {
+      // Second finger → pinch. Abandon any goal drag the first finger began.
+      setDrag(null)
+      activeGestureRef.current = 'pinch'
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* */ }
+      startMapGesture()
+      return
+    }
+    const wantPan =
+      e.pointerType !== 'touch' &&
+      (e.button === 1 || e.button === 2 || spaceHeldRef.current)
+    if (wantPan) {
+      activeGestureRef.current = 'pan'
+      if (hoveredTag) setHoveredTag(null)
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* */ }
+      startMapGesture()
+      return
+    }
+    // Default: goal drag + hover, exactly like the inline map.
+    activeGestureRef.current = 'goal'
+    onPointerDown(e)
   }
   const onPanMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!mapPointers.current.has(e.pointerId)) return
@@ -451,12 +498,49 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
       const dist = Math.hypot(b.x - a.x, b.y - a.y)
       const rect = mapRect.current ?? e.currentTarget.getBoundingClientRect()
       applyMapZoom(g.startScale! * (dist / g.startDist!), g.startScale!, g.ox!, g.oy!, g.midX!, g.midY!, rect)
+      // Also pan by however far the pinch centre has travelled, so two fingers
+      // pan + zoom together (touch has no modifier key for pan).
+      if (viewScaleRef.current > 1.001) {
+        const curMidX = (a.x + b.x) / 2
+        const curMidY = (a.y + b.y) / 2
+        viewOffsetRef.current = {
+          x: viewOffsetRef.current.x + (curMidX - g.midX!),
+          y: viewOffsetRef.current.y + (curMidY - g.midY!),
+        }
+      }
     }
   }
-  const onPanUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const onInteractiveMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const g = activeGestureRef.current
+    if (g === 'pan' || g === 'pinch') {
+      onPanMove(e)
+      return
+    }
+    // No view gesture: goal drag (when one is active) or hover hit-testing.
+    onPointerMove(e)
+  }
+  const onInteractiveUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const g = activeGestureRef.current
+    if (g === 'goal') {
+      onPointerUp(e)
+    } else {
+      try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* */ }
+    }
     mapPointers.current.delete(e.pointerId)
-    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* */ }
-    startMapGesture()
+    // Lifting one finger of a pinch drops back to a single-finger pan; a full
+    // release ends the gesture.
+    if (mapPointers.current.size === 0) {
+      activeGestureRef.current = null
+      mapGesture.current = { mode: null }
+    } else {
+      activeGestureRef.current = 'pan'
+      startMapGesture()
+    }
+  }
+  const onInteractiveLeave = () => {
+    // The pointer is captured during an active gesture, so leave only fires
+    // while hovering — just clear the tooltip.
+    if (hoveredTag) setHoveredTag(null)
   }
   const zoomByCenter = (factor: number) => {
     viewScaleRef.current = Math.min(8, Math.max(1, viewScaleRef.current * factor))
@@ -467,7 +551,7 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
     viewOffsetRef.current = { x: 0, y: 0 }
   }
   const openMaximized = () =>
-    focus.open({ title: 'Map / Nav', subtitle: 'wheel zoom · drag pan', render: () => <MapCanvas interactive /> })
+    focus.open({ title: 'Map / Nav', subtitle: 'click-drag · goal · space/right-drag · pan · wheel · zoom', render: () => <MapCanvas interactive /> })
 
   const confirmPendingGoal = () => {
     const g = pendingGoal
@@ -878,16 +962,14 @@ export function MapCanvas({ interactive = false }: { interactive?: boolean } = {
         <div className="relative flex-1 overflow-hidden rounded-sm border border-hairline bg-ink-1">
           <canvas
             ref={canvasRef}
-            onPointerDown={interactive ? onPanDown : onPointerDown}
-            onPointerMove={interactive ? onPanMove : onPointerMove}
-            onPointerUp={interactive ? onPanUp : onPointerUp}
-            onPointerCancel={interactive ? onPanUp : onPointerUp}
-            onPointerLeave={interactive ? onPanUp : onPointerLeave}
+            onPointerDown={interactive ? onInteractiveDown : onPointerDown}
+            onPointerMove={interactive ? onInteractiveMove : onPointerMove}
+            onPointerUp={interactive ? onInteractiveUp : onPointerUp}
+            onPointerCancel={interactive ? onInteractiveUp : onPointerUp}
+            onPointerLeave={interactive ? onInteractiveLeave : onPointerLeave}
             onWheel={interactive ? onZoomWheel : undefined}
-            className={cn(
-              'h-full w-full touch-none',
-              interactive ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair',
-            )}
+            onContextMenu={interactive ? (e) => e.preventDefault() : undefined}
+            className={cn('h-full w-full touch-none cursor-crosshair')}
           />
           {interactive && (
             <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1">
