@@ -269,3 +269,145 @@ def bin_detections(
             height_m=max(0.0, float(geom.box.height)),
         ))
     return out
+
+
+# ── Known-layout registration: greenhouse layout -> map-frame MapBox ─────────
+#
+# The course ``tag_locations.json`` gives every planter bench as an exact
+# rectangle in the JSON frame; the SLAM ``map`` frame is wherever the robot
+# started. ``solve_rigid_2d`` recovers the rigid JSON->map transform from the
+# detected-tag constellation (positions only — robust, unlike a single noisy
+# tag quaternion), and ``map_box_from_rect`` turns a transformed rectangle into
+# the ``MapBox`` the aggregator already consumes. The ``box_layout_publisher``
+# node wires these to ``/perception/box_geometry_json``; drawing the FULL known
+# rectangle is also what fills the cells the lidar can't see behind the near
+# face.
+
+
+@dataclass(frozen=True)
+class Transform2D:
+    """Rigid 2-D transform: ``map = R(cos, sin)·p + (tx, ty)``."""
+    cos: float = 1.0
+    sin: float = 0.0
+    tx: float = 0.0
+    ty: float = 0.0
+
+    def apply(self, x: float, y: float) -> Tuple[float, float]:
+        return (self.cos * x - self.sin * y + self.tx,
+                self.sin * x + self.cos * y + self.ty)
+
+
+IDENTITY_2D = Transform2D()
+
+
+def solve_rigid_2d(
+    src: Sequence[Tuple[float, float]],
+    dst: Sequence[Tuple[float, float]],
+) -> Transform2D:
+    """Best-fit rigid (rotation + translation, no scale) mapping ``src`` to ``dst``.
+
+    Closed-form 2-D Kabsch: rotation ``theta = atan2(sum cross, sum dot)`` over
+    the mean-centred point pairs, translation ``t = dst_centroid - R*src_centroid``.
+    Returns :data:`IDENTITY_2D` for empty / mismatched input, and an identity
+    *rotation* (translation only) when the points are too few or too
+    coincident/collinear to define a rotation — so a single seen tag still pins
+    position without inventing an orientation.
+    """
+    n = len(src)
+    if n == 0 or n != len(dst):
+        return IDENTITY_2D
+    sx = sum(p[0] for p in src) / n
+    sy = sum(p[1] for p in src) / n
+    dx = sum(p[0] for p in dst) / n
+    dy = sum(p[1] for p in dst) / n
+    dot = 0.0    # sum of a·b over the centred point pairs
+    cross = 0.0  # sum of a×b
+    for (ax, ay), (bx, by) in zip(src, dst):
+        cax = ax - sx
+        cay = ay - sy
+        cbx = bx - dx
+        cby = by - dy
+        dot += cax * cbx + cay * cby
+        cross += cax * cby - cay * cbx
+    norm = math.hypot(dot, cross)
+    if norm < _DEGENERATE_NORMAL_EPS:
+        cos, sin = 1.0, 0.0
+    else:
+        cos, sin = dot / norm, cross / norm
+    tx = dx - (cos * sx - sin * sy)
+    ty = dy - (sin * sx + cos * sy)
+    return Transform2D(cos, sin, tx, ty)
+
+
+def table_rect_corners(rect) -> List[Tuple[float, float]]:
+    """The four corners of a table bbox, CCW from the min corner:
+    ``(x0,y0), (x1,y0), (x1,y1), (x0,y1)`` with bounds normalised. This order is
+    relied on by :func:`map_box_from_rect`."""
+    x0 = float(rect['x0'])
+    y0 = float(rect['y0'])
+    x1 = float(rect['x1'])
+    y1 = float(rect['y1'])
+    lo_x, hi_x = min(x0, x1), max(x0, x1)
+    lo_y, hi_y = min(y0, y1), max(y0, y1)
+    return [(lo_x, lo_y), (hi_x, lo_y), (hi_x, hi_y), (lo_x, hi_y)]
+
+
+def nearest_table_rect(tag_xy, tables):
+    """Return the table rect whose centre is nearest ``tag_xy``, or None if
+    ``tables`` is empty. Ties broken by table id for determinism (mirrors
+    ``lupin_mission.approach._nearest_table``; kept local so lupin_perception
+    needs no dependency on lupin_mission)."""
+    tx, ty = float(tag_xy[0]), float(tag_xy[1])
+    best: Optional[Tuple[float, dict]] = None
+    for tid in sorted(tables.keys()):
+        rect = tables[tid]
+        try:
+            cx = (float(rect['x0']) + float(rect['x1'])) / 2.0
+            cy = (float(rect['y0']) + float(rect['y1'])) / 2.0
+        except (KeyError, TypeError, ValueError):
+            continue
+        d = math.hypot(tx - cx, ty - cy)
+        if best is None or d < best[0]:
+            best = (d, rect)
+    return best[1] if best is not None else None
+
+
+def map_box_from_rect(
+    box_id: str,
+    corners: Sequence[Tuple[float, float]],
+    *,
+    toward: Optional[Tuple[float, float]] = None,
+    height: float = 0.30,
+) -> Optional[MapBox]:
+    """Build a :class:`MapBox` (centre + outward-normal yaw + dims) from a table
+    rectangle's four map-frame ``corners`` (from :func:`table_rect_corners`,
+    optionally passed through a :class:`Transform2D`).
+
+    The longer edge is the width (lateral) axis, the shorter the depth/normal.
+    ``toward`` (e.g. the tag or robot xy) signs the yaw so the box *front* faces
+    the aisle. Returns None for a degenerate (zero-area) rectangle. The result
+    round-trips through :func:`box_from_map_box` back to ``corners``.
+    """
+    if len(corners) < 4:
+        return None
+    c0, c1, c2, c3 = corners[0], corners[1], corners[2], corners[3]
+    ax, ay = c1[0] - c0[0], c1[1] - c0[1]   # edge c0->c1 ("x" extent)
+    bx, by = c3[0] - c0[0], c3[1] - c0[1]   # edge c0->c3 ("y" extent)
+    la = math.hypot(ax, ay)
+    lb = math.hypot(bx, by)
+    if la >= lb:
+        long_len, short_vec, short_len = la, (bx, by), lb
+    else:
+        long_len, short_vec, short_len = lb, (ax, ay), la
+    if long_len < _DEGENERATE_NORMAL_EPS or short_len < _DEGENERATE_NORMAL_EPS:
+        return None
+    nx, ny = short_vec[0] / short_len, short_vec[1] / short_len
+    cx = (c0[0] + c2[0]) / 2.0
+    cy = (c0[1] + c2[1]) / 2.0
+    if toward is not None:
+        if (toward[0] - cx) * nx + (toward[1] - cy) * ny < 0.0:
+            nx, ny = -nx, -ny
+    return MapBox(
+        box_id=str(box_id), x=cx, y=cy, yaw=math.atan2(ny, nx),
+        width=long_len, depth=short_len, height=float(height),
+    )

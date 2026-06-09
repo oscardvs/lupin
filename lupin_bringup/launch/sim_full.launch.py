@@ -330,6 +330,23 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
     )
 
+    # box_layout_publisher: PRODUCER for the aggregator's box-geometry contract.
+    # Registers the known tag_locations.json layout onto the live map and
+    # publishes the real per-tag planter rectangle on /perception/box_geometry_json
+    # (the aggregator falls back to a tag-anchored box when none arrives).
+    box_layout_publisher = Node(
+        package='lupin_perception', executable='box_layout_publisher',
+        name='box_layout_publisher',
+        parameters=[{
+            'use_sim_time': True,
+            'discovered_tags_topic': '/perception/discovered_tags',
+            'box_geometry_topic': '/perception/box_geometry_json',
+            'tag_locations_file': widened_tag_locations,
+            'min_sightings': 3,
+        }],
+        output='screen',
+    )
+
     # sim flower detector: HSV colour stand-in for the real YOLO (best.pt is
     # trained on real dahlias, fires on nothing in Gazebo). Publishes the SAME
     # /yolo/detections contract, so perception_aggregator/twin/HMI are identical
@@ -607,6 +624,7 @@ def generate_launch_description() -> LaunchDescription:
         bridge,
         tag_annotator,
         perception_aggregator,
+        box_layout_publisher,
         sim_flower_detector,
         mission,
         twin,

@@ -105,6 +105,18 @@ def generate_launch_description() -> LaunchDescription:
         }],
         output='screen',
     )
+    # PRODUCER for the box-geometry contract: known layout registered to the map.
+    box_layout_publisher = Node(
+        package='lupin_perception', executable='box_layout_publisher', name='box_layout_publisher',
+        parameters=[{
+            'use_sim_time': True,
+            'discovered_tags_topic': '/perception/discovered_tags',
+            'box_geometry_topic': '/perception/box_geometry_json',
+            'tag_locations_file': widened_tag_locations,
+            'min_sightings': 3,
+        }],
+        output='screen',
+    )
     sim_flower_detector = Node(
         package='lupin_perception', executable='sim_flower_detector', name='sim_flower_detector',
         parameters=[{
@@ -150,6 +162,6 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         *args,
         slam, nav2, bridge,
-        tag_annotator, perception_aggregator, sim_flower_detector,
+        tag_annotator, perception_aggregator, box_layout_publisher, sim_flower_detector,
         mission, twin,
     ])

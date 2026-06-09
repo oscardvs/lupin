@@ -24,6 +24,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument('tf_frame_prefix', default_value='tag_'),
         DeclareLaunchArgument('min_sightings', default_value='3'),
         DeclareLaunchArgument('max_tag_distance_m', default_value='2.5'),
+        DeclareLaunchArgument('box_geometry_topic', default_value='/perception/box_geometry_json'),
+        DeclareLaunchArgument(
+            'tag_locations_file', default_value='',
+            description='tag_locations.json with the real planter rectangles + '
+                        'tag coords (empty -> bundled greenhouse_sim package).'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
     ]
 
@@ -47,4 +52,18 @@ def generate_launch_description() -> LaunchDescription:
         }],
     )
 
-    return LaunchDescription([*args, aggregator])
+    box_layout_publisher = Node(
+        package='lupin_perception',
+        executable='box_layout_publisher',
+        name='box_layout_publisher',
+        output='screen',
+        parameters=[{
+            'discovered_tags_topic': LaunchConfiguration('discovered_tags_topic'),
+            'box_geometry_topic': LaunchConfiguration('box_geometry_topic'),
+            'tag_locations_file': LaunchConfiguration('tag_locations_file'),
+            'min_sightings': LaunchConfiguration('min_sightings'),
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+        }],
+    )
+
+    return LaunchDescription([*args, aggregator, box_layout_publisher])
