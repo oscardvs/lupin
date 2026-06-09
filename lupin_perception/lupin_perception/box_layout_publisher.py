@@ -18,6 +18,7 @@ out of the aggregator preserves the aggregator's role as a pure consumer.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import rclpy
@@ -28,13 +29,17 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
+from nav_msgs.msg import OccupancyGrid
 from std_msgs.msg import String
 
 from lupin_msgs.msg import DiscoveredTags
 
 from .box_geometry import (
+    GridView,
+    front_face_occupied_points,
     map_box_from_rect,
     nearest_table_rect,
+    snap_front_face,
     solve_rigid_2d,
     table_rect_corners,
 )
@@ -55,6 +60,23 @@ class BoxLayoutPublisher(Node):
         self.declare_parameter('min_sightings', 3)
         self.declare_parameter('box_height', 0.30)
         self.declare_parameter('publish_rate_hz', 1.0)
+        self.declare_parameter('map_topic', '/map')
+        self.declare_parameter('snap_enable', True)
+        self.declare_parameter('snap_occupied_threshold', 65)
+        self.declare_parameter('snap_band_m', 0.12)
+        self.declare_parameter('snap_min_points', 8)
+        self.declare_parameter('snap_min_elongation', 3.0)
+        self.declare_parameter('snap_max_yaw_deg', 12.0)
+        self.declare_parameter('snap_max_shift_m', 0.15)
+
+        self._snap_enable = bool(self.get_parameter('snap_enable').value)
+        self._snap_threshold = int(self.get_parameter('snap_occupied_threshold').value)
+        self._snap_band_m = float(self.get_parameter('snap_band_m').value)
+        self._snap_min_points = int(self.get_parameter('snap_min_points').value)
+        self._snap_min_elongation = float(self.get_parameter('snap_min_elongation').value)
+        self._snap_max_yaw_deg = float(self.get_parameter('snap_max_yaw_deg').value)
+        self._snap_max_shift_m = float(self.get_parameter('snap_max_shift_m').value)
+        self._latest_grid: OccupancyGrid | None = None
 
         self._min_sightings = int(self.get_parameter('min_sightings').value)
         self._box_height = float(self.get_parameter('box_height').value)
@@ -72,6 +94,10 @@ class BoxLayoutPublisher(Node):
         )
         self._box_pub = self.create_publisher(
             String, str(self.get_parameter('box_geometry_topic').value), latched,
+        )
+        self.create_subscription(
+            OccupancyGrid, str(self.get_parameter('map_topic').value),
+            self._on_map, latched,
         )
         self.create_subscription(
             DiscoveredTags,
@@ -125,6 +151,29 @@ class BoxLayoutPublisher(Node):
             p = tag.pose_in_map.position
             self._tag_map_xy[str(tag.tag_id)] = (float(p.x), float(p.y))
 
+    def _on_map(self, msg: OccupancyGrid) -> None:
+        self._latest_grid = msg
+
+    def _snap_box(self, mb):
+        g = self._latest_grid
+        if g is None:
+            return mb
+        grid = GridView(
+            width=g.info.width, height=g.info.height, resolution=g.info.resolution,
+            origin_x=g.info.origin.position.x, origin_y=g.info.origin.position.y,
+            data=g.data,
+        )
+        pts = front_face_occupied_points(
+            mb, grid, band_m=self._snap_band_m, threshold=self._snap_threshold,
+        )
+        return snap_front_face(
+            mb, pts,
+            min_points=self._snap_min_points,
+            min_elongation=self._snap_min_elongation,
+            max_yaw_rad=math.radians(self._snap_max_yaw_deg),
+            max_shift_m=self._snap_max_shift_m,
+        )
+
     def _layout_transform(self):
         """Rigid JSON→map transform from the discovered-tag constellation.
 
@@ -159,6 +208,8 @@ class BoxLayoutPublisher(Node):
             mb = map_box_from_rect(tid, corners, toward=mxy, height=self._box_height)
             if mb is None:
                 continue
+            if self._snap_enable:
+                mb = self._snap_box(mb)
             boxes.append({
                 'id': mb.box_id, 'x': mb.x, 'y': mb.y, 'yaw': mb.yaw,
                 'width': mb.width, 'depth': mb.depth, 'height': mb.height,
