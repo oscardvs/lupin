@@ -25,11 +25,20 @@ export function LidarCanvas({ className, interactive = false }: { className?: st
     if (!canvas) return
     const resize = () => {
       const dpr = window.devicePixelRatio || 1
-      const rect = canvas.getBoundingClientRect()
-      canvas.width = rect.width * dpr
-      canvas.height = rect.height * dpr
+      // Backing store from the layout box, not getBoundingClientRect(): the
+      // latter is shrunk by the FocusPanel's `zoom-in-95` open animation (a CSS
+      // transform), which froze this buffer at 0.95× and stretched the scan.
+      // clientW/H are transform-independent and match the draw loop's space.
+      // Reset the transform before scaling so repeated resizes don't compound.
+      const cw = canvas.clientWidth
+      const ch = canvas.clientHeight
+      canvas.width = Math.max(1, Math.floor(cw * dpr))
+      canvas.height = Math.max(1, Math.floor(ch * dpr))
       const ctx = canvas.getContext('2d')
-      if (ctx) ctx.scale(dpr, dpr)
+      if (ctx) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.scale(dpr, dpr)
+      }
     }
     resize()
     const ro = new ResizeObserver(resize)
@@ -135,7 +144,7 @@ export function LidarCanvas({ className, interactive = false }: { className?: st
         </CardTitle>
         <CardDescription>{scanTopic}</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
+      <CardContent className="flex min-h-0 flex-1 flex-col">
         <div className="relative w-full flex-1 min-h-[180px] overflow-hidden rounded-sm border border-hairline bg-ink-1 sm:min-h-[260px]">
           <canvas
             ref={canvasRef}
