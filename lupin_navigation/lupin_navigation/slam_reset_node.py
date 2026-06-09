@@ -18,7 +18,8 @@ from typing import Iterable
 
 import rclpy
 from rclpy.node import Node
-from std_srvs.srv import Empty, Trigger
+from nav2_msgs.srv import ClearEntireCostmap
+from std_srvs.srv import Trigger
 
 
 # Substring to match in ``ps`` output. The Node action launches
@@ -94,23 +95,32 @@ class SlamResetNode(Node):
         return len(pids)
 
     def _clear_costmaps(self, services: Iterable[str]) -> None:
+        # Nav2 serves these as nav2_msgs/srv/ClearEntireCostmap (NOT
+        # std_srvs/srv/Empty) — the client type must match or the rmw rejects
+        # the client outright. Each clear is wrapped so a costmap problem is
+        # logged and never breaks the headline map wipe (the SIGTERM below).
         for name in services:
-            client = self.create_client(Empty, name)
-            if not client.wait_for_service(timeout_sec=0.5):
-                self.get_logger().warn(
-                    f'costmap clear service {name} unavailable, skipping',
+            try:
+                client = self.create_client(ClearEntireCostmap, name)
+                if not client.wait_for_service(timeout_sec=0.5):
+                    self.get_logger().warn(
+                        f'costmap clear service {name} unavailable, skipping',
+                    )
+                    continue
+                future = client.call_async(ClearEntireCostmap.Request())
+                # Fire-and-forget; we don't block the Trigger response on
+                # costmap clears. Log on completion for diagnostics.
+                future.add_done_callback(
+                    lambda f, n=name: self.get_logger().info(
+                        f'cleared costmap via {n}'
+                        if not f.exception() else
+                        f'costmap clear {n} failed: {f.exception()}',
+                    ),
                 )
-                continue
-            future = client.call_async(Empty.Request())
-            # Fire-and-forget; we don't block the Trigger response on
-            # costmap clears. Log on completion for diagnostics.
-            future.add_done_callback(
-                lambda f, n=name: self.get_logger().info(
-                    f'cleared costmap via {n}'
-                    if not f.exception() else
-                    f'costmap clear {n} failed: {f.exception()}',
-                ),
-            )
+            except Exception as exc:  # best-effort: never break the map wipe
+                self.get_logger().warn(
+                    f'costmap clear {name} errored, skipping: {exc}',
+                )
 
 
 def main() -> None:

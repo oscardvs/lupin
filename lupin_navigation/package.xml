@@ -7,6 +7,7 @@
   <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
   <license>Apache-2.0</license>
 
+  <depend>nav2_msgs</depend>
   <depend>rclpy</depend>
   <depend>std_srvs</depend>
   <exec_depend>nav2_amcl</exec_depend>
