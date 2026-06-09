@@ -5,41 +5,44 @@
 @layer base {
   :root {
     /* Greenhouse mission console — deep botanical ink, lichen primary, signal cyan. */
-    --background: 120 14% 4.5%;
+    --background: 120 14% 4%;
     --foreground: 60 18% 92%;
-    --card: 120 10% 7%;
+    --card: 120 10% 9.5%;
     --card-foreground: 60 18% 92%;
     --popover: 120 12% 6%;
     --popover-foreground: 60 18% 92%;
     --primary: 78 90% 58%;            /* lichen / lupin chartreuse */
     --primary-foreground: 120 25% 6%;
-    --secondary: 120 8% 12%;
+    --secondary: 120 8% 14%;
     --secondary-foreground: 60 18% 92%;
-    --muted: 120 8% 11%;
+    --muted: 120 8% 13%;
     --muted-foreground: 80 10% 60%;
     --accent: 78 60% 22%;
     --accent-foreground: 78 90% 75%;
     --destructive: 8 92% 55%;          /* warm signal-red */
     --destructive-foreground: 0 0% 100%;
-    --border: 120 8% 14%;
-    --input: 120 8% 14%;
+    --border: 120 8% 18%;
+    --input: 120 8% 18%;
     --ring: 78 90% 58%;
     --radius: 0.25rem;
 
     /* Custom palette tokens (used directly via arbitrary-value classes) */
-    --hairline: 120 6% 18%;
+    --hairline: 120 6% 25%;
+    --edge-tile: 60 30% 88%;           /* 1px inset top highlight on tiles */
     --signal: 192 90% 60%;             /* cyan data stream */
     --signal-soft: 192 80% 70%;
     --warning: 38 95% 60%;             /* amber */
     --bloom: 78 90% 50%;               /* glow source for the aurora + halos */
     --serif-shift: 0.04em;
 
-    /* Ink ramp — z-elevation surfaces (darkest well → raised tile). */
-    --ink-0: 120 14% 3.5%;             /* below-base wells (3D letterbox)  */
-    --ink-1: 120 14% 4.5%;             /* = background, base canvas        */
-    --ink-2: 120 10% 7%;               /* = card, base panels             */
-    --ink-3: 120 10% 9%;               /* raised / hovered tile           */
-    --ink-4: 120 12% 11%;              /* overlay opaque backing plate     */
+    /* Ink ramp — z-elevation surfaces (darkest well → raised tile).
+       Re-pitched to ~1.4–1.5:1 perceptual notches (hold hue/sat, move only L)
+       so opaque tiles read as objects against the base. */
+    --ink-0: 120 14% 3%;               /* below-base wells (3D letterbox)  */
+    --ink-1: 120 14% 4%;               /* = background, base canvas        */
+    --ink-2: 120 10% 9.5%;             /* = card, base panels             */
+    --ink-3: 120 10% 12.5%;            /* raised / hovered tile           */
+    --ink-4: 120 12% 15%;              /* overlay opaque backing plate     */
 
     /* Glass — frosted FLOATING overlays only (Radix portals), never tiles. */
     --glass-bg: 120 12% 8%;
