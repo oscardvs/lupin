@@ -739,7 +739,7 @@ export function MapCanvas() {
   })()
 
   return (
-    <Card className="flex flex-1 flex-col">
+    <Card className="flex min-h-0 w-full flex-1 flex-col">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>Map · navigation</span>
@@ -764,8 +764,8 @@ export function MapCanvas() {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 min-h-[28rem] flex-col">
-        <div className="relative flex-1 overflow-hidden rounded-sm border border-hairline bg-background/60">
+      <CardContent className="flex min-h-0 flex-1 flex-col">
+        <div className="relative flex-1 overflow-hidden rounded-sm border border-hairline bg-ink-1">
           <canvas
             ref={canvasRef}
             onPointerDown={onPointerDown}
