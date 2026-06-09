@@ -27,6 +27,7 @@ setup(
             'yolo_detector = lupin_perception.yolo_detector_node:main',
             'sim_flower_detector = lupin_perception.sim_flower_detector_node:main',
             'perception_aggregator = lupin_perception.perception_aggregator:main',
+            'passive_observer = lupin_perception.passive_observer:main',
             'box_layout_publisher = lupin_perception.box_layout_publisher:main',
         ],
     },
