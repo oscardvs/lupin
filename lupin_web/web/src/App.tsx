@@ -97,7 +97,7 @@ function Shell() {
                 <TabsTrigger
                   key={id}
                   value={id}
-                  className="gap-2 px-2.5 sm:px-3"
+                  className="group gap-2 px-2.5 sm:px-3"
                   aria-label={label}
                 >
                   {tab === id ? (
@@ -111,7 +111,9 @@ function Shell() {
                     {code}
                   </span>
                   <Icon className="h-[14px] w-[14px] shrink-0" />
-                  <span className="hidden sm:inline">{label}</span>
+                  {/* Keep the ACTIVE tab worded even on phone (others stay icon-only)
+                      so there's always one text anchor in the strip. */}
+                  <span className="hidden group-data-[state=active]:inline sm:inline">{label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
