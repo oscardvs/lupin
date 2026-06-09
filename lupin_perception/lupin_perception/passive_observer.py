@@ -76,8 +76,21 @@ class PassiveObserver(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             history=HistoryPolicy.KEEP_LAST,
         )
+        # The twin (and every other /floranova/observations producer) uses a
+        # RELIABLE + TRANSIENT_LOCAL observation bus. Publishing with the bare
+        # `depth` constructor here defaults to VOLATILE durability, which is
+        # *incompatible* with the twin's TRANSIENT_LOCAL subscription — DDS then
+        # refuses the match ("requesting incompatible QoS … DURABILITY") and the
+        # twin silently never receives a single passive climate reading. Match
+        # the twin's profile so the readings actually land.
+        obs_qos = QoSProfile(
+            depth=50,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+        )
         self._obs_pub = self.create_publisher(
-            Observation, str(self.get_parameter('observations_topic').value), 50)
+            Observation, str(self.get_parameter('observations_topic').value), obs_qos)
         self.create_subscription(
             DiscoveredTags, str(self.get_parameter('discovered_tags_topic').value),
             self._on_discovered_tags, latched)

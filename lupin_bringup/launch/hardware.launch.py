@@ -31,7 +31,8 @@ Topology after launch (defaults):
         slam_reset_node     → /lupin/nav/clear_map service   (slam:=true)
         nav2 (slam mode)    → /cmd_vel_auto via smoother     (nav2:=true)
         lupin_twin          → /twin/state + /twin/get_field  (twin:=true)
-        greenhouse_bridge   → /floranova/* oracle            (mission:=true)
+        greenhouse_bridge   → /floranova/* oracle            (mission||observe)
+        passive_observer    → climate readings while idle    (observe:=true)
         mission_orchestrator→ /mission/start + lifecycle     (mission:=true)
         seed_amcl_pose      → one-shot /amcl_pose            (mission:=true)
         xbox_teleop         → /cmd_vel_joy + arm_teleop      (joystick:=true)
@@ -52,8 +53,13 @@ Flags (all booleans, default in parens):
     slam (true)       slam_toolbox + slam_reset_node. Owns /map.
     nav2 (true)       Nav2 stack. Waits for /map before activating.
     twin (true)       lupin_twin aggregator. Cheap; HMI consumes it.
-    mission (false)   greenhouse_bridge + mission_orchestrator + AMCL
-                      pose seed as a bundle. Turn on for mission runs.
+    observe (true)    Passive climate fill while no mission runs: the
+                      greenhouse_bridge oracle + passive_observer. Makes the
+                      Greenhouse State table + heatmap populate as you drive
+                      around in teleop. Defers while a mission is active.
+    mission (false)   mission_orchestrator + AMCL pose seed as a bundle (the
+                      greenhouse_bridge it needs is shared with observe and
+                      comes up for either). Turn on for mission runs.
     rviz (true)       RViz2 with the persistent full_bringup_viz config.
     joystick (false)  Xbox controller teleop on the laptop.
     perception (true) lupin_perception/tag_annotator — AprilTag detection
@@ -99,7 +105,7 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -195,9 +201,24 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             'mission', default_value='false',
             description='Bring up the mission pipeline as a bundle: '
-                        'greenhouse_bridge (oracle), mission_orchestrator '
-                        'lifecycle node, and a one-shot /amcl_pose seed. '
-                        'Turn on for end-to-end mission runs.',
+                        'mission_orchestrator lifecycle node and a one-shot '
+                        '/amcl_pose seed. Turn on for end-to-end mission runs. '
+                        '(The greenhouse_bridge oracle it needs is shared with '
+                        'observe — see that flag — so it comes up whenever '
+                        'either is on.)',
+        ),
+        DeclareLaunchArgument(
+            'observe', default_value='true',
+            description='Passive climate observation while NO mission is '
+                        'running (teleop / manual SLAM): brings up the '
+                        'greenhouse_bridge oracle + passive_observer, which '
+                        'polls the bridge per discovered tag and feeds '
+                        '/floranova/observations so the twin heatmap and the '
+                        'per-tag climate readings fill in as you drive around. '
+                        'Defers automatically while a mission is active, so it '
+                        'is safe to leave on for mission runs too. Default true '
+                        '— the bridge is cheap and this is what makes the '
+                        'Greenhouse State table populate without a mission.',
         ),
         DeclareLaunchArgument(
             'web', default_value='true',
@@ -413,13 +434,44 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('nav2')),
     )
 
-    # ── Mission pipeline (bridge + orchestrator + AMCL seed) ───────────
+    # ── Greenhouse climate oracle (shared by mission + passive observe) ─
+    # The bridge is the single source of climate readings on hardware (the
+    # mdp-greenhouse oracle keyed by tag position — climate is simulated even
+    # on the real robot). BOTH the mission orchestrator (active runs) and the
+    # passive_observer (idle/teleop) poll it, so it comes up whenever either
+    # `mission` OR `observe` is on. Gating it on a single combined condition
+    # keeps exactly one greenhouse_bridge node — running it under both flags
+    # would collide on the node name + service.
+    bridge_condition = IfCondition(PythonExpression([
+        "'", LaunchConfiguration('mission'), "' == 'true' or '",
+        LaunchConfiguration('observe'), "' == 'true'",
+    ]))
     bridge = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_bridge, 'launch', 'greenhouse_bridge.launch.py'),
         ),
         launch_arguments=[('tag_file', tag_locations)],
-        condition=IfCondition(LaunchConfiguration('mission')),
+        condition=bridge_condition,
+    )
+
+    # Passive climate observer — fills the twin's heatmap + per-tag readings
+    # while NO mission is running (teleop / manual SLAM). Watches discovered
+    # tags, polls the bridge per tag, republishes KIND_TAG_READING on
+    # /floranova/observations. Defers entirely while a mission is active, so
+    # it is safe to leave running for mission runs too. use_sim_time:=false —
+    # hardware is on the wall clock.
+    passive_observer = Node(
+        package='lupin_perception',
+        executable='passive_observer',
+        name='passive_observer',
+        parameters=[{
+            'use_sim_time': False,
+            # Re-poll every 30 s so the heatmap tracks the oracle's
+            # time-of-day drift instead of freezing on the first reading.
+            'refresh_period_s': 30.0,
+        }],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('observe')),
     )
 
     mission = IncludeLaunchDescription(
@@ -593,6 +645,7 @@ def generate_launch_description() -> LaunchDescription:
                      ' slam=', LaunchConfiguration('slam'),
                      ' nav2=', LaunchConfiguration('nav2'),
                      ' twin=', LaunchConfiguration('twin'),
+                     ' observe=', LaunchConfiguration('observe'),
                      ' mission=', LaunchConfiguration('mission'),
                      ' rviz=', LaunchConfiguration('rviz'),
                      ' joystick=', LaunchConfiguration('joystick'),
@@ -602,6 +655,7 @@ def generate_launch_description() -> LaunchDescription:
         web,
         slam_reset_node,
         bridge,
+        passive_observer,
         mission,
         mission_confirm_banner,
         twin,

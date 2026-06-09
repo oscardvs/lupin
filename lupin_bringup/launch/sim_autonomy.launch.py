@@ -2,7 +2,8 @@
 
 The brain: SLAM (slam_toolbox), Nav2 (slam mode), the greenhouse bridge, the
 perception stack (tag_annotator + perception_aggregator + sim flower detector),
-the mission orchestrator, and the digital twin.
+the passive climate observer (fills the twin heatmap during idle/teleop), the
+mission orchestrator, and the digital twin.
 
 Bring this up AFTER sim_robot.launch.py is running and the controllers are
 active (slam_toolbox needs /scan + the robot's TF; the mission orchestrator
@@ -128,6 +129,24 @@ def generate_launch_description() -> LaunchDescription:
         }],
         output='screen',
     )
+    # Passive climate poller — fills the twin's heatmap/per-tag readings while
+    # NO mission is running (teleop / manual SLAM). It watches discovered tags,
+    # polls the greenhouse bridge per tag, and republishes KIND_TAG_READING on
+    # /floranova/observations. It defers entirely while a mission is active (the
+    # orchestrator owns observation then), so it is safe to always run alongside
+    # the mission stack. use_sim_time:=true so its observation stamps are on /clock
+    # and the twin doesn't treat the readings as stale (same reason the mission
+    # node sets it above).
+    passive_observer = Node(
+        package='lupin_perception', executable='passive_observer', name='passive_observer',
+        parameters=[{
+            'use_sim_time': True,
+            # Re-poll every 30 s so the heatmap tracks the sim oracle's
+            # time-of-day drift instead of freezing on the first reading.
+            'refresh_period_s': 30.0,
+        }],
+        output='screen',
+    )
 
     mission = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -163,5 +182,6 @@ def generate_launch_description() -> LaunchDescription:
         *args,
         slam, nav2, bridge,
         tag_annotator, perception_aggregator, box_layout_publisher, sim_flower_detector,
+        passive_observer,
         mission, twin,
     ])
