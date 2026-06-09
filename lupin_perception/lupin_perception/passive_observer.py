@@ -26,7 +26,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 
-from lupin_msgs.msg import DiscoveredTags, MissionState, Observation
+from lupin_msgs.msg import DiscoveredTags, MissionState, Observation, TwinState
 from lupin_msgs.srv import GetTagReading
 
 from .observations import make_tag_reading_observation
@@ -50,6 +50,7 @@ class PassiveObserver(Node):
         super().__init__('passive_observer')
 
         self.declare_parameter('discovered_tags_topic', '/perception/discovered_tags')
+        self.declare_parameter('twin_state_topic', '/twin/state')
         self.declare_parameter('mission_state_topic', '/mission/state')
         self.declare_parameter('bridge_service_name', '/greenhouse_bridge/get_tag_reading')
         self.declare_parameter('observations_topic', '/floranova/observations')
@@ -65,7 +66,7 @@ class PassiveObserver(Node):
         self._source = str(self.get_parameter('source_name').value)
         tick = float(self.get_parameter('tick_period_s').value)
 
-        self._tags: dict[str, Pose] = {}        # tag_id -> latest map pose
+        self._tags: dict[str, Optional[Pose]] = {}  # tag_id -> map pose (or None)
         self._last_read: dict[str, float] = {}  # tag_id -> monotonic of last read
         self._inflight: set[str] = set()        # tag_ids with a request pending
         self._mission_state: Optional[MissionState] = None
@@ -94,6 +95,15 @@ class PassiveObserver(Node):
         self.create_subscription(
             DiscoveredTags, str(self.get_parameter('discovered_tags_topic').value),
             self._on_discovered_tags, latched)
+        # Also learn tags from the twin itself. /perception/discovered_tags only
+        # carries tags confirmed past the aggregator's min_sightings gate, but
+        # the twin (and the HMI table) ALSO shows tags pinned via the flower
+        # path with fewer sightings. Without this, such a tag is a permanent
+        # blank row — pinned, classified, but never climate-polled. Polling
+        # every tag the twin knows about makes every table row fill.
+        self.create_subscription(
+            TwinState, str(self.get_parameter('twin_state_topic').value),
+            self._on_twin_state, latched)
         self.create_subscription(
             MissionState, str(self.get_parameter('mission_state_topic').value),
             self._on_mission_state, latched)
@@ -115,6 +125,19 @@ class PassiveObserver(Node):
         for t in msg.tags:
             if t.tag_id:
                 self._tags[t.tag_id] = t.pose_in_map
+
+    def _on_twin_state(self, msg: TwinState) -> None:
+        """Fold in tags the twin shows but the discovered-tags feed omits
+        (flower-pinned tags below the min_sightings gate). Don't clobber a
+        pose the discovered-tags feed already supplied — that is the
+        authoritative source; the twin only fills the gaps. A twin tag with
+        orientation.w == 0 has never been pinned, so carry no pose (the bridge
+        reading just merges climate onto whatever the twin already holds)."""
+        for t in msg.tags:
+            if not t.tag_id or t.tag_id in self._tags:
+                continue
+            has_pose = t.pose.orientation.w != 0.0
+            self._tags[t.tag_id] = t.pose if has_pose else None
 
     def _on_mission_state(self, msg: MissionState) -> None:
         self._mission_state = msg
