@@ -3,7 +3,7 @@
 <package format="3">
   <name>lupin_web</name>
   <version>1.1.0</version>
-  <description>Browser-based HMI for the MIRTE Master. Talks to the running rosbridge_websocket; ships a static Vite + React + shadcn frontend served on port 8090. Designed to coexist with the course web interface, never to replace it.</description>
+  <description>Browser-based HMI for the MIRTE Master. Talks to the running rosbridge_websocket; ships a static Vite + React + shadcn frontend served on port 8090. Runs alongside the course web interface.</description>
   <maintainer email="o.a.e.devos@student.tudelft.nl">Team Lupin</maintainer>
   <license>Apache-2.0</license>
 
